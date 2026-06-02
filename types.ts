@@ -291,6 +291,8 @@ export interface LibraryItem {
   positionInTimeline?: string;
   relatedComponents?: string[];
   performance: PerformanceData[];
+  theme?: string;
+  relatedAssets?: string[];
 }
 
 export interface BenchmarkRule {

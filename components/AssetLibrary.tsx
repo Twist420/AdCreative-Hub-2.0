@@ -7,9 +7,10 @@ import {
   Monitor, Info, BarChart2, DollarSign, Users, MousePointer2,
   Calendar, Link as LinkIcon, Clock, Check, X, ArrowUpRight,
   ExternalLink, PlayCircle, Activity, ArrowUp, ArrowDown, Layers, RefreshCw,
-  Paperclip, ClipboardList, Edit3
+  Paperclip, ClipboardList, Edit3, Star, Share2
 } from 'lucide-react';
 import { LibraryItem } from '../types';
+import { DetailModal } from './DetailModal';
 
 const FolderIcon = Folder;
 
@@ -479,10 +480,6 @@ const AssetLibrary: React.FC = () => {
   
   // Custom states for Asset Detail View enhancement & direct card play
   const [playingCardId, setPlayingCardId] = useState<string | null>(null);
-  const [selectedRatio, setSelectedRatio] = useState<'9:16' | '1:1' | '16:9' | '4:5'>('16:9');
-  const [activeDetailTab, setActiveDetailTab] = useState<'performance' | 'relations'>('performance');
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [tempName, setTempName] = useState('');
   
   // Interactive Folder states
   const [folderTree, setFolderTree] = useState<FolderNode[]>(FOLDER_TREE);
@@ -675,13 +672,6 @@ const AssetLibrary: React.FC = () => {
   });
 
   // Automatically expand parent folders of currentPath to ensure highlight is always visible
-  useEffect(() => {
-    if (selectedDetailItem) {
-      setTempName(selectedDetailItem.name);
-      setIsEditingName(false);
-    }
-  }, [selectedDetailItem]);
-
   useEffect(() => {
     if (currentPath.length > 0) {
       setExpandedFolders(prev => {
@@ -1655,483 +1645,53 @@ const AssetLibrary: React.FC = () => {
                              {/* Info Area */}
                              <div className="p-2 flex-1 flex flex-col gap-1.5 bg-slate-50/20 text-left">
                                 <div className="space-y-0.5 font-sans">
-                                   <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
-                                      {item.subType}
-                                   </p>
-                                   <h4 className="text-[10px] font-black text-slate-800 line-clamp-1 group-hover:text-slate-900 transition-colors leading-tight">
-                                      {item.name}
-                                   </h4>
-                                   <p className="text-[8px] font-bold text-slate-400 font-mono tracking-tight leading-none">
-                                      {item.id}
-                                   </p>
-                                </div>
+                                    <p className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                       {item.subType}
+                                    </p>
+                                    <h4 className="text-[10px] font-black text-slate-800 line-clamp-1 group-hover:text-slate-900 transition-colors leading-tight">
+                                       {item.name}
+                                    </h4>
+                                    <p className="text-[8px] font-bold text-slate-400 font-mono tracking-tight leading-none">
+                                       {item.id}
+                                    </p>
+                                 </div>
 
-                                <div className="flex flex-wrap gap-0.5">
-                                   {item.tags.slice(0, 2).map(tag => (
-                                     <span key={tag} className="px-1 py-0.5 bg-white text-slate-500 rounded text-[7px] font-bold border border-slate-100/60 leading-none">
-                                        #{tag}
-                                     </span>
-                                   ))}
-                                   {item.tags.length > 2 && <span className="text-[7px] font-bold text-slate-400 leading-none">+{item.tags.length - 2}</span>}
-                                </div>
+                                 <div className="flex flex-wrap gap-0.5">
+                                    {item.tags.slice(0, 2).map(tag => (
+                                      <span key={tag} className="px-1 py-0.5 bg-white text-slate-500 rounded text-[7px] font-bold border border-slate-100/60 leading-none">
+                                         #{tag}
+                                      </span>
+                                    ))}
+                                    {item.tags.length > 2 && <span className="text-[7px] font-bold text-slate-400 leading-none">+{item.tags.length - 2}</span>}
+                                 </div>
 
-                                <div className="mt-auto pt-1.5 border-t border-slate-150/40 flex items-center justify-between text-[8px]">
-                                   <div className="flex items-center gap-0.5 text-slate-400 font-bold">
-                                      <History className="w-2.5 h-2.5" />
-                                      <span>引用 {item.citationCount}次</span>
-                                   </div>
-                                   <p className="text-slate-350 font-bold">{item.createdAt.split(' ')[0]}</p>
-                                </div>
-                             </div>
-                          </div>
-                        );
-                     })}
-                  </div>
-                )}
+                                 <div className="mt-auto pt-1.5 border-t border-slate-150/40 flex items-center justify-between text-[8px]">
+                                    <div className="flex items-center gap-0.5 text-slate-400 font-bold">
+                                       <History className="w-2.5 h-2.5" />
+                                       <span>引用 {item.citationCount}次</span>
+                                    </div>
+                                    <p className="text-slate-350 font-bold">{item.createdAt.split(' ')[0]}</p>
+                                 </div>
+                              </div>
+                           </div>
+                         );
+                      })}
+                   </div>
+                 )}
               </div>
             )}
          </div>
       </main>
-
-      {/* Detail Modal view */}
       {selectedDetailItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
-           <div className="w-full max-w-6xl h-[90vh] max-h-[90vh] flex flex-col relative animate-in zoom-in-95 duration-200">
-              
-              {/* Backing Plate Header tightly immediately above the popup board */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2 pb-4 shrink-0 select-none">
-                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700/60 rounded-md text-[10px] font-bold text-slate-300">
-                          <FolderIcon className="w-3 text-indigo-400" />
-                          <span>微分子库分类:</span>
-                          <span className="text-slate-200 font-extrabold">{getItemPath(selectedDetailItem).join(' / ')}</span>
-                       </span>
-                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700/60 rounded-md text-[10px] font-mono font-bold text-slate-300">
-                          <Layers className="w-3 text-sky-400" />
-                          <span>物料资产编号:</span>
-                          <span className="text-sky-305 font-extrabold">{selectedDetailItem.id}</span>
-                       </span>
-                    </div>
-
-                    {/* Editable Asset Name on Backing Plate */}
-                    <div className="mt-2.5">
-                       {isEditingName ? (
-                          <div className="flex items-center gap-2 max-w-xl">
-                             <input
-                                type="text"
-                                value={tempName}
-                                onChange={(e) => setTempName(e.target.value)}
-                                onKeyDown={(e) => {
-                                   if (e.key === 'Enter') {
-                                      handleSaveName(selectedDetailItem.id, tempName);
-                                      setIsEditingName(false);
-                                   } else if (e.key === 'Escape') {
-                                      setIsEditingName(false);
-                                   }
-                                }}
-                                className="flex-1 px-3 py-1 bg-white text-slate-900 border border-indigo-200 text-sm font-black rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/80"
-                                autoFocus
-                             />
-                             <button 
-                                onClick={() => {
-                                   handleSaveName(selectedDetailItem.id, tempName);
-                                   setIsEditingName(false);
-                                }}
-                                className="p-1 px-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                                title="保存"
-                             >
-                                保存
-                             </button>
-                             <button 
-                                onClick={() => {
-                                   setTempName(selectedDetailItem.name);
-                                   setIsEditingName(false);
-                                }}
-                                className="p-1 px-2.5 bg-slate-700 hover:bg-slate-650 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                                title="取消"
-                             >
-                                取消
-                             </button>
-                          </div>
-                       ) : (
-                          <div className="flex items-center gap-2 group max-w-xl text-left cursor-pointer" onClick={() => setIsEditingName(true)}>
-                             <h2 className="text-xl font-black text-white hover:text-indigo-300 transition-colors tracking-tight truncate">
-                                {selectedDetailItem.name}
-                             </h2>
-                             <button className="p-1 text-slate-400 hover:text-white rounded transition-all shrink-0 opacity-0 group-hover:opacity-100">
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-                          </div>
-                       )}
-                    </div>
-                 </div>
-
-                 {/* Top Auxiliary Metadata Info Block */}
-                 <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-[10px] font-bold text-slate-300 bg-slate-900/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-850">
-                       🕒 上传归档日期: {selectedDetailItem.createdAt || '2026-05-21 15:16:48'}
-                    </span>
-                 </div>
-              </div>
-
-              {/* The White Board */}
-              <div className="flex-1 bg-white rounded-3xl shadow-2xl border border-slate-150 flex flex-col overflow-hidden relative">
-                 {/* Close Button floating right on top of the plate */}
-                 <button 
-                    onClick={() => {
-                       setIsEditingName(false);
-                       setSelectedDetailItem(null);
-                    }}
-                    className="absolute top-5 right-5 z-20 p-2.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-150 rounded-2xl text-slate-500 hover:text-rose-600 shadow-3xs transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                    title="关闭弹窗"
-                 >
-                    <X className="w-5 h-5 stroke-[2.5]" />
-                 </button>
-
-                 {/* Modal Inner Content */}
-                 <div className="flex-1 overflow-y-auto no-scrollbar p-8 flex flex-col lg:flex-row gap-8">
-                 
-                 {/* Left Column: Screen-prominent Preview Frame & Attributes Information Grid */}
-                 <div className="lg:flex-[6] flex flex-col gap-5 h-full min-w-0">
-                    
-                    {/* Widescreen / Maximize layout Visual Stage */}
-                    <div className="bg-slate-950 rounded-2xl border border-slate-800 p-6 flex flex-col items-center justify-center relative overflow-hidden flex-1 min-h-[380px] shadow-2xl">
-                       {/* Blurred Ambient Backdrop Glow */}
-                       <div className="absolute inset-0 opacity-15 filter blur-3xl scale-150 z-0 pointer-events-none select-none">
-                          <img 
-                             src={selectedDetailItem.previewUrl} 
-                             alt="" 
-                             className="w-full h-full object-cover" 
-                             referrerPolicy="no-referrer" 
-                          />
-                       </div>
-
-                       {/* Interactive Render Stage matching ratio perfectly */}
-                       <div className="relative w-full h-full flex items-center justify-center z-10">
-                          <div className={`shadow-xl border border-white/10 rounded-xl overflow-hidden bg-black flex items-center justify-center transition-all duration-300 max-h-full max-w-full ${
-                             selectedRatio === '16:9' ? 'aspect-[16/9] w-full' :
-                             selectedRatio === '9:16' ? 'aspect-[9/16] h-[340px] shadow-[0_0_24px_rgba(0,0,0,0.4)]' :
-                             selectedRatio === '1:1' ? 'aspect-square h-[340px]' :
-                             'aspect-[4/5] h-[340px]'
-                          }`}>
-                             {selectedDetailItem.sourceFileUrl?.endsWith('.mp4') || selectedDetailItem.sourceFileUrl?.endsWith('.mov') || selectedDetailItem.duration ? (
-                                <video 
-                                   src={selectedDetailItem.sourceFileUrl} 
-                                   controls 
-                                   className="w-full h-full object-cover select-none"
-                                />
-                             ) : (
-                                <img 
-                                   src={selectedDetailItem.previewUrl} 
-                                   alt="" 
-                                   className="w-full h-full object-cover select-none"
-                                   referrerPolicy="no-referrer"
-                                />
-                             )}
-                          </div>
-                       </div>
-                    </div>
-
-                    {/* Dimensional aspect ratios presets selector */}
-                    <div className="flex items-center justify-between bg-slate-50 border border-slate-150/80 px-4 py-2.5 rounded-2xl shrink-0 font-sans shadow-sm">
-                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">适配规格画布预览</span>
-                       <div className="flex bg-slate-200/55 p-1 rounded-xl">
-                          {(['9:16', '1:1', '16:9', '4:5'] as const).map(ratio => (
-                             <button
-                                key={ratio}
-                                onClick={() => setSelectedRatio(ratio)}
-                                className={`px-4 py-1.5 rounded-lg text-[11px] font-black tracking-wider transition-all cursor-pointer ${
-                                   selectedRatio === ratio 
-                                      ? 'bg-slate-900 text-white shadow-md' 
-                                      : 'text-slate-500 hover:text-slate-900'
-                                }`}
-                             >
-                                {ratio}
-                             </button>
-                          ))}
-                       </div>
-                    </div>
-
-                    {/* Auxiliary metadata & asset properties pane: Tags, path, upload date */}
-                    <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-150/80 space-y-4 text-left font-sans shadow-sm">
-                       {/* Paths & Upload dates */}
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-1">
-                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block font-mono">
-                                📤 上传归档日期 (Upload Date)
-                             </span>
-                             <p className="text-xs font-bold text-slate-700 font-mono tracking-tight flex items-center gap-1.5 bg-white px-3 py-2 rounded-xl border border-slate-100">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                {selectedDetailItem.createdAt || '2026-05-21 15:16:48'}
-                             </p>
-                          </div>
-                          
-                          <div className="space-y-1">
-                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block font-mono">
-                                🎬 视频播放时长 (Duration)
-                             </span>
-                             <p className="text-xs font-bold text-slate-700 font-mono tracking-tight flex items-center gap-1.5 bg-white px-3 py-2 rounded-xl border border-slate-100">
-                                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                {selectedDetailItem.duration || '00:05 秒视频'}
-                             </p>
-                          </div>
-                       </div>
-
-                       {/* File Server Path */}
-                       <div className="space-y-1">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block font-mono">
-                             💾 存储服务原片路径 (Storage Asset Path)
-                          </span>
-                          <p className="text-[10px] font-mono font-bold text-slate-600 break-all bg-white px-3 py-2.5 rounded-xl border border-slate-150/50 flex items-center gap-1.5">
-                             <LinkIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                             <span className="truncate">{selectedDetailItem.sourceFileUrl}</span>
-                          </p>
-                       </div>
-
-                       {/* Custom Asset Tags */}
-                       <div className="space-y-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block font-mono">
-                             🏷️ 分分子类资产标签 (Asset Tags)
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 bg-white p-3 rounded-xl border border-slate-150/50">
-                             {selectedDetailItem.tags.map(tag => (
-                                <span key={tag} className="px-2.5 py-1 bg-slate-50 border border-slate-150 rounded-lg text-[10px] font-sans font-bold text-slate-600 hover:bg-slate-100/50 transition-colors">
-                                   #{tag}
-                                </span>
-                             ))}
-                             {selectedDetailItem.tags.length === 0 && (
-                                <span className="text-[10px] text-slate-400 font-bold font-sans">暂未匹配标签</span>
-                             )}
-                          </div>
-                       </div>
-                    </div>
-                 </div>
-
-                 {/* Right Column: Tabbed Performance statistics / associated channels, list creatives, and requirements */}
-                 <div className="lg:flex-[5] flex flex-col gap-6 h-full min-w-0 font-sans border-l border-slate-100 lg:pl-6">
-                    {/* Modern Custom Tabs List Header with active indicators, data status, citation count */}
-                    <div className="flex border-b border-slate-155 pb-px gap-2 font-sans overflow-hidden shrink-0 pr-14 lg:pr-0">
-                       <button
-                          onClick={() => setActiveDetailTab('performance')}
-                          className={`pb-3 px-3 text-xs font-black select-none tracking-tight transition-all border-b-2 -mb-px flex items-center gap-1.5 cursor-pointer ${
-                             activeDetailTab === 'performance'
-                                ? 'border-indigo-650 text-indigo-700'
-                                : 'border-transparent text-slate-400 hover:text-slate-700'
-                          }`}
-                       >
-                          <BarChart2 className="w-4 h-4 text-indigo-500 shrink-0" />
-                          <span>渠道投放数据</span>
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${
-                             selectedDetailItem.status === 'Recommended' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                             selectedDetailItem.status === 'Not Recommended' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
-                             selectedDetailItem.status === 'Disabled' ? 'bg-slate-50 text-slate-400 border border-slate-100' :
-                             'bg-amber-50 text-amber-600 border border-amber-100'
-                          }`}>
-                             {getStatusText(selectedDetailItem.status)}
-                          </span>
-                       </button>
-                       
-                       <button
-                          onClick={() => setActiveDetailTab('relations')}
-                          className={`pb-3 px-3 text-xs font-black select-none tracking-tight transition-all border-b-2 -mb-px flex items-center gap-1.5 cursor-pointer ${
-                             activeDetailTab === 'relations'
-                                ? 'border-indigo-650 text-indigo-700'
-                                : 'border-transparent text-slate-400 hover:text-slate-700'
-                          }`}
-                       >
-                          <ClipboardList className="w-4 h-4 text-sky-500 shrink-0" />
-                          <span>关联创意需求</span>
-                          <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
-                             引用 {selectedDetailItem.citationCount}次
-                          </span>
-                       </button>
-                    </div>
-
-                    {/* Tab Panes content */}
-                    {activeDetailTab === 'performance' ? (
-                       <div className="flex-1 flex flex-col gap-6 animate-in fade-in duration-150">
-                          
-                          {/* Channel deliveries in one big flat horizontally scrollable container */}
-                          <div className="space-y-2.5 text-left shrink-0">
-                             <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                                   ⚡ 投放状态与多渠道汇总 (Horizontally Pinned Channels)
-                                </span>
-                             </div>
-
-                             <div className="relative group/scroll">
-                                <div className="flex gap-4 overflow-x-auto pb-3 snap-x scroll-smooth no-scrollbar scroll-thin">
-                                   {getEffectivePerformance(selectedDetailItem).map(perf => (
-                                      <div 
-                                         key={perf.channel} 
-                                         className="bg-slate-50 border border-slate-200 rounded-2xl w-[260px] shrink-0 snap-start shadow-sm flex flex-col overflow-hidden hover:border-indigo-300 hover:shadow-md transition-all duration-200"
-                                      >
-                                         <div className="px-4 py-2.5 bg-slate-100/50 border-b border-slate-150 flex items-center justify-between shrink-0 font-sans">
-                                            <span className="text-[11px] font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
-                                               <span className={`w-2 h-2 rounded-full ${
-                                                  perf.channel.toLowerCase() === 'applovin' ? 'bg-blue-600' : 
-                                                  perf.channel.toLowerCase() === 'facebook' ? 'bg-indigo-600' : 'bg-rose-500'
-                                               }`}></span>
-                                               {perf.channel}
-                                            </span>
-                                            <span className="text-[9px] font-bold text-slate-400">实时投放中</span>
-                                         </div>
-
-                                         <div className="p-4 grid grid-cols-2 gap-3 flex-1 font-sans">
-                                            <div className="space-y-0.5">
-                                               <span className="text-[9px] text-slate-400 font-bold tracking-tight">花费总额 (Spent)</span>
-                                               <p className="text-sm font-black text-slate-900">${perf.spent?.toLocaleString()}</p>
-                                            </div>
-                                            <div className="space-y-0.5">
-                                               <span className="text-[9px] text-slate-400 font-bold tracking-tight">安装数 (Installs)</span>
-                                               <p className="text-sm font-black text-slate-900">{perf.installs?.toLocaleString()}</p>
-                                            </div>
-                                            <div className="space-y-0.5">
-                                               <span className="text-[9px] text-slate-400 font-bold tracking-tight">创意安装率 (IR)</span>
-                                               <p className="text-sm font-black text-slate-900">{(perf.ir * 100).toFixed(1)}%</p>
-                                            </div>
-                                            <div className="space-y-0.5">
-                                               <span className="text-[9px] text-slate-400 font-bold tracking-tight">CPI 单价</span>
-                                               <p className="text-sm font-black text-indigo-600">${perf.cpi}</p>
-                                            </div>
-                                            
-                                            <div className="space-y-0.5 col-span-2 border-t border-slate-150/60 pt-2 flex items-center justify-between">
-                                               <span className="text-[9px] text-slate-400 font-bold">
-                                                  付费用户: <strong className="text-slate-700">{perf.paidUsers}人</strong>
-                                               </span>
-                                               <span className="text-[9px] text-slate-400 font-bold">
-                                                  CPA计费: <strong className="text-slate-700">${perf.cpa}</strong>
-                                               </span>
-                                            </div>
-                                         </div>
-                                      </div>
-                                   ))}
-                                </div>
-                                {/* Pagination scroll hint element */}
-                                <div className="absolute right-1 bottom-0 flex items-center gap-1 opacity-0 group-hover/scroll:opacity-100 transition-opacity">
-                                   <span className="text-[9px] text-slate-400 bg-white/90 backdrop-blur-md border border-slate-150 px-2 py-0.5 rounded-md font-bold shadow shadow-slate-100">
-                                      向右侧滑动阅览 ⮕
-                                   </span>
-                                </div>
-                             </div>
-                          </div>
-
-                          {/* Associated creatives listed sorted by budget spent in descending order */}
-                          <div className="flex-1 flex flex-col min-h-[180px] text-left">
-                             <div className="flex items-center justify-between mb-2 shrink-0">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold leading-none">
-                                   🔗 关联广告创意 (已自动按消耗金额倒序排列)
-                                </span>
-                             </div>
-
-                             <div className="flex-1 border border-slate-150 rounded-2xl overflow-hidden bg-white shadow-sm flex flex-col">
-                                <div className="overflow-y-auto overflow-x-hidden no-scrollbar divide-y divide-slate-100 flex-1 max-h-[260px]">
-                                   {getMockCreatives(selectedDetailItem).map((cr, idx) => (
-                                      <div key={cr.id} className="flex items-center justify-between p-3.5 hover:bg-slate-50/80 transition-all">
-                                         <div className="flex items-center gap-3">
-                                            <div className="w-6.5 h-6.5 rounded-lg bg-slate-100 text-slate-500 font-mono font-bold flex items-center justify-center text-[10px]">
-                                               {idx + 1}
-                                            </div>
-                                            <div>
-                                               <p className="text-xs font-black text-slate-800 tracking-tight font-mono">{cr.id}</p>
-                                               <div className="flex items-center gap-1.5 text-[9.5px] font-bold text-slate-405 font-sans leading-none mt-1">
-                                                  <span>投放大类:</span>
-                                                  <span className="text-slate-600 font-bold uppercase">{cr.channel}</span>
-                                               </div>
-                                            </div>
-                                         </div>
-                                         
-                                         <div className="text-right">
-                                            <p className="text-xs font-black text-slate-900 font-mono">${cr.spent?.toLocaleString()}</p>
-                                            <p className="text-[8.5px] text-slate-400 font-bold uppercase leading-none mt-1">
-                                               渠道累计消耗
-                                            </p>
-                                         </div>
-                                      </div>
-                                   ))}
-                                   {getMockCreatives(selectedDetailItem).length === 0 && (
-                                      <div className="py-8 text-center text-xs font-bold text-slate-400">
-                                         无关联广告创意
-                                      </div>
-                                   )}
-                                </div>
-                             </div>
-                          </div>
-                       </div>
-                    ) : (
-                       <div className="flex-1 flex flex-col text-left animate-in fade-in duration-150">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 leading-none">
-                             📁 关联创意需求汇总 (The Associated Requirement Tracks)
-                          </span>
-                          
-                          <div className="flex-1 border border-slate-150 rounded-2xl overflow-hidden bg-white shadow-sm flex flex-col max-h-[360px]">
-                             <div className="overflow-y-auto no-scrollbar divide-y divide-slate-100 flex-1">
-                                {(selectedDetailItem.relatedRequirements && selectedDetailItem.relatedRequirements.length > 0
-                                   ? selectedDetailItem.relatedRequirements
-                                   : ['REQ-20260512-01', 'REQ-20260514-05']
-                                ).map((reqId) => {
-                                   let seed = 0;
-                                   for (let i = 0; i < reqId.length; i++) {
-                                      seed += reqId.charCodeAt(i);
-                                   }
-
-                                   const titles = [
-                                      '冰原大陆前贴片A段高频剪尾替换',
-                                      '巨龙满屏冰霜粒子特效与爆率测试',
-                                      '引导仙子手指指示转化测试高分包',
-                                      '3D太空沙高拟真拟声解压视频剪合',
-                                      '真人演绎实测高ROI多场景拼接',
-                                      '爆金币福利高亮放大倍率画面剪辑'
-                                   ];
-
-                                   const owners = ['安妮拉', '吉世勋', '董小颖', '周若彤'];
-                                   const statusOptions = ['Finished', 'In Production', 'Finished', 'Approved'];
-
-                                   const title = titles[seed % titles.length];
-                                   const owner = owners[seed % owners.length];
-                                   const status = statusOptions[seed % statusOptions.length];
-
-                                   return (
-                                      <div key={reqId} className="flex items-center justify-between p-4 hover:bg-slate-50/80 transition-all font-sans">
-                                         <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-650 shrink-0">
-                                               <ClipboardList className="w-4 h-4 text-indigo-505" />
-                                            </div>
-                                            <div>
-                                               <p className="text-xs font-black text-slate-800 tracking-tight font-sans block">{title}</p>
-                                               <div className="flex items-center gap-2 mt-1 text-[9.5px] font-bold text-slate-400">
-                                                  <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-500 font-black">{reqId}</span>
-                                                  <span>•</span>
-                                                  <span>产品负责人: {owner}</span>
-                                               </div>
-                                            </div>
-                                         </div>
-                                         
-                                         <div className="text-right shrink-0 ml-3">
-                                            <span className={`inline-block px-2 py-0.5 rounded text-[8.5px] font-black uppercase border ${
-                                               status === 'Finished' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                               status === 'Approved' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                                               'bg-amber-50 text-amber-600 border-amber-100'
-                                            }`}>
-                                               {status === 'Finished' ? '完成归档' : status === 'Approved' ? '待执行' : '执行中'}
-                                            </span>
-                                            <p className="text-[8.5px] text-slate-400 font-medium leading-none mt-1">2026-05-{10 + (seed % 10)}</p>
-                                         </div>
-                                      </div>
-                                   );
-                                })}
-                             </div>
-                          </div>
-                       </div>
-                    )}
-                 </div>
-              </div>
-           </div>
-        </div>
-     </div>
-  )}
-
+         <DetailModal
+            selectedDetailItem={selectedDetailItem}
+            onClose={() => setSelectedDetailItem(null)}
+            onSave={(updated) => {
+               setLibraryItems(prev => prev.map(item => item.id === selectedDetailItem.id ? updated : item));
+               setSelectedDetailItem(updated);
+            }}
+         />
+      )}
        {/* Create Library Modal */}
       {isLibModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
