@@ -10,6 +10,7 @@ import RequirementCenter from './components/RequirementCenter';
 import IterationRecord from './components/IterationRecord';
 import Benchmark from './components/Benchmark';
 import AssetLibrary from './components/AssetLibrary';
+import { UiSpecificationPage } from './components/UiSpecification';
 import { MainModule, Page } from './types';
 
 const App: React.FC = () => {
@@ -29,7 +30,9 @@ const App: React.FC = () => {
       requirementSubView={requirementSubView}
       onRequirementSubViewChange={setRequirementSubView}
     >
-      {activeModule === MainModule.TAG_MANAGEMENT ? (
+      {activeModule === MainModule.UI_SPECIFICATION ? (
+        <UiSpecificationPage />
+      ) : activeModule === MainModule.TAG_MANAGEMENT ? (
         <TagManagement />
       ) : activeModule === MainModule.REQUIREMENT_CENTER ? (
         <RequirementCenter 

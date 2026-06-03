@@ -4,7 +4,7 @@ import { MainModule, Page } from '../types';
 import { 
   LayoutDashboard, FileVideo, BarChart3, Users, 
   Tags, Database, Settings, LogOut, ChevronRight,
-  ClipboardList, Layers, PieChart, Activity, Calendar, Upload
+  ClipboardList, Layers, PieChart, Activity, Calendar, Upload, Palette
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -87,6 +87,12 @@ const Layout: React.FC<LayoutProps> = ({
               className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${isTagModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <Tags className="w-4 h-4" /> 标签管理
+            </button>
+            <button 
+              onClick={() => onModuleNavigate(MainModule.UI_SPECIFICATION)}
+              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.UI_SPECIFICATION ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+            >
+              <Palette className="w-4 h-4" /> 规范画布
             </button>
           </nav>
         </div>

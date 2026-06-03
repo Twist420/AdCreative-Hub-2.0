@@ -127,56 +127,136 @@ export const DetailModal: React.FC<DetailModalProps> = ({
       <div className="w-full max-w-6xl h-[92vh] max-h-[92vh] bg-white rounded-[2rem] shadow-2xl border border-slate-200 flex flex-col relative animate-in zoom-in-95 duration-200 overflow-hidden font-sans">
         
         {/* ----------------- Modal Header Bar ----------------- */}
-        <div className="h-16 border-b border-slate-100 px-6 flex items-center justify-between shrink-0 select-none bg-white">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-black text-slate-800 flex items-center gap-1.5">
-              <LayoutIcon className="w-4 h-4 text-indigo-600" />
-              {isEditMode ? '资产信息编辑面板' : '资产信息详情卡'}
-            </span>
-            <span className="text-slate-300">|</span>
+        <div className="h-20 border-b border-slate-100 px-6 flex items-center justify-between shrink-0 select-none bg-white">
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col text-left">
+              <span className="text-sm font-black text-slate-800 flex items-center gap-1.5 leading-tight">
+                <LayoutIcon className="w-4 h-4 text-indigo-605" />
+                {isEditMode ? '资产信息编辑' : '资产信息详情'}
+              </span>
+              <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-black text-[10.5px]">
+                  {isEditMode ? (
+                    <span className="flex items-center gap-1">
+                      <select
+                        value={editFormType}
+                        onChange={(e) => setEditFormType(e.target.value as any)}
+                        className="text-[10px] font-bold bg-white text-slate-750 px-1 py-px border border-slate-200 focus:outline-none rounded"
+                      >
+                        <option value="Fragment">片段</option>
+                        <option value="Component">组件</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="子类型"
+                        value={editFormSubType}
+                        onChange={(e) => setEditFormSubType(e.target.value)}
+                        className="w-16 text-[10px] bg-white border border-slate-200 px-1 py-px text-indigo-700 focus:outline-none font-bold rounded"
+                      />
+                    </span>
+                  ) : (
+                    `${editFormType === 'Fragment' ? '片段' : '组件'} • ${editFormSubType || '无'}`
+                  )}
+                </span>
+                <span className="text-slate-355">|</span>
+                <span className="font-mono text-[10.5px] font-bold text-slate-450">
+                  {isEditMode ? (
+                    <span className="flex items-center gap-1">
+                      ID:
+                      <input
+                        type="text"
+                        placeholder="资产ID"
+                        value={editFormId}
+                        onChange={(e) => setEditFormId(e.target.value)}
+                        className="w-28 text-[10px] font-mono bg-white border border-slate-200 px-1 py-px focus:outline-none text-slate-800 rounded"
+                      />
+                    </span>
+                  ) : (
+                    `ID: ${editFormId}`
+                  )}
+                </span>
+              </div>
+            </div>
+            <span className="text-slate-200">|</span>
             <div className="flex bg-slate-105 p-0.5 rounded-lg border border-slate-200/50">
               <button
                 type="button"
                 onClick={() => setIsEditMode(false)}
-                className={`px-3 py-1 rounded-md text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer ${
                   !isEditMode 
                     ? 'bg-white text-slate-900 shadow-sm' 
                     : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
                 <Eye className="w-3.5 h-3.5 text-emerald-500" />
-                阅读模式
+                阅读
               </button>
               <button
                 type="button"
                 onClick={() => setIsEditMode(true)}
-                className={`px-3 py-1 rounded-md text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer ${
                   isEditMode 
                     ? 'bg-white text-indigo-650 shadow-sm' 
                     : 'text-slate-500 hover:text-indigo-650'
                 }`}
               >
                 <Edit3 className="w-3.5 h-3.5 text-indigo-500" />
-                编辑模式
+                编辑
               </button>
             </div>
           </div>
 
           {/* Top Right Action Button Panel */}
           <div className="flex items-center gap-2">
+            
+            {/* 物料状态放在右上角 */}
+            <div className="mr-2">
+              {isEditMode ? (
+                <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 px-1">状态:</span>
+                  <select
+                    value={editFormStatus}
+                    onChange={(e) => setEditFormStatus(e.target.value as any)}
+                    className="text-[10px] font-black px-1.5 py-0.5 bg-white text-slate-705 border border-slate-200 rounded focus:outline-none"
+                  >
+                    <option value="Insufficient Data">数据不足</option>
+                    <option value="Recommended">推荐</option>
+                    <option value="Not Recommended">不推荐</option>
+                    <option value="Disabled">停用</option>
+                  </select>
+                </div>
+              ) : (
+                <span className={`px-2.5 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 border ${
+                  editFormStatus === 'Recommended' ? 'bg-emerald-55/70 border-emerald-250 text-emerald-700' :
+                  editFormStatus === 'Insufficient Data' ? 'bg-slate-50/70 border-slate-200 text-slate-600' :
+                  editFormStatus === 'Not Recommended' ? 'bg-amber-55/70 border-amber-250 text-amber-700' :
+                  'bg-rose-55/70 border-rose-250 text-rose-700'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    editFormStatus === 'Recommended' ? 'bg-emerald-500 animate-pulse' :
+                    editFormStatus === 'Insufficient Data' ? 'bg-slate-400' :
+                    editFormStatus === 'Not Recommended' ? 'bg-amber-500' : 'bg-rose-500'
+                  }`} />
+                  {editFormStatus === 'Recommended' ? '推荐' :
+                   editFormStatus === 'Insufficient Data' ? '数据不足' :
+                   editFormStatus === 'Not Recommended' ? '不推荐' : '已停用'}
+                </span>
+              )}
+            </div>
+
             <button 
               onClick={() => alert("已将此资产加入创意收藏夹")}
-              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-605 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-3xs"
+              className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-605 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-3xs"
             >
               <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>收 藏</span>
+              <span>收藏</span>
             </button>
             <button 
               onClick={() => alert("专属查看及编辑链接复制成功！可以发送到其他工作端直接访问。")}
-              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-605 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-3xs"
+              className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-650 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-3xs"
             >
               <Share2 className="w-3.5 h-3.5 text-slate-500" />
-              <span>分 享</span>
+              <span>分享</span>
             </button>
             
             <span className="w-px h-6 bg-slate-200 mx-1"></span>
@@ -198,34 +278,18 @@ export const DetailModal: React.FC<DetailModalProps> = ({
           {/* ======================================================== */}
           {/* LEFT COLUMN: Fixed attributes & Resource Preview (36%)   */}
           {/* ======================================================== */}
-          <div className="lg:w-[36%] border-r border-slate-150 bg-slate-50/60 flex flex-col overflow-y-auto no-scrollbar p-6 gap-5 shrink-0">
+          <div className="lg:w-[36%] border-r border-slate-150 bg-slate-50/60 flex flex-col overflow-y-auto no-scrollbar p-6 gap-4 shrink-0">
             
-            {/* Stage title */}
-            <div className="flex items-center justify-between shrink-0">
-               <span className="px-3 py-1 bg-white border border-indigo-200 text-indigo-750 text-[10px] font-black rounded-md shadow-3xs flex items-center gap-1">
-                  <PlayCircle className="w-3 h-3 text-indigo-500 animate-pulse" />
-                  资源预览 (Format Context Stage)
-               </span>
-               <span className="text-[10px] text-slate-450 font-mono">
-                  Ratio: {selectedRatio}
-               </span>
-            </div>
-
-            {/* 1. 资源预览 Media Stage */}
-            <div className="bg-slate-950 rounded-2xl border border-slate-850 p-4 flex flex-col items-center justify-center relative overflow-hidden h-[300px] shadow-sm shrink-0">
+            {/* 1. 资源预览 Media Stage forced to 9:16 aspect ratio */}
+            <div className="bg-slate-950 rounded-2xl border border-slate-850 flex flex-col items-center justify-center relative overflow-hidden aspect-[9/16] w-full max-h-[500px] shadow-md shrink-0">
                {/* Blurred Backdrop wrapper */}
-               <div className="absolute inset-0 opacity-10 filter blur-2xl scale-155 pointer-events-none select-none">
+               <div className="absolute inset-0 opacity-15 filter blur-2xl scale-155 pointer-events-none select-none">
                   <img src={selectedDetailItem.previewUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                </div>
 
                {/* Stage viewport */}
                <div className="relative w-full h-full flex items-center justify-center z-10 overflow-hidden">
-                  <div className={`shadow-xl border border-white/10 rounded-xl overflow-hidden bg-black flex items-center justify-center transition-all duration-300 max-h-full max-w-full ${
-                     selectedRatio === '16:9' ? 'aspect-[16/9] w-full' :
-                     selectedRatio === '9:16' ? 'aspect-[9/16] h-full shadow-[0_0_20px_rgba(0,0,0,0.5)]' :
-                     selectedRatio === '1:1' ? 'aspect-square h-[220px]' :
-                     'aspect-[4/5] h-[220px]'
-                  }`}>
+                  <div className="w-full h-full flex items-center justify-center max-h-full max-w-full">
                      {editFormSourceFileUrl?.endsWith('.mp4') || editFormSourceFileUrl?.endsWith('.mov') || editFormDuration ? (
                         <video 
                            src={editFormSourceFileUrl} 
@@ -243,12 +307,27 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                      )}
                   </div>
                </div>
+
+               {/* Bottom-left duration overlay */}
+               <div className="absolute bottom-3 left-3 z-[15] bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg text-[11px] font-mono text-white flex items-center gap-1 border border-white/10 shadow-lg">
+                  <span>⏳</span>
+                  {isEditMode ? (
+                     <input 
+                        type="text" 
+                        placeholder="时长" 
+                        value={editFormDuration}
+                        onChange={(e) => setEditFormDuration(e.target.value)}
+                        className="w-12 bg-transparent text-white text-center border-none text-[11.5px] p-0 focus:outline-none focus:ring-0 font-mono font-black"
+                     />
+                  ) : (
+                     <span className="font-bold">{editFormDuration || '00:05'}</span>
+                  )}
+               </div>
             </div>
 
-            {/* 2. 已有尺寸 (Existing Sizes) */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-2 shrink-0 shadow-3xs text-left">
-               <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider block">📏 已有选择规格尺寸 (Existing Sizes)</span>
-               <div className="grid grid-cols-4 gap-1 bg-slate-105 p-1 rounded-lg">
+            {/* 2. Compact Sizes buttons with no title/description */}
+            <div className="bg-white p-2 rounded-xl border border-slate-200 shrink-0 shadow-3xs">
+               <div className="grid grid-cols-4 gap-1.5 bg-slate-105 p-1 rounded-lg">
                   {(['9:16', '1:1', '16:9', '4:5'] as const).map(ratio => {
                      const isSelected = selectedRatio === ratio;
                      return (
@@ -256,10 +335,10 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                            key={ratio}
                            type="button"
                            onClick={() => setSelectedRatio(ratio)}
-                           className={`py-1 text-[10px] font-black rounded transition-all cursor-pointer ${
+                           className={`py-1.5 text-[10px] font-black rounded transition-all cursor-pointer ${
                               isSelected 
                                  ? 'bg-slate-900 text-white shadow-xs' 
-                                 : 'text-slate-550 hover:text-slate-900'
+                                 : 'text-slate-550 hover:text-slate-900 hover:bg-slate-50'
                            }`}
                         >
                            {ratio}
@@ -267,130 +346,49 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                      );
                   })}
                </div>
-               <p className="text-[9px] text-slate-400 text-center font-medium leading-normal pt-1">提供竖屏9:16、横屏16:9以及比例为4:5, 1:1的无缝画布适配器</p>
             </div>
 
-            {/* 3. 左侧主要固定属性 (Fixed Properties on the left) */}
-            <div className="bg-white p-4.5 rounded-2xl border border-slate-205 space-y-3.5 text-left font-sans shadow-2xs shrink-0">
-               <h3 className="text-[10px] font-black text-indigo-805 uppercase tracking-wider flex items-center gap-1 border-b border-slate-100 pb-2">
-                  <Monitor className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  基础物料固定属性群
-               </h3>
-               
-               <div className="space-y-3">
-                  {/* 时长 */}
-                  <div>
-                     <span className="text-[9px] text-slate-400 font-bold block mb-1">⏳ 时长 (Duration)</span>
-                     {isEditMode ? (
-                        <input 
-                           type="text" 
-                           placeholder="例: 00:05" 
-                           value={editFormDuration}
-                           onChange={(e) => setEditFormDuration(e.target.value)}
-                           className="w-full font-mono text-[11px] font-bold text-indigo-650 bg-indigo-50/40 px-2.5 py-1.5 rounded-lg border border-indigo-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                     ) : (
-                        <p className="font-mono font-bold text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-[11px]">
-                           {editFormDuration || '00:05 秒视频'}
-                        </p>
-                     )}
-                  </div>
+            {/* 3. Ingress time (入库时间) below preview & compact details */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 text-left space-y-3 shadow-3xs shrink-0">
+               <div className="text-[11px] text-slate-505 font-bold flex items-center gap-1.5 bg-slate-50/80 px-2.5 py-1.5 border border-slate-150 rounded-lg">
+                  <span className="font-black text-slate-500">📅 入库时间:</span>
+                  {isEditMode ? (
+                     <input 
+                        type="text" 
+                        value={editCreatedAt}
+                        onChange={(e) => setEditCreatedAt(e.target.value)}
+                        className="flex-1 bg-white border border-slate-250 rounded px-1.5 py-px text-[11px] text-slate-800 font-mono focus:outline-none"
+                     />
+                  ) : (
+                     <span className="text-slate-800 font-mono font-bold">{editCreatedAt}</span>
+                  )}
+               </div>
 
-                  {/* 资产类型 */}
-                  <div>
-                     <span className="text-[9px] text-slate-400 font-bold block mb-1">📁 资产类型 (Category & subType)</span>
-                     {isEditMode ? (
-                        <div className="grid grid-cols-2 gap-1.5">
-                           <select
-                              value={editFormType}
-                              onChange={(e) => setEditFormType(e.target.value as any)}
-                              className="text-[11px] font-bold text-slate-705 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-205 focus:outline-none"
-                           >
-                              <option value="Fragment">片段</option>
-                              <option value="Component">组件</option>
-                           </select>
-                           <input 
-                              type="text" 
-                              placeholder="例: AI前贴" 
-                              value={editFormSubType}
-                              onChange={(e) => setEditFormSubType(e.target.value)}
-                              className="font-bold text-slate-700 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-205 focus:outline-none text-[11px]"
-                           />
-                        </div>
-                     ) : (
-                        <div className="font-sans font-bold text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-[11px]">
-                           {editFormType === 'Fragment' ? '片段 (Fragment)' : '组件 (Component)'} • <span className="text-indigo-650">{editFormSubType || '无'}</span>
-                        </div>
-                     )}
-                  </div>
-
-                  {/* 资产ID */}
-                  <div>
-                     <span className="text-[9.5px] text-slate-400 font-bold block mb-1">🆔 资产 ID 主键 (Code Prefix)</span>
-                     {isEditMode ? (
-                        <div className="space-y-1">
-                           <input 
-                              type="text" 
-                              placeholder="例: hook-ai-01-v1" 
-                              value={editFormId}
-                              onChange={(e) => setEditFormId(e.target.value)}
-                              className="w-full font-mono text-[11px] font-black text-rose-600 bg-white px-2.5 py-1 rounded-lg border border-rose-200 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                           />
-                           <span className="text-[8.5px] text-slate-450 block font-medium leading-none">类型前缀+编号+版本号 (例: hook-ai-01-v1)</span>
-                        </div>
-                     ) : (
-                        <p className="font-mono font-black text-slate-800 bg-slate-100/60 px-2.5 py-1.5 rounded-lg border border-slate-150 text-[11px] select-all">
-                           {editFormId}
-                        </p>
-                     )}
-                  </div>
-
-                  {/* 源文件地址 */}
-                  <div>
-                     <span className="text-[9px] text-slate-400 font-bold block mb-1">🔗 源文件物理地址 (Source Code File URL)</span>
-                     {isEditMode ? (
-                        <input 
-                           type="text" 
-                           placeholder="请输入原始资源 cdn 地址..." 
-                           value={editFormSourceFileUrl}
-                           onChange={(e) => setEditFormSourceFileUrl(e.target.value)}
-                           className="w-full font-mono text-[10px] font-medium text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-205 focus:outline-none focus:ring-1 focus:ring-indigo-550"
-                        />
-                     ) : (
-                        <a 
-                           href={editFormSourceFileUrl || '#'} 
-                           target="_blank" 
-                           rel="noopener noreferrer"
-                           onClick={(e) => { if (!editFormSourceFileUrl) { e.preventDefault(); alert("暂未指定有效源文件物理地址！"); } }}
-                           className="font-mono font-bold text-indigo-600 hover:text-indigo-850 hover:underline bg-slate-50 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-[10px] truncate flex items-center justify-between gap-1"
-                        >
-                           <span className="truncate flex items-center gap-1">
-                              <LinkIcon className="w-3 h-3 text-indigo-400 shrink-0" />
-                              {editFormSourceFileUrl || '未配置物理存储路径(物理隔离)'}
-                           </span>
-                           {editFormSourceFileUrl && <ExternalLink className="w-2.5 h-2.5 shrink-0" />}
-                        </a>
-                     )}
-                  </div>
-
-                  {/* 父组件 */}
-                  <div>
-                     <span className="text-[9px] text-slate-400 font-bold block mb-1">⛓️ 父组件 (Parent Node Block)</span>
-                     {isEditMode ? (
-                        <input 
-                           type="text" 
-                           placeholder="例: 剧情片段-02" 
-                           value={editFormParentComponent}
-                           onChange={(e) => setEditFormParentComponent(e.target.value)}
-                           className="w-full font-bold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-205 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-[11px]"
-                        />
-                     ) : (
-                        <p className="font-sans font-bold text-slate-655 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-105 flex items-center gap-1 text-[11px]">
-                           <Box className="w-3 h-3 text-indigo-400 shrink-0" />
-                           {editFormParentComponent || '暂无挂载父组件'}
-                        </p>
-                     )}
-                  </div>
+               <div>
+                  <span className="text-[9.5px] text-slate-400 font-bold block mb-1">🔗 源文件地址</span>
+                  {isEditMode ? (
+                     <input 
+                        type="text" 
+                        placeholder="请输入 cdn 物理地址 URL..." 
+                        value={editFormSourceFileUrl}
+                        onChange={(e) => setEditFormSourceFileUrl(e.target.value)}
+                        className="w-full font-mono text-[10px] font-medium text-slate-600 bg-white px-2.5 py-1.5 rounded-lg border border-slate-205 focus:outline-none focus:ring-1 focus:ring-indigo-550"
+                     />
+                  ) : (
+                     <a 
+                        href={editFormSourceFileUrl || '#'} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        onClick={(e) => { if (!editFormSourceFileUrl) { e.preventDefault(); alert("暂未配置有效物理存储路径！"); } }}
+                        className="font-mono font-bold text-indigo-605 hover:text-indigo-850 hover:underline bg-slate-50 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-[10.5px] truncate flex items-center justify-between gap-1"
+                     >
+                        <span className="truncate flex items-center gap-1">
+                           <LinkIcon className="w-3 h-3 text-indigo-400 shrink-0" />
+                           {editFormSourceFileUrl || '未配置物理存储路径(物理隔离)'}
+                        </span>
+                        {editFormSourceFileUrl && <ExternalLink className="w-2.5 h-2.5 shrink-0" />}
+                     </a>
+                  )}
                </div>
             </div>
 
@@ -403,17 +401,15 @@ export const DetailModal: React.FC<DetailModalProps> = ({
              
              <div className="space-y-6">
                 
-                {/* A. 名称及主题 (Name and Theme Field group) */}
+                {/* A. 名称及主题 */}
                 <div className="space-y-3 pb-3 border-b border-slate-100">
                    <div className="flex items-start gap-4">
-                      <div className="w-14 h-14 rounded-2xl overflow-hidden border border-slate-150 shadow-sm shrink-0 bg-slate-50">
-                         <img src={selectedDetailItem.previewUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      </div>
+
                       
                       <div className="flex-1 min-w-0">
                          {isEditMode ? (
                             <div className="space-y-1">
-                               <label className="text-[9.5px] font-black text-indigo-650 uppercase tracking-widest block">资产名称 (Asset Display Name)</label>
+                               <label className="text-[9.5px] font-black text-indigo-650 uppercase tracking-widest block">资产名称</label>
                                <input 
                                   type="text" 
                                   placeholder="请输入资产标题..." 
@@ -433,7 +429,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
                          {/* 主题字段主题类 */}
                          <div className="mt-2 text-xs font-semibold text-slate-600 flex items-center gap-1.5 select-text">
-                            <span className="text-indigo-650 font-bold">主题 / Theme Category:</span>
+                            <span className="text-indigo-650 font-bold">主题:</span>
                             {isEditMode ? (
                                <input 
                                   type="text" 
@@ -456,7 +452,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                 <div className="space-y-3">
                    <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider flex items-center gap-1.5 text-slate-450 border-b border-slate-100 pb-1.5">
                       <Tag className="w-4 h-4 text-emerald-500 shrink-0" />
-                      创意标签分拣面板 (Custom Multi-select Tags)
+                      创意标签分拣面板
                    </h3>
 
                    <div className="flex flex-wrap gap-1.5 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60 text-left">
@@ -539,97 +535,18 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                    )}
                 </div>
 
-                {/* C. 数据类 (Ad metrics / Ad Channel Performance breakdown) */}
+                {/* C. 数据类 */}
                 <div className="space-y-3">
                    <h3 className="text-xs font-black text-slate-850 uppercase tracking-wider flex items-center gap-1.5 text-slate-455 border-b border-slate-100 pb-1.5">
                       <BarChart2 className="w-4 h-4 text-indigo-500 shrink-0" />
-                      核心获客数据统计指标 (Performance Statistics Data)
+                      核心获客数据统计指标
                    </h3>
 
-                   {/* Custom bento matrix blocks */}
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      
-                      {/* Quotation count */}
-                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150 flex flex-col justify-between">
-                         <div>
-                            <span className="text-[10px] text-slate-450 font-bold block uppercase tracking-wider">🔗 被引用次数 (Citation Count)</span>
-                            <div className="mt-1">
-                               {isEditMode ? (
-                                  <input 
-                                     type="number" 
-                                     value={editCitationCount}
-                                     onChange={(e) => setEditCitationCount(parseInt(e.target.value) || 0)}
-                                     className="w-full font-mono text-[11px] font-bold px-2 py-1 bg-white border border-slate-200 rounded"
-                                  />
-                               ) : (
-                                  <span className="text-sm font-black text-slate-805 font-mono">{editCitationCount} 次</span>
-                               )}
-                            </div>
-                         </div>
-                         <span className="text-[9px] text-slate-400 mt-2 block">下游衍生模版已被累计应用引用笔数</span>
-                      </div>
-
-                      {/* Status select map */}
-                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150 flex flex-col justify-between">
-                         <div>
-                            <span className="text-[10px] text-slate-450 font-bold block uppercase tracking-wider">🟢 物料当前状态 (Asset Status)</span>
-                            <div className="mt-1">
-                               {isEditMode ? (
-                                  <select
-                                     value={editFormStatus}
-                                     onChange={(e) => setEditFormStatus(e.target.value as any)}
-                                     className="w-full text-xs font-black px-2 py-1 border border-slate-200 rounded bg-white text-slate-700"
-                                  >
-                                     <option value="Insufficient Data">数据不足</option>
-                                     <option value="Recommended">推荐</option>
-                                     <option value="Not Recommended">不推荐</option>
-                                     <option value="Disabled">停用</option>
-                                  </select>
-                               ) : (
-                                  <div className="flex items-center gap-1.5">
-                                     <span className={`w-2 h-2 rounded-full ${
-                                        editFormStatus === 'Recommended' ? 'bg-emerald-500 animate-pulse' :
-                                        editFormStatus === 'Insufficient Data' ? 'bg-slate-400' :
-                                        editFormStatus === 'Not Recommended' ? 'bg-amber-500' : 'bg-rose-500'
-                                     }`}></span>
-                                     <span className="text-xs font-black text-slate-700">
-                                        {editFormStatus === 'Recommended' ? '推荐 (Highly High ROI)' :
-                                         editFormStatus === 'Insufficient Data' ? '数据不足 (Insufficient)' :
-                                         editFormStatus === 'Not Recommended' ? '不推荐 (Low Performance)' : '已停用'}
-                                     </span>
-                                  </div>
-                               )}
-                            </div>
-                         </div>
-                         <span className="text-[9px] text-slate-400 mt-2 block">系统自动化投放过滤器策略规则状态</span>
-                      </div>
-
-                      {/* Created Time */}
-                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150 flex flex-col justify-between">
-                         <div>
-                            <span className="text-[10px] text-slate-450 font-bold block uppercase tracking-wider">📅 物料入库时间 (Created Date)</span>
-                            <div className="mt-1 select-all font-mono font-bold text-slate-700 text-xs">
-                               {isEditMode ? (
-                                  <input 
-                                     type="text" 
-                                     value={editCreatedAt}
-                                     onChange={(e) => setEditCreatedAt(e.target.value)}
-                                     className="w-full bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 border border-slate-205 rounded font-mono"
-                                  />
-                               ) : (
-                                  <p>{editCreatedAt}</p>
-                               )}
-                            </div>
-                         </div>
-                         <span className="text-[9px] text-slate-400 mt-2 block">最初上传物料至研发管理中心时间戳</span>
-                      </div>
-
-                   </div>
 
                    {/* Custom Channels table performance */}
                    <div className="border border-slate-150 rounded-xl overflow-hidden shadow-3xs mt-2.5">
                       <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between font-bold text-slate-600 text-[10.5px]">
-                         <span>📊 渠道详细核心统计详情表 (Spent, Installs, Paid Users, IR, CPI/CPM, CPA)</span>
+                         <span>📊 渠道详细核心统计详情表</span>
                          <span className="text-[9px] text-slate-400 font-mono font-medium">Standard Ads API</span>
                       </div>
                       
@@ -774,98 +691,134 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                    </div>
                 </div>
 
-                {/* D. 关联类 (关联素材、关联组件、父组件) */}
-                <div className="space-y-4">
-                   <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider flex items-center gap-1.5 text-slate-450 border-b border-slate-100 pb-1.5">
-                      <ClipboardList className="w-4 h-4 text-indigo-505 shrink-0" />
-                      关联素材及其组件树关联映射 (Resource Bindings)
-                   </h3>
+                 {/* D. 关联类 */}
+                 <div className="space-y-4">
+                    <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider flex items-center gap-1.5 text-slate-450 border-b border-slate-100 pb-1.5">
+                       <ClipboardList className="w-4 h-4 text-indigo-550 shrink-0" />
+                       关联素材与组件绑定
+                    </h3>
 
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* 1. 关联素材 */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-2 select-text text-left">
-                         <span className="text-[10px] font-black text-slate-455 uppercase tracking-wide block">💿 关联素材 (Related Materials)</span>
-                         <div className="flex flex-wrap gap-1">
-                            {editFormRelatedAssets.map(asset => (
-                               <span key={asset} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[9.5px] font-mono font-bold text-slate-650 flex items-center gap-1">
-                                  {asset}
-                                  {isEditMode && (
-                                     <button 
-                                        type="button"
-                                        onClick={() => setEditFormRelatedAssets(prev => prev.filter(a => a !== asset))}
-                                        className="text-[9px] hover:text-rose-500 font-bold"
-                                     >
-                                        &times;
-                                     </button>
-                                  )}
-                               </span>
-                            ))}
-                            {editFormRelatedAssets.length === 0 && <span className="text-[10px] text-slate-400">暂无关联素材</span>}
-                         </div>
-                         {isEditMode && (
-                            <div className="flex gap-1.5 mt-2">
-                               <input 
-                                  type="text" 
-                                  placeholder="自定义新关联素材标识 + Enter" 
-                                  value={newAssetInput}
-                                  onChange={(e) => setNewAssetInput(e.target.value)}
-                                  onKeyDown={(e) => {
-                                     if (e.key === 'Enter' && newAssetInput.trim()) {
-                                        e.preventDefault();
-                                        const v = newAssetInput.trim();
-                                        if (!editFormRelatedAssets.includes(v)) setEditFormRelatedAssets(prev => [...prev, v]);
-                                        setNewAssetInput('');
-                                     }
-                                  }}
-                                  className="flex-1 px-2.5 py-1 text-[10px] bg-white border border-slate-205 rounded font-sans"
-                               />
-                            </div>
-                         )}
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       {/* 1. 关联素材 & 被引用次数 */}
+                       <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-3 select-text text-left flex flex-col justify-between">
+                          <div>
+                             <span className="text-[10px] font-black text-slate-455 uppercase tracking-wide block mb-2">💿 关联素材与引用</span>
+                             
+                             {/* 被引用次数 (Citation Count) */}
+                             <div className="flex items-center gap-1.5 border-b border-slate-150/60 pb-2 mb-2 font-sans">
+                                <span className="text-[10.5px] font-black text-slate-500">🔗 被引用次数:</span>
+                                {isEditMode ? (
+                                   <input 
+                                      type="number" 
+                                      value={editCitationCount}
+                                      onChange={(e) => setEditCitationCount(parseInt(e.target.value) || 0)}
+                                      className="px-2 py-0.5 bg-white border border-slate-205 rounded text-[10.5px] font-black text-slate-700 focus:outline-none w-20 font-mono"
+                                   />
+                                ) : (
+                                   <span className="text-xs font-black text-slate-805 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-150/55">{editCitationCount} 次</span>
+                                )}
+                             </div>
 
-                      {/* 2. 关联组件 */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-2 select-text text-left">
-                         <span className="text-[10px] font-black text-slate-455 uppercase tracking-wide block">🧩 关联组件 (Related Components Reference)</span>
-                         <div className="flex flex-wrap gap-1">
-                            {editFormRelatedComponents.map(comp => (
-                               <span key={comp} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[9.5px] font-mono font-bold text-slate-655 flex items-center gap-1">
-                                  {comp}
-                                  {isEditMode && (
-                                     <button 
-                                        type="button"
-                                        onClick={() => setEditFormRelatedComponents(prev => prev.filter(c => c !== comp))}
-                                        className="text-[9px] hover:text-rose-500 font-bold"
-                                     >
-                                        &times;
-                                     </button>
-                                  )}
-                               </span>
-                            ))}
-                            {editFormRelatedComponents.length === 0 && <span className="text-[10px] text-slate-400">暂无关联组件</span>}
-                         </div>
-                         {isEditMode && (
-                            <div className="flex gap-1.5 mt-2">
-                               <input 
-                                  type="text" 
-                                  placeholder="新相关绑定组件 + Enter" 
-                                  value={newCompInput}
-                                  onChange={(e) => setNewCompInput(e.target.value)}
-                                  onKeyDown={(e) => {
-                                     if (e.key === 'Enter' && newCompInput.trim()) {
-                                        e.preventDefault();
-                                        const v = newCompInput.trim();
-                                        if (!editFormRelatedComponents.includes(v)) setEditFormRelatedComponents(prev => [...prev, v]);
-                                        setNewCompInput('');
-                                     }
-                                  }}
-                                  className="flex-1 px-2.5 py-1 text-[10px] bg-white border border-slate-205 rounded font-sans"
-                               />
-                            </div>
-                         )}
-                      </div>
-                   </div>
-                </div>
+                             <div className="flex flex-wrap gap-1 mt-2.5">
+                                {editFormRelatedAssets.map(asset => (
+                                   <span key={asset} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[9.5px] font-mono font-bold text-slate-650 flex items-center gap-1">
+                                      {asset}
+                                      {isEditMode && (
+                                         <button 
+                                            type="button"
+                                            onClick={() => setEditFormRelatedAssets(prev => prev.filter(a => a !== asset))}
+                                            className="text-[9px] hover:text-rose-500 font-bold"
+                                         >
+                                            &times;
+                                         </button>
+                                      )}
+                                   </span>
+                                ))}
+                                {editFormRelatedAssets.length === 0 && <span className="text-[10px] text-slate-400">暂无关联素材</span>}
+                             </div>
+                          </div>
+                          {isEditMode && (
+                             <div className="flex gap-1.5 mt-2">
+                                <input 
+                                   type="text" 
+                                   placeholder="自定义新关联素材标识 + Enter" 
+                                   value={newAssetInput}
+                                   onChange={(e) => setNewAssetInput(e.target.value)}
+                                   onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && newAssetInput.trim()) {
+                                         e.preventDefault();
+                                         const v = newAssetInput.trim();
+                                         if (!editFormRelatedAssets.includes(v)) setEditFormRelatedAssets(prev => [...prev, v]);
+                                         setNewAssetInput('');
+                                      }
+                                   }}
+                                   className="flex-1 px-2.5 py-1 text-[10px] bg-white border border-slate-205 rounded font-sans"
+                                />
+                             </div>
+                          )}
+                       </div>
 
+                       {/* 2. 关联组件 & 父组件 */}
+                       <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-3 select-text text-left flex flex-col justify-between">
+                          <div>
+                             <span className="text-[10px] font-black text-slate-455 uppercase tracking-wide block mb-2">🧩 关联组件与父组件</span>
+                             
+                             {/* 父组件 (Parent Component) */}
+                             <div className="flex items-center gap-1.5 border-b border-slate-150/60 pb-2 mb-2 font-sans">
+                                <span className="text-[10.5px] font-black text-slate-500">🌿 父组件:</span>
+                                {isEditMode ? (
+                                   <input 
+                                      type="text" 
+                                      placeholder="请输入父组件名称..." 
+                                      value={editFormParentComponent}
+                                      onChange={(e) => setEditFormParentComponent(e.target.value)}
+                                      className="px-2 py-0.5 bg-white border border-slate-205 rounded text-[10.5px] font-black text-slate-700 focus:outline-none flex-1 font-sans"
+                                   />
+                                ) : (
+                                   <span className="text-xs font-black text-slate-805 font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">{editFormParentComponent || '暂无父组件'}</span>
+                                )}
+                             </div>
+
+                             <div className="flex flex-wrap gap-1 mt-2.5">
+                                {editFormRelatedComponents.map(comp => (
+                                   <span key={comp} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[9.5px] font-mono font-bold text-slate-655 flex items-center gap-1">
+                                      {comp}
+                                      {isEditMode && (
+                                         <button 
+                                            type="button"
+                                            onClick={() => setEditFormRelatedComponents(prev => prev.filter(c => c !== comp))}
+                                            className="text-[9px] hover:text-rose-500 font-bold"
+                                         >
+                                            &times;
+                                         </button>
+                                      )}
+                                   </span>
+                                ))}
+                                {editFormRelatedComponents.length === 0 && <span className="text-[10px] text-slate-400">暂无关联组件</span>}
+                             </div>
+                          </div>
+                          {isEditMode && (
+                             <div className="flex gap-1.5 mt-2">
+                                <input 
+                                   type="text" 
+                                   placeholder="新相关绑定组件 + Enter" 
+                                   value={newCompInput}
+                                   onChange={(e) => setNewCompInput(e.target.value)}
+                                   onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && newCompInput.trim()) {
+                                         e.preventDefault();
+                                         const v = newCompInput.trim();
+                                         if (!editFormRelatedComponents.includes(v)) setEditFormRelatedComponents(prev => [...prev, v]);
+                                         setNewCompInput('');
+                                      }
+                                   }}
+                                   className="flex-1 px-2.5 py-1 text-[10px] bg-white border border-slate-205 rounded font-sans"
+                                />
+                             </div>
+                          )}
+                       </div>
+                    </div>
+                 </div>
              </div>
 
              {/* Locked dynamic edit toolbar */}

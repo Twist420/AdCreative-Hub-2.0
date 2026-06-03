@@ -5,7 +5,8 @@ export enum MainModule {
   REQUIREMENT_CENTER = 'requirement_center',
   ITERATION_RECORD = 'iteration_record',
   MATERIAL_UPLOAD = 'material_upload',
-  ASSET_LIBRARY = 'asset_library'
+  ASSET_LIBRARY = 'asset_library',
+  UI_SPECIFICATION = 'ui_specification'
 }
 
 export enum Page {
