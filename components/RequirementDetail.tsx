@@ -1,6 +1,5 @@
 
 import React, { useState, useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { 
   X, ChevronDown, Check, Plus, PlusCircle, Layout, 
   Settings, Image as ImageIcon, Video, FileText, User, 
@@ -14,6 +13,7 @@ import {
   Requirement, RequirementReqStatus, ScriptSection, RequirementStageType, 
   ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS 
 } from '../types';
+import RequirementScriptWorkbench from './RequirementScriptWorkbench';
 
 const getInitials = (name: string) => {
   if (!name) return '';
@@ -624,33 +624,12 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: init
                 </section>
               </div>
             ) : (
-              <div className="p-6 space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-emerald-500" />
-                    <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">脚本内容 (SCRIPT)</span>
-                  </div>
-                  <button 
-                    onClick={() => setIsEditingScript(!isEditingScript)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all ${isEditingScript ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}
-                  >
-                    {isEditingScript ? '保存' : '编辑'}
-                  </button>
-                </div>
-                
-                <div className="bg-white rounded-2xl border border-slate-100 p-6 min-h-[400px]">
-                  {isEditingScript ? (
-                    <textarea 
-                      className="w-full h-64 focus:outline-none resize-none text-xs font-bold leading-relaxed"
-                      value={currentReq.script}
-                      onChange={(e) => setCurrentReq({...currentReq, script: e.target.value})}
-                    />
-                  ) : (
-                    <div className="prose prose-slate prose-sm max-w-none font-bold text-slate-600 leading-relaxed">
-                      <ReactMarkdown>{currentReq.script}</ReactMarkdown>
-                    </div>
-                  )}
-                </div>
+              <div className="p-6">
+                <RequirementScriptWorkbench
+                  requirement={currentReq}
+                  onRequirementChange={setCurrentReq}
+                  subVersions={subVersions}
+                />
               </div>
             )}
           </div>
