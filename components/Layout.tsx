@@ -14,8 +14,8 @@ interface LayoutProps {
   onPageNavigate: (page: Page) => void;
   creativeSubTab: 'multi' | 'full' | 'segment_a' | 'segment_b';
   onCreativeSubTabChange: (tab: 'multi' | 'full' | 'segment_a' | 'segment_b') => void;
-  requirementSubView?: 'coordinated' | 'list' | 'schedules' | 'upload';
-  onRequirementSubViewChange?: (view: 'coordinated' | 'list' | 'schedules' | 'upload') => void;
+  requirementSubView?: 'coordinated' | 'list' | 'production' | 'upload';
+  onRequirementSubViewChange?: (view: 'coordinated' | 'list' | 'production' | 'upload') => void;
   children: React.ReactNode;
 }
 
@@ -28,10 +28,11 @@ const Layout: React.FC<LayoutProps> = ({
   
   const analysisNavItems = [
     { id: Page.OVERVIEW, label: '总览看板', icon: LayoutDashboard },
-    { id: Page.DETAILS, label: '素材明细', icon: FileVideo },
+    { id: Page.RECOVERY_DATA, label: '回收数据', icon: Activity },
+    { id: Page.CONSUMPTION_DATA, label: '消耗数据', icon: PieChart },
     { id: Page.CREATIVE_ANALYSIS, label: '维度分析', icon: BarChart3 },
     { id: Page.PERSONNEL, label: '人员效能', icon: Users },
-    { id: Page.BENCHMARK, label: 'Benchmark', icon: Activity },
+    { id: Page.BENCHMARK, label: 'Benchmark', icon: Layers },
   ];
 
   const creativeSubTabs = [
@@ -178,7 +179,7 @@ const Layout: React.FC<LayoutProps> = ({
                    <nav className="space-y-1">
                      {[
                        { id: 'coordinated', label: '协同看板', icon: Layers },
-                       { id: 'schedules', label: '创意排期', icon: Calendar },
+                       { id: 'production', label: '制作排期', icon: Calendar },
                        { id: 'list', label: '需求大表', icon: ClipboardList },
                        { id: 'upload', label: '素材上传', icon: Upload }
                      ].map((item) => {

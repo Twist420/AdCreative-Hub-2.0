@@ -11,7 +11,8 @@ export enum MainModule {
 
 export enum Page {
   OVERVIEW = 'overview',
-  DETAILS = 'details',
+  RECOVERY_DATA = 'recovery_data',
+  CONSUMPTION_DATA = 'consumption_data',
   CREATIVE_ANALYSIS = 'creative_analysis',
   PERSONNEL = 'personnel',
   BENCHMARK = 'benchmark'
@@ -257,6 +258,8 @@ export interface Requirement {
   aTags?: string[];
   bTags?: string[];
   difficulty?: 'S' | 'A' | 'B' | 'C';
+  startDate?: string;
+  endDate?: string;
   tasks?: ProductionTask[];
   testRequirementId?: string;
   parentRequirementId?: string;

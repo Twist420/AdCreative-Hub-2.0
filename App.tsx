@@ -4,7 +4,8 @@ import Layout from './components/Layout';
 import Overview from './components/Overview';
 import CreativeAnalysis from './components/CreativeAnalysis';
 import PersonnelDataPage from './components/PersonnelData';
-import MaterialDetails from './components/MaterialDetails';
+import RecoveryDataPage from './components/RecoveryData';
+import ConsumptionDataPage from './components/ConsumptionData';
 import TagManagement from './components/TagManagement';
 import RequirementCenter from './components/RequirementCenter';
 import IterationRecord from './components/IterationRecord';
@@ -17,7 +18,7 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<MainModule>(MainModule.REQUIREMENT_CENTER);
   const [currentPage, setCurrentPage] = useState<Page>(Page.OVERVIEW);
   const [creativeSubTab, setCreativeSubTab] = useState<'multi' | 'full' | 'segment_a' | 'segment_b'>('full');
-  const [requirementSubView, setRequirementSubView] = useState<'coordinated' | 'list' | 'schedules' | 'upload'>('coordinated');
+  const [requirementSubView, setRequirementSubView] = useState<'coordinated' | 'list' | 'production' | 'upload'>('coordinated');
 
   return (
     <Layout 
@@ -47,7 +48,8 @@ const App: React.FC = () => {
         (() => {
           switch (currentPage) {
             case Page.OVERVIEW: return <Overview />;
-            case Page.DETAILS: return <MaterialDetails />;
+            case Page.RECOVERY_DATA: return <RecoveryDataPage />;
+            case Page.CONSUMPTION_DATA: return <ConsumptionDataPage />;
             case Page.CREATIVE_ANALYSIS: return <CreativeAnalysis activeSubTab={creativeSubTab} />;
             case Page.PERSONNEL: return <PersonnelDataPage />;
             case Page.BENCHMARK: return <Benchmark />;

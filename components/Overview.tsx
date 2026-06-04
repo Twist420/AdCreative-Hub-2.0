@@ -82,6 +82,9 @@ const Overview: React.FC = () => {
   
   const [analysisData, setAnalysisData] = useState<KeywordAnalysisData>(mockKeywordAnalysis);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const [cpa7Min, setCpa7Min] = useState<number>(0);
+  const [cpa7Max, setCpa7Max] = useState<number>(400);
   
   useEffect(() => {
     // Fetch materials (Global context usually implies 'all' for materials list if filter is removed)
@@ -442,6 +445,166 @@ const Overview: React.FC = () => {
                    <Area type="monotone" dataKey="value" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorTrendBlue)" />
                 </AreaChart>
              </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 3 新增折线图：CPA7 趋势分析 */}
+        <div id="cpa7-trends-container" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center">
+                <span className="w-1.5 h-6 bg-indigo-500 rounded-full mr-3 border border-indigo-100"></span>
+                CPA7 每日趋势分析
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                展示各子渠道、系统每日非零 CPA7 的按天正序分析。
+              </p>
+            </div>
+
+            {/* CPA7 范围筛选器 */}
+            <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+              <span className="text-xs font-bold text-slate-600">CPA7 范围筛选:</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={cpa7Min}
+                  onChange={(e) => setCpa7Min(Number(e.target.value))}
+                  placeholder="Min"
+                  className="w-16 h-8 bg-white border border-slate-200 text-xs text-center font-bold text-slate-700 rounded-lg focus:ring-primary focus:border-primary"
+                />
+                <span className="text-slate-400 text-xs">≤</span>
+                <span className="text-xs font-medium text-slate-500">CPA7</span>
+                <span className="text-slate-400 text-xs">≤</span>
+                <input
+                  type="number"
+                  value={cpa7Max}
+                  onChange={(e) => setCpa7Max(Number(e.target.value))}
+                  placeholder="Max"
+                  className="w-20 h-8 bg-white border border-slate-200 text-xs text-center font-bold text-slate-700 rounded-lg focus:ring-primary focus:border-primary"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {[
+              {
+                id: 'al-android',
+                title: 'AL - Android',
+                color: '#6366f1',
+                data: [
+                  { date: '5/20', cpa7: 120 },
+                  { date: '5/21', cpa7: 140 },
+                  { date: '5/22', cpa7: 0 },
+                  { date: '5/23', cpa7: 90 },
+                  { date: '5/24', cpa7: 155 },
+                  { date: '5/25', cpa7: 180 },
+                  { date: '5/26', cpa7: 210 },
+                  { date: '5/27', cpa7: 240 },
+                  { date: '5/28', cpa7: 310 },
+                  { date: '5/29', cpa7: 420 },
+                  { date: '5/30', cpa7: 195 },
+                  { date: '5/31', cpa7: 280 },
+                  { date: '6/01', cpa7: 150 },
+                  { date: '6/02', cpa7: 320 },
+                  { date: '6/03', cpa7: 380 },
+                ]
+              },
+              {
+                id: 'al-ios',
+                title: 'AL - iOS',
+                color: '#ec4899',
+                data: [
+                  { date: '5/20', cpa7: 210 },
+                  { date: '5/21', cpa7: 190 },
+                  { date: '5/22', cpa7: 230 },
+                  { date: '5/23', cpa7: 0 },
+                  { date: '5/24', cpa7: 160 },
+                  { date: '5/25', cpa7: 340 },
+                  { date: '5/26', cpa7: 280 },
+                  { date: '5/27', cpa7: 450 },
+                  { date: '5/28', cpa7: 320 },
+                  { date: '5/29', cpa7: 290 },
+                  { date: '5/30', cpa7: 180 },
+                  { date: '5/31', cpa7: 220 },
+                  { date: '6/01', cpa7: 310 },
+                  { date: '6/02', cpa7: 390 },
+                  { date: '6/03', cpa7: 260 },
+                ]
+              },
+              {
+                id: 'google-android',
+                title: 'Google - Android',
+                color: '#3b82f6',
+                data: [
+                  { date: '5/20', cpa7: 85 },
+                  { date: '5/21', cpa7: 110 },
+                  { date: '5/22', cpa7: 95 },
+                  { date: '5/23', cpa7: 130 },
+                  { date: '5/24', cpa7: 180 },
+                  { date: '5/25', cpa7: 0 },
+                  { date: '5/26', cpa7: 210 },
+                  { date: '5/27', cpa7: 250 },
+                  { date: '5/28', cpa7: 280 },
+                  { date: '5/29', cpa7: 320 },
+                  { date: '5/30', cpa7: 190 },
+                  { date: '5/31', cpa7: 140 },
+                  { date: '6/01', cpa7: 225 },
+                  { date: '6/02', cpa7: 310 },
+                  { date: '6/03', cpa7: 410 },
+                ]
+              }
+            ].map((chart) => {
+              const filteredData = chart.data
+                .filter(item => item.cpa7 > 0 && item.cpa7 >= cpa7Min && item.cpa7 <= cpa7Max);
+
+              return (
+                <div key={chart.id} className="bg-slate-50 border border-slate-150 p-4 rounded-xl flex flex-col h-72">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-xs font-bold text-slate-700">{chart.title}</span>
+                    <span className="text-[10px] font-medium text-slate-400 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                      显示天数: {filteredData.length}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-h-0 w-full">
+                    {filteredData.length === 0 ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                        暂无数据满足筛选区间
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={filteredData} margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis 
+                            dataKey="date" 
+                            tick={{ fontSize: 9, fill: '#64748b' }} 
+                            axisLine={false} 
+                            tickLine={false} 
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 9, fill: '#64748b' }} 
+                            axisLine={false} 
+                            tickLine={false} 
+                          />
+                          <Tooltip 
+                            contentStyle={{ fontSize: '11px', borderRadius: '6px', border: 'none', boxShadow: '0 2px 4px rgba(0,0,0,0.06)' }}
+                            formatter={(value: any) => [`$${value}`, 'CPA7']}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="cpa7" 
+                            stroke={chart.color} 
+                            strokeWidth={2} 
+                            activeDot={{ r: 4 }}
+                            dot={{ r: 2.5, stroke: '#fff', strokeWidth: 1 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
         </>
