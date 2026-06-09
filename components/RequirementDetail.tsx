@@ -1,17 +1,17 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   X, ChevronDown, Check, Plus, PlusCircle, Layout, 
   Settings, Image as ImageIcon, Video, FileText, User, 
   Share2, Save, ArrowLeft, ArrowRight, Layers, Trash2,
   Monitor, Play, Globe, UserCircle2, BarChart3, Clock,
   MoreVertical, Copy, RotateCcw, Lightbulb, Zap, Scissors, RefreshCw, FilePlus,
-  ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, XCircle, Star, Search, Info, Edit2
+  ChevronLeft, ChevronRight, ChevronUp, CheckCircle2, AlertCircle, XCircle, Star, Search, Info, Edit2, CalendarDays
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
-  Requirement, RequirementReqStatus, ScriptSection, RequirementStageType, 
-  ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS 
+  Requirement, RequirementReqStatus, RequirementProdStatus, ScriptSection,
+  RequirementStageType, ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS
 } from '../types';
 import RequirementScriptWorkbench from './RequirementScriptWorkbench';
 
@@ -163,6 +163,157 @@ const BROAD_DIRECTIONS = [
   { id: '3D玩法', name: '3D玩法' }
 ];
 
+const REQUIREMENT_STATUSES = [
+  { id: 'Draft', name: '草稿' },
+  { id: 'Pending', name: '待审核' },
+  { id: 'Approved', name: '审核通过' },
+  { id: 'Modification', name: '需求修改' },
+];
+
+const PRODUCTION_STATUSES = [
+  { id: 'Scheduled', name: '已排期' },
+  { id: 'InProgress', name: '进行中' },
+  { id: 'Completed', name: '已完成' },
+];
+
+const TASK_STATUSES = ['待排期', '已排期', '制作中', '已完成'];
+const PRODUCTION_ROLE_OPTIONS: Array<{
+  role: string;
+  type: ProductionTask['type'];
+}> = [
+  { role: '平面', type: 'Graphic' },
+  { role: '合成', type: 'Composition' },
+  { role: '视频', type: 'Composition' },
+  { role: '程序', type: 'Program' },
+  { role: '模型', type: 'Model3D' },
+  { role: '地编', type: 'Scene3D' },
+  { role: 'AI', type: 'AI' },
+  { role: '其它', type: 'Other' },
+  { role: '其他', type: 'Other' },
+];
+
+const SCHEDULE_ROLE_PRESETS: Array<{
+  role: string;
+  type: ProductionTask['type'];
+  className: string;
+  accentClassName: string;
+}> = [
+  {
+    role: '平面',
+    type: 'Graphic',
+    className: 'bg-emerald-500 text-white',
+    accentClassName: 'text-emerald-600',
+  },
+  {
+    role: '合成',
+    type: 'Composition',
+    className: 'bg-amber-500 text-white',
+    accentClassName: 'text-amber-600',
+  },
+  {
+    role: 'AI',
+    type: 'AI',
+    className: 'bg-rose-500 text-white',
+    accentClassName: 'text-rose-600',
+  },
+  {
+    role: '其它',
+    type: 'Other',
+    className: 'bg-violet-500 text-white',
+    accentClassName: 'text-violet-600',
+  },
+];
+
+const getScheduleRolePreset = (role?: string, type?: ProductionTask['type']) => {
+  if (role === '视频' || type === 'Composition') return SCHEDULE_ROLE_PRESETS[1];
+  if (role === '其他') return SCHEDULE_ROLE_PRESETS[3];
+  return (
+    SCHEDULE_ROLE_PRESETS.find(preset => preset.role === role || preset.type === type) ||
+    SCHEDULE_ROLE_PRESETS[3]
+  );
+};
+const PRODUCER_GROUPS: Record<string, string[]> = {
+  '美宣-平面': ['宋子仪', '吕远林', '王金瑞', '王春华', '李珊姗'],
+  '美宣-AI': ['宋爽'],
+  '美宣-2D': ['曲冬丽', '张欢', '郭峰', '王佳鸿', '吴楠', '周进易', '邓莉', '蒋天宇', '张雨学', '张澳', '朱奇杰'],
+  '美宣-3D': ['刘洋', '孙崇洋', '张永进'],
+  '程序': ['李嘉鑫', '肖环宇'],
+};
+const PRODUCER_GROUP_LABELS: Record<string, string> = {
+  '美宣-平面': '平面',
+  '美宣-AI': 'AI',
+  '美宣-2D': '合成 / 2D',
+  '美宣-3D': '3D',
+  '程序': '程序',
+};
+const INACTIVE_PRODUCERS = new Set(['王春华', '李珊姗', '宋爽', '周进易', '邓莉', '蒋天宇', '张雨学', '张澳', '朱奇杰']);
+const PRODUCTION_PEOPLE = Object.keys(PRODUCER_ALIASES).map(name => {
+  const group = Object.entries(PRODUCER_GROUPS).find(([, members]) => members.includes(name))?.[0] || '其他';
+  return {
+    id: name,
+    name,
+    group,
+    isActive: !INACTIVE_PRODUCERS.has(name),
+  };
+});
+
+const getRecommendedProducerGroups = (task: ProductionTask) => {
+  const role = `${task.role || task.type}`;
+  if (role.includes('程序') || role.includes('Program')) return ['程序'];
+  if (role.includes('模型') || role.includes('地编') || role.includes('3D')) return ['美宣-3D'];
+  if (role.includes('AI')) return ['美宣-AI'];
+  if (role.includes('平面') || role.includes('Graphic')) return ['美宣-平面', '美宣-AI'];
+  return ['美宣-2D'];
+};
+
+const getProducerOptionGroups = (task: ProductionTask) => {
+  const recommendedGroups = new Set(getRecommendedProducerGroups(task));
+  return Object.keys(PRODUCER_GROUPS)
+    .map(group => ({
+      group,
+      label: PRODUCER_GROUP_LABELS[group] || group,
+      isRecommended: recommendedGroups.has(group),
+      people: PRODUCTION_PEOPLE.filter(person => person.isActive && person.group === group),
+    }))
+    .filter(group => group.people.length > 0)
+    .sort((a, b) => Number(b.isRecommended) - Number(a.isRecommended));
+};
+
+const getProductionTypeByRole = (role: string): ProductionTask['type'] => {
+  return PRODUCTION_ROLE_OPTIONS.find(option => option.role === role)?.type || 'Other';
+};
+
+const summarizeProductionStatus = (req: Requirement): RequirementProdStatus => {
+  const tasks = req.tasks || [];
+  if (tasks.length === 0) return req.prodStatus || 'Scheduled';
+  if (tasks.every(task => task.status === '已完成')) return 'Completed';
+  if (tasks.some(task => task.status === '制作中')) return 'InProgress';
+  return 'Scheduled';
+};
+
+const normalizePlannedTaskStatus = (task: ProductionTask): string => {
+  if (task.status === '制作中' || task.status === '已完成') return task.status;
+  if (task.designer && task.startDate && task.endDate) return '已排期';
+  return task.status || '待排期';
+};
+
+const deriveRequirementFromTasks = (req: Requirement, tasks: ProductionTask[]): Requirement => {
+  const assignedPeople = Array.from(new Set(tasks.map(task => task.designer).filter(Boolean)));
+  const startDates = tasks.map(task => task.startDate).filter(Boolean).sort();
+  const endDates = tasks.map(task => task.endDate).filter(Boolean).sort();
+  const nextReq = {
+    ...req,
+    tasks,
+    productionPersonnel: assignedPeople.length > 0 ? assignedPeople : req.productionPersonnel,
+    startDate: startDates[0] || req.startDate,
+    endDate: endDates[endDates.length - 1] || req.endDate,
+  };
+  return {
+    ...nextReq,
+    prodStatus: summarizeProductionStatus(nextReq),
+  };
+};
+
 const LANGUAGES = [
   { id: 'en', name: 'English (en)' },
   { id: 'zh', name: 'Chinese (zh)' },
@@ -175,6 +326,63 @@ const DIMENSIONS_LIST = [
   { id: '11', name: '1:1' },
   { id: '169', name: '16:9' }
 ];
+
+interface ProductionScheduleContextItem {
+  id: string;
+  requirementId: string;
+  requirementName: string;
+  priority?: string;
+  role: string;
+  producer: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+}
+
+const formatDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateValue = (dateStr?: string) => {
+  if (!dateStr) return null;
+  const time = new Date(`${dateStr}T00:00:00`).getTime();
+  return Number.isNaN(time) ? null : time;
+};
+
+const addDaysToDateString = (dateStr: string, days: number) => {
+  const base = new Date(`${dateStr}T00:00:00`);
+  base.setDate(base.getDate() + days);
+  return formatDateInput(base);
+};
+
+const rangesOverlap = (
+  startA?: string,
+  endA?: string,
+  startB?: string,
+  endB?: string,
+) => {
+  const aStart = parseDateValue(startA);
+  const aEnd = parseDateValue(endA) ?? aStart;
+  const bStart = parseDateValue(startB);
+  const bEnd = parseDateValue(endB) ?? bStart;
+  if (aStart === null || aEnd === null || bStart === null || bEnd === null) {
+    return false;
+  }
+  return aStart <= bEnd && aEnd >= bStart;
+};
+
+const formatShortDateRange = (start?: string, end?: string) => {
+  if (!start && !end) return '未定';
+  const format = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const [, month, day] = dateStr.split('-');
+    return `${month}/${day}`;
+  };
+  return start === end ? format(start) : `${format(start)}-${format(end)}`;
+};
 
 const Dropdown = ({ label, value, options, onChange, isMulti = false }: {
   label: string,
@@ -229,9 +437,20 @@ const Dropdown = ({ label, value, options, onChange, isMulti = false }: {
 interface RequirementDetailProps {
   requirement: Requirement;
   onClose: () => void;
+  onChange?: (requirement: Requirement) => void;
+  onDelete?: (requirementId: string) => void;
+  productionScheduleContext?: ProductionScheduleContextItem[];
+  scheduleDeadline?: string;
 }
 
-const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: initialReq, onClose }) => {
+const RequirementDetail: React.FC<RequirementDetailProps> = ({
+  requirement: initialReq,
+  onClose,
+  onChange,
+  onDelete,
+  productionScheduleContext = [],
+  scheduleDeadline = '',
+}) => {
   const [activeTab, setActiveTab] = useState<'script' | 'clip'>('script');
   const [rightTab, setRightTab] = useState<'iteration' | 'schedule'>('schedule');
   const [currentReq, setCurrentReq] = useState<Requirement>(() => {
@@ -279,6 +498,12 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: init
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSubVersionsModal, setShowSubVersionsModal] = useState(false);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
+  const [availabilityView, setAvailabilityView] = useState<'calendar' | 'gantt'>('calendar');
+
+  useEffect(() => {
+    onChange?.(currentReq);
+  }, [currentReq, onChange]);
 
   const handleCopyText = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -320,6 +545,10 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: init
       { version: '05', name: '3687口播大字报换皑皑雪山背景', testDirections: ['中贴'] }
     ];
   }, [currentReq.subVersions]);
+
+  const [scheduleBySubVersion, setScheduleBySubVersion] = useState(() =>
+    Boolean(initialReq.tasks?.some(task => task.version)),
+  );
 
   const [rejectionModal, setRejectionModal] = useState<{
     isOpen: boolean;
@@ -394,11 +623,236 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: init
 
   const confirmDelete = () => {
     setShowDeleteConfirm(false);
+    onDelete?.(currentReq.id);
     setToast({ message: '🗑️ 需求已被成功删除 (Requirement Deleted)!', type: 'deleted' });
     setTimeout(() => {
       onClose();
     }, 1200);
   };
+
+  const updateProductionTask = (
+    taskId: string,
+    updates: Partial<ProductionTask>,
+  ) => {
+    const nextTasks = (currentReq.tasks || []).map(task => {
+      if (task.id !== taskId) return task;
+      const nextTask = {
+        ...task,
+        ...updates,
+      };
+      return {
+        ...nextTask,
+        status: updates.status || normalizePlannedTaskStatus(nextTask),
+      };
+    });
+    setCurrentReq(deriveRequirementFromTasks(currentReq, nextTasks));
+  };
+
+  const addProductionTask = (
+    version?: { version: string; name: string },
+    preset = SCHEDULE_ROLE_PRESETS[3],
+  ) => {
+    const taskIndex = (currentReq.tasks || []).length + 1;
+    const nextTask: ProductionTask = {
+      id: `${currentReq.id}-custom-${Date.now()}${version ? `-${version.version}` : ''}`,
+      type: preset.type,
+      role: preset.role || `补充任务 ${taskIndex}`,
+      status: '待排期',
+      designer: '',
+      startDate: '',
+      endDate: '',
+      duration: '0.1H',
+      estimatedWorkDays: 0.1,
+      dependencyIds: [],
+      version: version?.version,
+      versionName: version?.name,
+    };
+    setCurrentReq(deriveRequirementFromTasks(currentReq, [...(currentReq.tasks || []), nextTask]));
+  };
+
+  const removeProductionTask = (taskId: string) => {
+    const nextTasks = (currentReq.tasks || []).filter(task => task.id !== taskId);
+    setCurrentReq(deriveRequirementFromTasks(currentReq, nextTasks));
+  };
+
+  const moveProductionTask = (taskId: string, direction: -1 | 1) => {
+    setCurrentReq(prev => {
+      const tasks = [...(prev.tasks || [])];
+      const currentIndex = tasks.findIndex(task => task.id === taskId);
+      if (currentIndex < 0) return prev;
+
+      const currentTask = tasks[currentIndex];
+      const currentVersion = currentTask.version || '';
+      const groupIndexes = tasks
+        .map((task, index) => ((task.version || '') === currentVersion ? index : -1))
+        .filter(index => index >= 0);
+      const groupPosition = groupIndexes.indexOf(currentIndex);
+      const targetPosition = groupPosition + direction;
+      if (targetPosition < 0 || targetPosition >= groupIndexes.length) return prev;
+
+      const targetIndex = groupIndexes[targetPosition];
+      [tasks[currentIndex], tasks[targetIndex]] = [tasks[targetIndex], tasks[currentIndex]];
+      return deriveRequirementFromTasks(prev, tasks);
+    });
+  };
+
+  const handleToggleSubVersionSchedule = (enabled: boolean) => {
+    setScheduleBySubVersion(enabled);
+    setCurrentReq(prev => {
+      const tasks = prev.tasks || [];
+      if (enabled) {
+        const baseTasks = tasks.some(task => !task.version)
+          ? tasks.filter(task => !task.version)
+          : tasks.filter(task => task.version === subVersions[0]?.version).map(task => ({
+              ...task,
+              version: undefined,
+              versionName: undefined,
+            }));
+        const sourceTasks = baseTasks.length > 0 ? baseTasks : tasks;
+        const nextTasks = subVersions.flatMap(version =>
+          sourceTasks.map(task => ({
+            ...task,
+            id: `${prev.id}-${version.version}-${task.type}-${task.role || 'task'}`,
+            version: version.version,
+            versionName: version.name,
+          })),
+        );
+        return deriveRequirementFromTasks(prev, nextTasks);
+      }
+
+      const firstVersion = subVersions[0]?.version;
+      const sourceTasks = tasks.filter(task => !task.version || task.version === firstVersion);
+      const nextTasks = sourceTasks.map(task => ({
+        ...task,
+        id: task.id.replace(`-${firstVersion}-`, '-'),
+        version: undefined,
+        versionName: undefined,
+      }));
+      return deriveRequirementFromTasks(prev, nextTasks);
+    });
+  };
+
+  const scheduleTaskGroups = useMemo(() => {
+    const tasks = currentReq.tasks || [];
+    if (!scheduleBySubVersion) {
+      return [{
+        key: 'major',
+        title: '大版本排期',
+        subtitle: '默认对整条需求排期，所有小版本共用这组人员和时间。',
+        tasks: tasks.filter(task => !task.version),
+        version: undefined,
+      }];
+    }
+
+    return subVersions.map(version => ({
+      key: version.version,
+      title: `v${version.version}`,
+      subtitle: version.name,
+      tasks: tasks.filter(task => task.version === version.version),
+      version,
+    }));
+  }, [currentReq.tasks, scheduleBySubVersion, subVersions]);
+
+  const todayDateString = useMemo(() => formatDateInput(new Date()), []);
+  const scheduleHorizonEnd = useMemo(
+    () => addDaysToDateString(todayDateString, 13),
+    [todayDateString],
+  );
+
+  const getTaskScheduleContext = (task: ProductionTask) => {
+    if (!task.designer) {
+      return {
+        visibleTasks: [] as ProductionScheduleContextItem[],
+        conflictingTasks: [] as ProductionScheduleContextItem[],
+      };
+    }
+
+    const currentTaskContextId = `${currentReq.id}:${task.id}`;
+    const visibleTasks = productionScheduleContext
+      .filter((item) => {
+        if (item.id === currentTaskContextId) return false;
+        if (item.producer !== task.designer) return false;
+        return rangesOverlap(
+          item.startDate,
+          item.endDate,
+          todayDateString,
+          scheduleHorizonEnd,
+        );
+      })
+      .sort(
+        (a, b) =>
+          (parseDateValue(a.startDate) || 0) - (parseDateValue(b.startDate) || 0),
+      );
+
+    const conflictingTasks =
+      task.startDate && task.endDate
+        ? visibleTasks.filter((item) =>
+            rangesOverlap(item.startDate, item.endDate, task.startDate, task.endDate),
+          )
+        : [];
+
+    return { visibleTasks, conflictingTasks };
+  };
+
+  const getTaskDateWarnings = (
+    task: ProductionTask,
+    conflictingTasks: ProductionScheduleContextItem[],
+  ) => {
+    const warnings: Array<{ tone: 'danger' | 'warning'; text: string }> = [];
+    const startTime = parseDateValue(task.startDate);
+    const endTime = parseDateValue(task.endDate);
+    const deadlineTime = parseDateValue(scheduleDeadline);
+
+    if (startTime !== null && endTime !== null && startTime > endTime) {
+      warnings.push({ tone: 'danger', text: '开始时间晚于结束时间，请调整日期顺序。' });
+    }
+    if (deadlineTime !== null && endTime !== null && endTime > deadlineTime) {
+      warnings.push({
+        tone: 'danger',
+        text: `结束时间超过方向制作截止 ${formatShortDateRange(scheduleDeadline, scheduleDeadline)}。`,
+      });
+    }
+    if (conflictingTasks.length > 0) {
+      warnings.push({
+        tone: 'warning',
+        text: `与 ${conflictingTasks.length} 个同人任务撞期，建议确认优先级或调整时间。`,
+      });
+    }
+
+    return warnings;
+  };
+
+  const availabilityRows = useMemo(() => {
+    const currentTaskItems: ProductionScheduleContextItem[] = (currentReq.tasks || [])
+      .filter(task => task.designer && task.startDate && task.endDate)
+      .map(task => ({
+        id: `${currentReq.id}:draft:${task.id}`,
+        requirementId: currentReq.id,
+        requirementName: `${currentReq.name}${task.version ? ` / v${task.version}` : ''}`,
+        priority: currentReq.priority,
+        role: getScheduleRolePreset(task.role, task.type).role,
+        producer: task.designer,
+        status: task.status || '待排期',
+        startDate: task.startDate,
+        endDate: task.endDate,
+      }));
+
+    const visibleItems = [...productionScheduleContext, ...currentTaskItems]
+      .filter(item => rangesOverlap(item.startDate, item.endDate, todayDateString, scheduleHorizonEnd))
+      .sort((a, b) => (parseDateValue(a.startDate) || 0) - (parseDateValue(b.startDate) || 0));
+
+    return PRODUCTION_PEOPLE
+      .filter(person => person.isActive)
+      .map(person => ({
+        ...person,
+        tasks: visibleItems.filter(item => item.producer === person.name),
+      }));
+  }, [currentReq, productionScheduleContext, scheduleHorizonEnd, todayDateString]);
+
+  const ganttTotalDays = Math.max(
+    1,
+    ((parseDateValue(scheduleHorizonEnd) || 0) - (parseDateValue(todayDateString) || 0)) / 86400000 + 1,
+  );
 
   const fullName = generateFullName(currentReq);
 
@@ -667,34 +1121,249 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: init
               </div>
             ) : (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">任务难度</span>
-                  <div className="flex gap-1">
+                <section className="rounded-[28px] border border-slate-150 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h4 className="text-[13px] font-black text-slate-800">需求难度</h4>
+                      <p className="mt-1 text-[10px] font-bold text-slate-400">
+                        先确定复杂度，再按岗位拆分制作排期。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAvailabilityModal(true)}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-150 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-600 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+                    >
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      查看人员排期
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-4 gap-2">
                     {['S', 'A', 'B', 'C'].map(d => (
-                      <button 
+                      <button
                         key={d}
-                        onClick={() => setCurrentReq({...currentReq, difficulty: d as any})}
-                        className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${currentReq.difficulty === d ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'}`}
+                        type="button"
+                        onClick={() => setCurrentReq({ ...currentReq, difficulty: d as Requirement['difficulty'] })}
+                        className={`h-12 rounded-2xl text-lg font-black transition-all ${
+                          currentReq.difficulty === d
+                            ? 'bg-primary text-white shadow-lg shadow-indigo-500/20'
+                            : 'bg-slate-100 text-slate-400 hover:bg-slate-150'
+                        }`}
                       >
                         {d}
                       </button>
                     ))}
                   </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">排期列表</h4>
-                  {currentReq.tasks?.map(task => (
-                    <div key={task.id} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-[10px]">
-                      <div className="flex justify-between font-black text-slate-700">
-                        <span>{task.type}</span>
-                        <span>{task.designer}</span>
+                </section>
+
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[13px] font-black text-slate-800">子任务</h4>
+                      <p className="mt-1 text-[10px] font-bold text-slate-400">
+                        点击岗位按钮增加一项排期，再选择状态、负责人、工时和日期。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-pressed={scheduleBySubVersion}
+                      onClick={() => handleToggleSubVersionSchedule(!scheduleBySubVersion)}
+                      className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-[10px] font-black shadow-3xs transition-all focus:outline-none focus:ring-2 focus:ring-indigo-100 ${
+                        scheduleBySubVersion
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-600'
+                          : 'border-slate-150 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <span
+                        className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-all ${
+                          scheduleBySubVersion ? 'bg-primary' : 'bg-slate-200'
+                        }`}
+                      >
+                        <span
+                          className={`h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${
+                            scheduleBySubVersion ? 'translate-x-3' : 'translate-x-0'
+                          }`}
+                        />
+                      </span>
+                      小版本单独排期
+                    </button>
+                  </div>
+
+                  {scheduleTaskGroups.map(group => (
+                    <div
+                      key={group.key}
+                      className={`rounded-[24px] border p-4 shadow-sm ${
+                        scheduleBySubVersion
+                          ? 'border-indigo-100 bg-indigo-50/40 shadow-indigo-100/40'
+                          : 'border-slate-150 bg-white'
+                      }`}
+                    >
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div className={`min-w-0 ${scheduleBySubVersion ? 'border-l-4 border-primary pl-3' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-black text-slate-800">{group.title}</span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-400">
+                              {group.tasks.length} 项
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center justify-end gap-1.5">
+                          {SCHEDULE_ROLE_PRESETS.map(preset => (
+                            <button
+                              key={preset.role}
+                              type="button"
+                              onClick={() => addProductionTask(group.version, preset)}
+                              className="inline-flex h-8 items-center gap-1 whitespace-nowrap rounded-xl border border-slate-150 bg-white px-2.5 text-[10px] font-black text-slate-600 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            >
+                              <Plus className={`h-3 w-3 ${preset.accentClassName}`} />
+                              {preset.role}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="text-slate-400 mt-1">{task.startDate} ~ {task.endDate}</div>
+
+                      <div className="space-y-3">
+                        {group.tasks.map((task, taskIndex) => {
+                          const rolePreset = getScheduleRolePreset(task.role, task.type);
+                          const { conflictingTasks } = getTaskScheduleContext(task);
+                          const dateWarnings = getTaskDateWarnings(task, conflictingTasks);
+                          const producerOptionGroups = getProducerOptionGroups(task);
+
+                          return (
+                            <div key={task.id} className="rounded-2xl border border-slate-150 bg-slate-50/60 p-3">
+                              <div className="grid grid-cols-[88px_minmax(0,1fr)_52px_28px] items-center gap-2">
+                                <span className={`flex h-8 items-center justify-center rounded-lg text-[12px] font-black ${rolePreset.className}`}>
+                                  {rolePreset.role}
+                                </span>
+
+                                <select
+                                  value={task.status || '待排期'}
+                                  onChange={(event) => updateProductionTask(task.id, { status: event.target.value })}
+                                  className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-600 outline-none transition-all hover:border-indigo-200 focus:border-indigo-400"
+                                >
+                                  {TASK_STATUSES.map(status => (
+                                    <option key={status} value={status}>{status}</option>
+                                  ))}
+                                </select>
+
+                                <div className="flex h-8 items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => moveProductionTask(task.id, -1)}
+                                    disabled={taskIndex === 0}
+                                    className="flex h-7 w-6 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-all hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30"
+                                    aria-label="上移排期项"
+                                  >
+                                    <ChevronUp className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => moveProductionTask(task.id, 1)}
+                                    disabled={taskIndex === group.tasks.length - 1}
+                                    className="flex h-7 w-6 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-all hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30"
+                                    aria-label="下移排期项"
+                                  >
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => removeProductionTask(task.id)}
+                                  className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-500 text-white transition-all hover:bg-rose-600"
+                                  aria-label="删除排期项"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="mt-2 grid grid-cols-[minmax(0,1fr)_86px] items-center gap-2">
+                                <select
+                                  value={task.designer || ''}
+                                  onChange={(event) => updateProductionTask(task.id, { designer: event.target.value })}
+                                  className="h-8 min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-600 outline-none transition-all hover:border-indigo-200 focus:border-indigo-400"
+                                >
+                                  <option value="">负责人</option>
+                                  {producerOptionGroups.map(group => (
+                                    <optgroup
+                                      key={group.group}
+                                      label={group.isRecommended ? `${group.label}（推荐）` : group.label}
+                                    >
+                                      {group.people.map(person => (
+                                      <option key={person.id} value={person.id}>
+                                        {person.name}
+                                      </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                </select>
+
+                                <label className="flex h-8 items-center rounded-lg border border-slate-200 bg-white px-2">
+                                  <input
+                                    type="number"
+                                    min="0.1"
+                                    step="0.1"
+                                    value={task.estimatedWorkDays ?? (parseFloat(task.duration) || 0.1)}
+                                    onChange={(event) => {
+                                      const hours = Number(event.target.value) || 0;
+                                      updateProductionTask(task.id, {
+                                        estimatedWorkDays: hours,
+                                        duration: `${hours}H`,
+                                      });
+                                    }}
+                                    className="min-w-0 flex-1 bg-transparent text-right text-[11px] font-bold text-slate-600 outline-none"
+                                  />
+                                  <span className="ml-1 text-[11px] font-black text-slate-500">H</span>
+                                </label>
+                              </div>
+
+                              <div className="mt-2 grid grid-cols-[24px_minmax(0,1fr)_18px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                <CalendarDays className="h-4 w-4 text-slate-350" />
+                                <input
+                                  type="date"
+                                  value={task.startDate || ''}
+                                  onChange={(event) => updateProductionTask(task.id, { startDate: event.target.value })}
+                                  className="h-7 min-w-0 bg-transparent text-center text-[11px] font-bold text-slate-600 outline-none"
+                                />
+                                <span className="text-center text-[12px] font-black text-slate-350">~</span>
+                                <input
+                                  type="date"
+                                  value={task.endDate || ''}
+                                  onChange={(event) => updateProductionTask(task.id, { endDate: event.target.value })}
+                                  className="h-7 min-w-0 bg-transparent text-center text-[11px] font-bold text-slate-600 outline-none"
+                                />
+                              </div>
+
+                              {dateWarnings.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  {dateWarnings.map((warning, index) => (
+                                    <div
+                                      key={`${warning.text}-${index}`}
+                                      className={`rounded-xl border px-3 py-2 text-[9px] font-black ${
+                                        warning.tone === 'danger'
+                                          ? 'border-rose-100 bg-rose-50 text-rose-600'
+                                          : 'border-amber-100 bg-amber-50 text-amber-700'
+                                      }`}
+                                    >
+                                      {warning.text}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {group.tasks.length === 0 && (
+                          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[11px] font-bold text-slate-400">
+                            先点击上方岗位按钮，增加一项制作排期。
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
-                  <button className="w-full py-2 bg-slate-50 border border-dashed border-slate-200 text-slate-400 rounded-xl text-[10px] font-black hover:bg-slate-100 transition-all">+ 新增排期</button>
-                </div>
+                </section>
               </div>
             )}
           </div>
@@ -718,6 +1387,158 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({ requirement: init
       </div>
 
       {/* Rejection Modal would go here */}
+
+      {showAvailabilityModal && (
+        <div className="fixed inset-0 z-[320] flex items-center justify-center bg-slate-950/55 p-6 backdrop-blur-xs">
+          <div className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-6 py-5">
+              <div>
+                <h3 className="text-base font-black text-slate-900">人员排期情况</h3>
+                <p className="mt-1 text-[11px] font-bold text-slate-400">
+                  查看 {todayDateString} 至 {scheduleHorizonEnd} 的人员闲忙，再决定负责人和时间。
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {[
+                  { id: 'calendar', label: '日历图' },
+                  { id: 'gantt', label: '甘特图' },
+                ].map(view => (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => setAvailabilityView(view.id as 'calendar' | 'gantt')}
+                    className={`rounded-2xl px-4 py-2 text-[11px] font-black transition-all ${
+                      availabilityView === view.id
+                        ? 'bg-primary text-white shadow-lg shadow-indigo-500/20'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-150'
+                    }`}
+                  >
+                    {view.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowAvailabilityModal(false)}
+                  className="ml-2 flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 transition-all hover:bg-slate-200 hover:text-slate-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50/70 p-6">
+              {availabilityView === 'calendar' ? (
+                <div className="grid grid-cols-2 gap-4">
+                  {availabilityRows.map(person => (
+                    <div key={person.id} className="rounded-3xl border border-slate-150 bg-white p-4 shadow-3xs">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[12px] font-black text-slate-800">{person.name}</div>
+                          <div className="mt-0.5 text-[9px] font-bold text-slate-400">{person.group}</div>
+                        </div>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[9px] font-black ${
+                            person.tasks.length ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                          }`}
+                        >
+                          {person.tasks.length ? `${person.tasks.length} 个任务` : '空闲'}
+                        </span>
+                      </div>
+
+                      {person.tasks.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-emerald-100 bg-emerald-50 px-4 py-5 text-center text-[10px] font-black text-emerald-600">
+                          未来两周暂无排期
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {person.tasks.map(item => {
+                            const rolePreset = getScheduleRolePreset(item.role);
+                            return (
+                              <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`rounded-lg px-2 py-0.5 text-[8px] font-black ${rolePreset.className}`}>
+                                        {rolePreset.role}
+                                      </span>
+                                      <span className="truncate text-[10px] font-black text-slate-700">
+                                        {item.requirementId}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 truncate text-[9px] font-bold text-slate-400">
+                                      {item.requirementName}
+                                    </p>
+                                  </div>
+                                  <div className="shrink-0 text-right">
+                                    <div className="text-[10px] font-black text-slate-700">
+                                      {formatShortDateRange(item.startDate, item.endDate)}
+                                    </div>
+                                    <div className="mt-0.5 text-[8px] font-bold text-slate-400">{item.status}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-slate-150 bg-white p-4 shadow-3xs">
+                  <div className="mb-4 grid grid-cols-[84px_1fr] gap-3 text-[9px] font-black uppercase tracking-widest text-slate-350">
+                    <span>人员</span>
+                    <div className="grid grid-cols-7 text-center">
+                      {Array.from({ length: 7 }).map((_, index) => (
+                        <span key={index}>{formatShortDateRange(addDaysToDateString(todayDateString, index * 2), addDaysToDateString(todayDateString, index * 2 + 1))}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {availabilityRows.map(person => (
+                      <div key={person.id} className="grid grid-cols-[84px_1fr] items-center gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[11px] font-black text-slate-700">{person.name}</div>
+                          <div className="mt-0.5 truncate text-[8px] font-bold text-slate-350">{person.group}</div>
+                        </div>
+                        <div className="relative h-12 rounded-2xl border border-slate-100 bg-slate-50">
+                          {person.tasks.length === 0 && (
+                            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-emerald-500">
+                              空闲
+                            </div>
+                          )}
+                          {person.tasks.map(item => {
+                            const itemStart = parseDateValue(item.startDate) || parseDateValue(todayDateString) || 0;
+                            const itemEnd = parseDateValue(item.endDate) || itemStart;
+                            const horizonStart = parseDateValue(todayDateString) || itemStart;
+                            const leftDays = Math.max(0, (itemStart - horizonStart) / 86400000);
+                            const widthDays = Math.max(1, (itemEnd - itemStart) / 86400000 + 1);
+                            const left = Math.min(94, (leftDays / ganttTotalDays) * 100);
+                            const width = Math.min(100 - left, (widthDays / ganttTotalDays) * 100);
+                            const rolePreset = getScheduleRolePreset(item.role);
+                            return (
+                              <div
+                                key={item.id}
+                                className={`absolute top-2 h-8 overflow-hidden rounded-xl px-2 py-1 text-[8px] font-black ${rolePreset.className}`}
+                                style={{ left: `${left}%`, width: `${Math.max(8, width)}%` }}
+                                title={`${item.producer} / ${item.role} / ${formatShortDateRange(item.startDate, item.endDate)}`}
+                              >
+                                <div className="truncate">{item.requirementId}</div>
+                                <div className="truncate opacity-80">{formatShortDateRange(item.startDate, item.endDate)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Custom Toast Notification Panel */}
       {toast && (

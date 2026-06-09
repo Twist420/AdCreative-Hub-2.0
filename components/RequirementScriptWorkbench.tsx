@@ -93,13 +93,18 @@ const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string): Ver
 
 const getSelectableOption = (id: string, options: SelectableOption[]) => options.find(option => option.id === id);
 const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
+const createDefaultMatrixColumns = () => ['A段', 'B段'];
+const getNextMatrixColumn = (columns: string[]) => (
+  Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(65 + index)}段`)
+    .find(column => !columns.includes(column)) || `新增段${columns.length + 1}`
+);
 
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500">{children}</label>
 );
 
-const RichTextMock = ({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }) => (
-  <div className="h-full min-h-[178px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+const RichTextMock = ({ placeholder, value, onChange, compact = false }: { placeholder: string; value: string; onChange: (value: string) => void; compact?: boolean }) => (
+  <div className={`h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs ${compact ? 'min-h-[168px]' : 'min-h-[178px]'}`}>
     <div className="flex h-10 items-center gap-5 border-b border-slate-100 bg-slate-50/70 px-6 text-sm font-black text-slate-400">
       <span>B</span>
       <span className="italic">I</span>
@@ -309,12 +314,16 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     description: ''
   });
   const [showLegacyScript, setShowLegacyScript] = useState(false);
-  const [assetPickerTarget, setAssetPickerTarget] = useState<{ mode: 'asset' | 'landing'; type: 'shared' | 'version' | 'matrix'; version?: string; segmentId?: string; field?: 'reference' | 'insert' } | null>(null);
+  const [assetPickerTarget, setAssetPickerTarget] = useState<{ mode: 'asset' | 'landing'; type: 'simple' | 'shared' | 'version' | 'matrix'; version?: string; segmentId?: string; field?: 'reference' | 'insert' } | null>(null);
   const [landingByVersion, setLandingByVersion] = useState<Record<string, string>>(() => (
     Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, '9:16']))
   ));
   const [landingNotesByVersion, setLandingNotesByVersion] = useState<Record<string, string>>({});
-  const [matrixColumns, setMatrixColumns] = useState<string[]>(['A段', 'B段']);
+  const [simpleReferences, setSimpleReferences] = useState<string[]>([]);
+  const [simpleAttachments, setSimpleAttachments] = useState<string[]>([]);
+  const [matrixColumnsByVersion, setMatrixColumnsByVersion] = useState<Record<string, string[]>>(() => (
+    Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, createDefaultMatrixColumns()]))
+  ));
   const [matrixCells, setMatrixCells] = useState<Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }>>({});
 
   const updateVersion = (version: string, patch: Partial<VersionDraft>) => {
@@ -339,6 +348,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
       copywriting: ''
     };
     setVersionDrafts(prev => [...prev, nextVersion]);
+    setMatrixColumnsByVersion(prev => ({ ...prev, [next]: createDefaultMatrixColumns() }));
     onRequirementChange({
       ...requirement,
       subVersions: [...(requirement.subVersions || subVersions), { version: next, name: '', testDirections: requirement.testDirections || [] }]
@@ -354,6 +364,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
       attachments: [...version.attachments]
     };
     setVersionDrafts(prev => [...prev, nextVersion]);
+    setMatrixColumnsByVersion(prev => ({ ...prev, [next]: [...(prev[version.version] || createDefaultMatrixColumns())] }));
     setLandingByVersion(prev => version.version in prev ? { ...prev, [next]: prev[version.version] } : prev);
     setLandingNotesByVersion(prev => version.version in prev ? { ...prev, [next]: prev[version.version] } : prev);
     setMatrixCells(prev => {
@@ -394,6 +405,11 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     setMatrixCells(prev => (
       Object.fromEntries(Object.entries(prev).filter(([key]) => key.split('-')[0] !== version))
     ));
+    setMatrixColumnsByVersion(prev => {
+      const next = { ...prev };
+      delete next[version];
+      return next;
+    });
     onRequirementChange({
       ...requirement,
       subVersions: (requirement.subVersions || subVersions).filter(item => item.version !== version)
@@ -410,21 +426,34 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     setMatrixCells(prev => ({ ...prev, [key]: { ...current, ...patch } }));
   };
 
-  const addMatrixColumn = (afterIndex: number) => {
-    const nextColumn = Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(65 + index)}段`)
-      .find(column => !matrixColumns.includes(column)) || `新增段${matrixColumns.length + 1}`;
-    setMatrixColumns(prev => [
-      ...prev.slice(0, afterIndex + 1),
-      nextColumn,
-      ...prev.slice(afterIndex + 1)
-    ]);
+  const getMatrixColumns = (version: string) => matrixColumnsByVersion[version] || createDefaultMatrixColumns();
+
+  const addMatrixColumn = (version: string, afterIndex: number) => {
+    setMatrixColumnsByVersion(prev => {
+      const current = prev[version] || createDefaultMatrixColumns();
+      const nextColumn = getNextMatrixColumn(current);
+      return {
+        ...prev,
+        [version]: [
+          ...current.slice(0, afterIndex + 1),
+          nextColumn,
+          ...current.slice(afterIndex + 1)
+        ]
+      };
+    });
   };
 
-  const deleteMatrixColumn = (column: string) => {
+  const deleteMatrixColumn = (version: string, column: string) => {
     if (column === 'B段') return;
-    setMatrixColumns(prev => prev.filter(item => item !== column));
+    setMatrixColumnsByVersion(prev => ({
+      ...prev,
+      [version]: (prev[version] || createDefaultMatrixColumns()).filter(item => item !== column)
+    }));
     setMatrixCells(prev => (
-      Object.fromEntries(Object.entries(prev).filter(([key]) => key.split('-').slice(1).join('-') !== column))
+      Object.fromEntries(Object.entries(prev).filter(([key]) => {
+        const [cellVersion, ...columnParts] = key.split('-');
+        return !(cellVersion === version && columnParts.join('-') === column);
+      }))
     ));
   };
 
@@ -439,7 +468,16 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
 
   const handlePickAsset = (assetId: string) => {
     if (!assetPickerTarget) return;
-    if (assetPickerTarget.type === 'shared') {
+    if (assetPickerTarget.type === 'simple') {
+      if (assetPickerTarget.version) {
+        const version = versionDrafts.find(item => item.version === assetPickerTarget.version);
+        updateVersion(assetPickerTarget.version, {
+          references: toggleIds(version?.references || [], assetId)
+        });
+      } else {
+        setSimpleReferences(prev => toggleIds(prev, assetId));
+      }
+    } else if (assetPickerTarget.type === 'shared') {
       setSharedSegment(prev => ({
         ...prev,
         references: toggleIds(prev.references, assetId)
@@ -469,6 +507,12 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
 
   const getPickerSelectedIds = () => {
     if (!assetPickerTarget) return [];
+    if (assetPickerTarget.type === 'simple') {
+      if (assetPickerTarget.version) {
+        return versionDrafts.find(item => item.version === assetPickerTarget.version)?.references || [];
+      }
+      return simpleReferences;
+    }
     if (assetPickerTarget.type === 'shared') return sharedSegment.references;
     if (!assetPickerTarget.version) return [];
     if (assetPickerTarget.type === 'matrix' && assetPickerTarget.segmentId) {
@@ -477,6 +521,81 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     }
     if (assetPickerTarget.mode === 'landing') return landingByVersion[assetPickerTarget.version] ? [landingByVersion[assetPickerTarget.version]] : [];
     return versionDrafts.find(item => item.version === assetPickerTarget.version)?.references || [];
+  };
+
+  const renderSimpleTemplate = () => {
+    const isPlayable = requirement.assetType === 'Playable';
+    const descriptionPlaceholder = isPlayable
+      ? '描述试玩的核心玩法、交互流程、关键反馈、失败/成功状态和制作注意事项...'
+      : '描述图片的画面构图、主体元素、文案重点、风格方向、尺寸适配和制作注意事项...';
+
+    return (
+      <section className="space-y-4">
+        <div className="space-y-3">
+          {versionDrafts.map((version, index) => (
+            <div key={version.version} className="overflow-hidden border-t border-slate-200 bg-white pt-4">
+              <div className="flex flex-wrap items-end gap-3 px-1 pb-4">
+                <span className="shrink-0 rounded-lg bg-indigo-500 px-3 py-1.5 text-[10px] font-black text-white shadow-sm">
+                  v{version.version}
+                </span>
+                <label className="min-w-[240px] flex-1 space-y-1">
+                  <FieldLabel>版本名称</FieldLabel>
+                  <input
+                    value={version.name}
+                    onChange={(event) => updateVersion(version.version, { name: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-150 bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white"
+                    placeholder="填写版本名称"
+                  />
+                </label>
+                <label className="min-w-[240px] flex-1 space-y-1">
+                  <FieldLabel>验证目标</FieldLabel>
+                  <input
+                    value={version.goal}
+                    onChange={(event) => updateVersion(version.version, { goal: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-150 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-600 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white"
+                    placeholder="填写这一版要验证的卖点、画面或交互目标"
+                  />
+                </label>
+                <button type="button" onClick={() => duplicateVersion(version)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-400 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600" title="复制版本">
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+                {index > 0 && (
+                  <button type="button" onClick={() => deleteVersion(version.version)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-300 hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500" title="删除版本">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 px-1 pb-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(420px,1.1fr)]">
+                <ReferenceResourceBox
+                  assetIds={version.references}
+                  attachments={version.attachments}
+                  compact
+                  onUploadReference={() => updateVersion(version.version, { attachments: appendMockAttachment(version.attachments) })}
+                  onPickAssets={() => setAssetPickerTarget({ mode: 'asset', type: 'simple', version: version.version })}
+                  onRemoveAsset={(id) => updateVersion(version.version, { references: version.references.filter(ref => ref !== id) })}
+                  onToggleAttachment={(item) => updateVersion(version.version, { attachments: version.attachments.filter(value => value !== item) })}
+                />
+                <RichTextMock
+                  value={version.description}
+                  onChange={(value) => updateVersion(version.version, { description: value })}
+                  placeholder={descriptionPlaceholder}
+                  compact
+                />
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addVersion}
+            className="flex min-h-[76px] w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white text-xs font-black text-slate-400 transition-all hover:border-indigo-200 hover:text-indigo-500"
+          >
+            <Plus className="h-4 w-4" />
+            新增版本
+          </button>
+        </div>
+      </section>
+    );
   };
 
   const renderSharedRequirement = (segmentLabel: 'A段' | 'B段') => (
@@ -627,7 +746,15 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
               )}
             </div>
             <div className="flex gap-3 overflow-x-auto px-1 pb-4 no-scrollbar">
-              {matrixColumns.map((column, index) => {
+              <button
+                type="button"
+                onClick={() => addMatrixColumn(version.version, -1)}
+                className="mt-24 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-indigo-200 bg-white text-indigo-500 transition-all hover:border-indigo-300 hover:bg-indigo-50"
+                title="在最前面增加段落"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              {getMatrixColumns(version.version).map((column, index) => {
                 const cell = getMatrixCell(version.version, column);
                 return (
                   <React.Fragment key={`${version.version}-${column}`}>
@@ -635,7 +762,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                       <div className="flex h-6 items-center justify-between">
                         <FieldLabel>{column}</FieldLabel>
                         {column !== 'B段' && (
-                          <button type="button" onClick={() => deleteMatrixColumn(column)} className="rounded-lg p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500" title="删除段落">
+                          <button type="button" onClick={() => deleteMatrixColumn(version.version, column)} className="rounded-lg p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500" title="删除段落">
                             <X className="h-3.5 w-3.5" />
                           </button>
                         )}
@@ -662,10 +789,11 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => addMatrixColumn(index)}
-                      className="mt-6 flex h-[168px] w-10 shrink-0 items-center justify-center rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/40 text-indigo-500 transition-all hover:border-indigo-300 hover:bg-indigo-50"
+                      onClick={() => addMatrixColumn(version.version, index)}
+                      className="mt-24 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-indigo-200 bg-white text-indigo-500 transition-all hover:border-indigo-300 hover:bg-indigo-50"
+                      title="在这里增加段落"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Plus className="h-3.5 w-3.5" />
                     </button>
                   </React.Fragment>
                 );
@@ -704,49 +832,53 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
 
   return (
     <div className="space-y-5">
-      <section className="flex flex-wrap items-center gap-3">
-        <span className="text-xs font-bold text-slate-400">布局模式：</span>
-        <div className="flex flex-wrap gap-2">
-          {TEMPLATE_CONFIGS.map(item => {
-            const active = template === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTemplate(item.id)}
-                className={`rounded-full border px-5 py-2 text-xs font-black transition-all ${
-                  active ? 'border-indigo-500 bg-indigo-500 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {(template === 'same_a' || template === 'same_b') ? renderSameSegmentTemplate() : (
-      <section className="space-y-5">
-            {renderFreeTemplate()}
-            <div className="border-t border-slate-200 pt-4">
-              <button type="button" onClick={() => setShowLegacyScript(!showLegacyScript)} className="flex w-full items-center justify-between text-left">
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 text-slate-400" />
-                  <span className="text-xs font-black text-slate-800">补充说明 / 原脚本文本</span>
-                </div>
-                <ArrowRight className={`h-4 w-4 text-slate-400 transition-transform ${showLegacyScript ? 'rotate-90' : ''}`} />
-              </button>
-              {showLegacyScript && (
-                <textarea
-                  className="mt-4 h-40 w-full resize-none rounded-2xl border border-slate-150 bg-slate-50 px-4 py-3 text-xs font-bold leading-relaxed text-slate-700 outline-none focus:border-indigo-300 focus:bg-white"
-                  value={requirement.script || ''}
-                  onChange={(event) => onRequirementChange({ ...requirement, script: event.target.value })}
-                  placeholder="可在这里保留无法结构化表达的补充脚本说明..."
-                />
-              )}
+      {requirement.assetType === 'Video' ? (
+        <>
+          <section className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-bold text-slate-400">布局模式：</span>
+            <div className="flex flex-wrap gap-2">
+              {TEMPLATE_CONFIGS.map(item => {
+                const active = template === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setTemplate(item.id)}
+                    className={`rounded-full border px-5 py-2 text-xs font-black transition-all ${
+                      active ? 'border-indigo-500 bg-indigo-500 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
-      </section>
-      )}
+          </section>
+
+          {(template === 'same_a' || template === 'same_b') ? renderSameSegmentTemplate() : (
+            <section className="space-y-5">
+              {renderFreeTemplate()}
+              <div className="border-t border-slate-200 pt-4">
+                <button type="button" onClick={() => setShowLegacyScript(!showLegacyScript)} className="flex w-full items-center justify-between text-left">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 text-slate-400" />
+                    <span className="text-xs font-black text-slate-800">补充说明 / 原脚本文本</span>
+                  </div>
+                  <ArrowRight className={`h-4 w-4 text-slate-400 transition-transform ${showLegacyScript ? 'rotate-90' : ''}`} />
+                </button>
+                {showLegacyScript && (
+                  <textarea
+                    className="mt-4 h-40 w-full resize-none rounded-2xl border border-slate-150 bg-slate-50 px-4 py-3 text-xs font-bold leading-relaxed text-slate-700 outline-none focus:border-indigo-300 focus:bg-white"
+                    value={requirement.script || ''}
+                    onChange={(event) => onRequirementChange({ ...requirement, script: event.target.value })}
+                    placeholder="可在这里保留无法结构化表达的补充脚本说明..."
+                  />
+                )}
+              </div>
+            </section>
+          )}
+        </>
+      ) : renderSimpleTemplate()}
       {assetPickerTarget && (
         <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm">
           <div className="flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-150 bg-white shadow-2xl">

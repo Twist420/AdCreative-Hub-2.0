@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   Requirement,
   RequirementReqStatus,
   RequirementProdStatus,
   RequirementDeliveryStatus,
   RequirementPriority,
+  ProductionTask,
   CreativeSchedule,
   CreativeDifficulty,
   CreativeForm,
@@ -24,7 +25,6 @@ import {
   User,
   Filter,
   MoreHorizontal,
-  CheckCircle2,
   AlertCircle,
   XCircle,
   X,
@@ -54,7 +54,6 @@ import {
   Eye,
   Radio,
   Link2,
-  Settings,
 } from "lucide-react";
 import RequirementDetail from "./RequirementDetail";
 import MaterialUpload from "./MaterialUpload";
@@ -143,6 +142,126 @@ function getReqType(req: Requirement): string {
   return "视频";
 }
 
+const createDefaultProductionTasks = (
+  requirementId: string,
+  assetType: CreativeForm,
+  broadDirection: Requirement["broadDirection"],
+): ProductionTask[] => {
+  const createTask = (
+    idSuffix: string,
+    type: ProductionTask["type"],
+    role: string,
+    dependencyIds: string[] = [],
+    estimatedWorkDays = 1,
+  ): ProductionTask => ({
+    id: `${requirementId}-${idSuffix}`,
+    type,
+    role,
+    status: "待排期",
+    designer: "",
+    startDate: "",
+    endDate: "",
+    duration: `${estimatedWorkDays}天`,
+    estimatedWorkDays,
+    dependencyIds,
+  });
+
+  const graphicTask = createTask("graphic", "Graphic", "平面", [], 1);
+  const videoTask = createTask("video", "Composition", "视频", [graphicTask.id], 2);
+
+  if (assetType === "Image") {
+    return [graphicTask];
+  }
+  if (assetType === "Playable") {
+    return [
+      graphicTask,
+      videoTask,
+      createTask("program", "Program", "程序", [graphicTask.id, videoTask.id], 2),
+    ];
+  }
+  if (broadDirection === "3D玩法") {
+    const modelTask = createTask("model3d", "Model3D", "模型", [], 2);
+    const sceneTask = createTask("scene3d", "Scene3D", "地编", [], 2);
+    return [
+      modelTask,
+      sceneTask,
+      createTask("video", "Composition", "视频", [modelTask.id, sceneTask.id], 2),
+    ];
+  }
+  return [graphicTask, videoTask];
+};
+
+const summarizeProductionStatus = (
+  requirement: Requirement,
+): RequirementProdStatus => {
+  const tasks = requirement.tasks || [];
+  if (tasks.length === 0) return requirement.prodStatus || "Scheduled";
+  if (tasks.every((task) => task.status === "已完成")) return "Completed";
+  if (tasks.some((task) => task.status === "制作中")) return "InProgress";
+  return "Scheduled";
+};
+
+interface ScheduledTaskView {
+  id: string;
+  requirement: Requirement;
+  task?: ProductionTask;
+  producer: string;
+  role: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  estimatedWorkDays: number;
+}
+
+const getTaskProductionType = (
+  requirement: Requirement,
+  task?: ProductionTask,
+): string => {
+  if (!task) return getReqType(requirement);
+  if (task.type === "Graphic") return "平面";
+  if (task.type === "Program") return "Playable";
+  if (task.type === "Model3D" || task.type === "Scene3D") return "3D";
+  return getReqType(requirement);
+};
+
+const getScheduledTaskViews = (requirement: Requirement): ScheduledTaskView[] => {
+  const taskViews = (requirement.tasks || [])
+    .filter((task) => task.designer && task.startDate && task.endDate)
+    .map((task): ScheduledTaskView => ({
+      id: `${requirement.id}:${task.id}`,
+      requirement,
+      task,
+      producer: task.designer,
+      role: task.role || task.type,
+      status: task.status || "已排期",
+      startDate: task.startDate,
+      endDate: task.endDate,
+      estimatedWorkDays:
+        task.estimatedWorkDays || Number.parseFloat(task.duration) || 1,
+    }));
+
+  if (taskViews.length > 0) return taskViews;
+  if (!requirement.startDate || !requirement.endDate) return [];
+
+  return (requirement.productionPersonnel || [])
+    .filter(Boolean)
+    .map((producer): ScheduledTaskView => ({
+      id: `${requirement.id}:legacy:${producer}`,
+      requirement,
+      producer,
+      role: getReqType(requirement),
+      status:
+        requirement.prodStatus === "Completed"
+          ? "已完成"
+          : requirement.prodStatus === "InProgress"
+            ? "制作中"
+            : "已排期",
+      startDate: requirement.startDate || "",
+      endDate: requirement.endDate || "",
+      estimatedWorkDays: Number.parseFloat(requirement.duration || "") || 1,
+    }));
+};
+
 interface CalendarDay {
   dayNum: number;
   dateString: string;
@@ -157,6 +276,7 @@ interface CalendarWeek {
 
 function getMonthWeeks(year: number, month: number): CalendarWeek[] {
   const weeks: CalendarWeek[] = [];
+  const todayString = formatCalendarDate(new Date());
   const firstDayOfMonth = new Date(year, month - 1, 1);
   const dayOfWeek = firstDayOfMonth.getDay(); 
   const startOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -172,7 +292,7 @@ function getMonthWeeks(year: number, month: number): CalendarWeek[] {
       const dayVal = currentDate.getDate();
       const formattedDate = `${yearVal}-${String(monthVal).padStart(2, '0')}-${String(dayVal).padStart(2, '0')}`;
       
-      const isToday = yearVal === 2026 && monthVal === 6 && dayVal === 3;
+      const isToday = formattedDate === todayString;
       const dayOfWeekVal = currentDate.getDay();
       const isWeekend = dayOfWeekVal === 0 || dayOfWeekVal === 6;
       const isCurrentMonth = monthVal === month;
@@ -195,6 +315,63 @@ function getMonthWeeks(year: number, month: number): CalendarWeek[] {
   
   return weeks;
 }
+
+const parseDateValue = (dateStr?: string) => {
+  if (!dateStr) return null;
+  const timestamp = new Date(`${dateStr}T00:00:00`).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const parseWeekRangeDates = (weekRange: string) => {
+  const [start, end] = weekRange.split("~").map((part) => part.trim());
+  return {
+    start,
+    end,
+    startTime: parseDateValue(start) ?? 0,
+    endTime: parseDateValue(end) ?? 0,
+  };
+};
+
+const formatCalendarDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const rangesOverlap = (
+  itemStart?: string,
+  itemEnd?: string,
+  filterStart?: string,
+  filterEnd?: string,
+) => {
+  const filterStartTime = parseDateValue(filterStart);
+  const filterEndTime = parseDateValue(filterEnd);
+  if (filterStartTime === null && filterEndTime === null) return true;
+
+  const itemStartTime = parseDateValue(itemStart) ?? parseDateValue(itemEnd);
+  const itemEndTime = parseDateValue(itemEnd) ?? itemStartTime;
+  if (itemStartTime === null || itemEndTime === null) return false;
+
+  return (
+    (filterStartTime === null || itemEndTime >= filterStartTime) &&
+    (filterEndTime === null || itemStartTime <= filterEndTime)
+  );
+};
+
+const getDateRangeDays = (startDate: string, endDate: string) => {
+  const startTime = parseDateValue(startDate);
+  const endTime = parseDateValue(endDate);
+  if (startTime === null || endTime === null) return 0;
+  return Math.max(1, Math.round((endTime - startTime) / 86400000) + 1);
+};
+
+const addDaysToDateString = (dateStr: string, days: number) => {
+  const base = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return dateStr;
+  base.setDate(base.getDate() + days);
+  return formatCalendarDate(base);
+};
 
 interface RequirementCenterProps {
   subView?: "coordinated" | "list" | "production" | "upload";
@@ -243,13 +420,17 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   });
   const [schedules, setSchedules] =
     useState<CreativeSchedule[]>(generateSchedules());
+  const productionTasks = useMemo(
+    () => requirements.flatMap(getScheduledTaskViews),
+    [requirements],
+  );
 
   // States belonging to Production Scheduling Board
   const [selectedProducer, setSelectedProducer] = useState<string>("张欢");
   const [productionView, setProductionView] = useState<"calendar" | "gantt">(
     "calendar",
   );
-  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
+  const [showPersonnelScheduleModal, setShowPersonnelScheduleModal] = useState(false);
 
   // Calendar Year and Month states
   const [calendarYear, setCalendarYear] = useState<number>(2026);
@@ -283,7 +464,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   };
 
   // Work hours for S, A, B, C difficulty level per designer and production type
-  const [difficultyWorkHours, setDifficultyWorkHours] = useState<
+  const [difficultyWorkHours] = useState<
     Record<string, Record<string, Record<string, number>>>
   >(() => {
     const hours: Record<string, Record<string, Record<string, number>>> = {};
@@ -305,50 +486,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     return hours;
   });
 
-  // Priority weights for S, A, B, C difficulty level per designer and production type
-  const [difficultyPriorityWeights, setDifficultyPriorityWeights] = useState<
-    Record<string, Record<string, Record<string, number>>>
-  >(() => {
-    const weights: Record<string, Record<string, Record<string, number>>> = {};
-    const productionTypes = ["视频", "Playable", "3D", "平面"];
-    PRODUCERS.forEach((prod) => {
-      weights[prod.name] = {};
-      productionTypes.forEach((type) => {
-        if (prod.status === "在职") {
-          if (prod.name === "张欢") {
-            weights[prod.name][type] = { S: 9, A: 8, B: 7, C: 6 };
-          } else if (prod.name === "吴楠") {
-            weights[prod.name][type] = { S: 8, A: 7, B: 6, C: 5 };
-          } else {
-            weights[prod.name][type] = { S: 5, A: 4, B: 3, C: 2 };
-          }
-        } else {
-          weights[prod.name][type] = { S: 1, A: 1, B: 1, C: 1 };
-        }
-      });
-    });
-    return weights;
-  });
-
-  const [showResignedProducers, setShowResignedProducers] = useState<boolean>(false);
-  const [configModalTab, setConfigModalTab] = useState<"hours" | "weights">("hours");
-
-  // Assign priority for S, A, B, C difficulty level per designer
-  const [difficultyPriorities, setDifficultyPriorities] = useState<
-    Record<string, string[]>
-  >(() => {
-    const activeNames = PRODUCERS.filter((p) => p.status === "在职").map((p) => p.name);
-    return {
-      S: activeNames,
-      A: activeNames,
-      B: activeNames,
-      C: activeNames,
-    };
-  });
   const [selectedReq, setSelectedReq] = useState<Requirement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showMoreDropdown, setShowMoreDropdown] = useState(false);
   const [showScheduleSelector, setShowScheduleSelector] = useState(false);
+  const [selectedCreateType, setSelectedCreateType] =
+    useState<CreativeForm>("Video");
   const [expandedGanttRelations, setExpandedGanttRelations] = useState<Record<string, boolean>>({});
   const [expandedPostReqs, setExpandedPostReqs] = useState<Record<string, boolean>>({});
   const ganttContainerRef = useRef<HTMLDivElement>(null);
@@ -368,8 +511,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     const ranges = Array.from(
       new Set(schedules.map((s) => s.weekRange)),
     ).filter(Boolean);
-    return ranges.sort();
+    return ranges.sort((a, b) => {
+      const aRange = parseWeekRangeDates(a);
+      const bRange = parseWeekRangeDates(b);
+      return bRange.endTime - aRange.endTime || bRange.startTime - aRange.startTime;
+    });
   }, [schedules]);
+
+  const pinnedWeekRanges = useMemo(() => weekRanges.slice(0, 4), [weekRanges]);
+  const overflowWeekRanges = useMemo(() => weekRanges.slice(4), [weekRanges]);
 
   const weekStatusMap = useMemo(() => {
     const statusMap: Record<string, "completed" | "inprogress"> = {};
@@ -412,7 +562,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   }, [weekRanges, weekStatusMap]);
 
   const [selectedWeekRange, setSelectedWeekRange] = useState<string>("");
-  const [selectedWeekRanges, setSelectedWeekRanges] = useState<string[]>([]);
+  const [dateRangeStart, setDateRangeStart] = useState("");
+  const [dateRangeEnd, setDateRangeEnd] = useState("");
   const [currentSort, setCurrentSort] = useState<
     "priority" | "form" | "progress" | "broadDirection" | "none"
   >("none");
@@ -433,7 +584,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   });
 
   const visibleSchedules = useMemo(() => {
-    let list = schedules.filter((s) => s.weekRange === selectedWeekRange);
+    const hasDateRange = Boolean(dateRangeStart || dateRangeEnd);
+    let list = hasDateRange
+      ? schedules
+      : schedules.filter((s) => s.weekRange === selectedWeekRange);
+    if (dateRangeStart || dateRangeEnd) {
+      list = list.filter((s) =>
+        rangesOverlap(
+          s.requirementStart || parseWeekRangeDates(s.weekRange).start,
+          s.requirementEnd || parseWeekRangeDates(s.weekRange).end,
+          dateRangeStart,
+          dateRangeEnd,
+        ),
+      );
+    }
     if (filters.creativePersonnel !== "全部") {
       list = list.filter((s) => s.owner === filters.creativePersonnel);
     }
@@ -493,6 +657,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   }, [
     schedules,
     selectedWeekRange,
+    dateRangeStart,
+    dateRangeEnd,
     filters,
     currentSort,
     sortOrder,
@@ -505,44 +671,60 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       if (!selectedWeekRange || !weekRanges.includes(selectedWeekRange)) {
         setSelectedWeekRange(weekRanges[0]);
       }
-      if (selectedWeekRanges.length === 0) {
-        setSelectedWeekRanges(weekRanges);
-      }
     }
-  }, [weekRanges, selectedWeekRange, selectedWeekRanges]);
+  }, [weekRanges, selectedWeekRange]);
 
   const toggleDirection = (id: string) => {
     setCollapsedDirections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleAddRequirementForDirection = (scheduleId: string) => {
-    const schedule = schedules.find((s) => s.id === scheduleId);
-    if (!schedule) return;
+  const buildRequirementFromSchedule = (
+    schedule: CreativeSchedule,
+    requirementIndex: number,
+    overrides: Partial<Requirement> = {},
+  ): Requirement => {
+    const assetIndex = 3377 + requirementIndex;
+    const directionType = schedule.directionType || "";
+    const broadDirection =
+      schedule.broadDirection ||
+      (directionType.includes("3D")
+        ? "3D玩法"
+        : schedule.directionName?.includes("大字报")
+          ? "大字报"
+          : "原始玩法");
+    const assetType = (overrides.assetType ||
+      schedule.form ||
+      "Video") as Requirement["assetType"];
+    const idPrefix =
+      assetType === "Video" ? "cp" : assetType === "Image" ? "tp" : "sw";
+    const requirementId = `${idPrefix}${assetIndex}-01`;
+    const defaultTasks = createDefaultProductionTasks(
+      requirementId,
+      assetType,
+      broadDirection,
+    );
 
-    const newReqIdx = requirements.length + 1;
-    const newReq: Requirement = {
-      id: `cp${3377 + newReqIdx}-01`,
+    return {
+      id: requirementId,
       scheduleId: schedule.id,
-      name: `新创意需求 - ${schedule.directionName}`,
-      assetType: schedule.form || "Video",
-      assetIndex: 3377 + newReqIdx,
+      name: `${schedule.directionName} - 需求`,
+      assetType,
+      assetIndex,
       assetVersion: "01",
       projectName: "Panthia",
-      materialStage: "新",
-      broadDirection: schedule.directionType?.includes("3D")
-        ? "3D玩法"
-        : "原始玩法",
+      materialStage: schedule.materialStage || "新",
+      broadDirection,
       creativePersonnel: schedule.owner,
       productionPersonnel: ["张欢"],
       language: "en",
-      channels: ["all"],
+      channels: schedule.channels?.length ? schedule.channels : ["all"],
       testDirections: ["前贴"],
       dimensions: ["9:16"],
-      previews: [`https://picsum.photos/100/100?random=${newReqIdx}`],
+      previews: [`https://picsum.photos/100/100?random=${requirementIndex}`],
       duration: "0:30",
-      goal: "新增具体创意需求描述",
+      goal: schedule.validationGoal || `验证${schedule.directionName}`,
       template: "A+B",
-      has3DPlot: schedule.directionType?.includes("3D") || false,
+      has3DPlot: directionType.includes("3D") || broadDirection === "3D玩法",
       direction: schedule.directionName,
       owner: schedule.owner,
       priority: schedule.priority || "Mid",
@@ -558,8 +740,23 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       aTags: [],
       bTags: [],
       difficulty: "C",
-      tasks: [],
+      tasks: defaultTasks,
+      ...overrides,
     };
+  };
+
+  const handleAddRequirementForDirection = (
+    scheduleId: string,
+    assetTypeOverride?: CreativeForm,
+  ) => {
+    const schedule = schedules.find((s) => s.id === scheduleId);
+    if (!schedule) return;
+
+    const newReqIdx = requirements.length + 1;
+    const newReq = buildRequirementFromSchedule(schedule, newReqIdx, {
+      name: `新创意需求 - ${schedule.directionName}`,
+      assetType: assetTypeOverride || schedule.form || "Video",
+    });
     setRequirements([newReq, ...requirements]);
     setSelectedReq(newReq);
   };
@@ -606,6 +803,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
   const [showAddWeekPopup, setShowAddWeekPopup] = useState(false);
   const [newWeekRange, setNewWeekRange] = useState("");
+  const [newWeekStart, setNewWeekStart] = useState("");
+  const [newWeekEnd, setNewWeekEnd] = useState("");
+  const [newWeekCalendarYear, setNewWeekCalendarYear] = useState(2026);
+  const [newWeekCalendarMonth, setNewWeekCalendarMonth] = useState(6);
   const [viewingSpecificRequirements, setViewingSpecificRequirements] =
     useState<Requirement[] | null>(null);
   const [selectedScheduleForModal, setSelectedScheduleForModal] =
@@ -616,6 +817,53 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
   const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(false);
   const weekFilterRef = useRef<HTMLDivElement>(null);
+  const todayDateString = formatCalendarDate(new Date());
+  const productionInsights = useMemo(() => {
+    const weekStart = todayDateString;
+    const weekEnd = addDaysToDateString(todayDateString, 6);
+    const upcomingTasks = productionTasks.filter((task) =>
+      rangesOverlap(task.startDate, task.endDate, weekStart, weekEnd),
+    );
+    const activeProducerCount = PRODUCERS.filter((producer) => producer.status === "在职").length;
+    const weeklyCapacity = activeProducerCount * 5;
+    const scheduledWorkDays = upcomingTasks.reduce((sum, task) => sum + (task.estimatedWorkDays || 1), 0);
+    const scheduledProducerCount = new Set(upcomingTasks.map((task) => task.producer).filter(Boolean)).size;
+    const highRiskRequirements = requirements
+      .filter((req) => (req.priority === "Highest" || req.priority === "High") && req.prodStatus !== "Completed")
+      .map((req) => {
+        const schedule = schedules.find((item) => item.id === req.scheduleId);
+        const dueDate = schedule?.productionEnd || req.endDate || "";
+        const taskViews = getScheduledTaskViews(req);
+        const hasUpcomingTask = taskViews.some((task) =>
+          rangesOverlap(task.startDate, task.endDate, weekStart, weekEnd),
+        );
+        const hasDeadlineOverflow = !!dueDate && taskViews.some((task) => task.endDate > dueDate);
+        const hasNoPlan = taskViews.length === 0;
+        return {
+          req,
+          dueDate,
+          reason: hasNoPlan
+            ? "未排期"
+            : hasDeadlineOverflow
+              ? "超过方向截止"
+              : !hasUpcomingTask
+                ? "未来7天无任务"
+                : "",
+        };
+      })
+      .filter((item) => item.reason);
+
+    return {
+      weekStart,
+      weekEnd,
+      upcomingTaskCount: upcomingTasks.length,
+      scheduledWorkDays,
+      weeklyCapacity,
+      loadRate: weeklyCapacity > 0 ? Math.round((scheduledWorkDays / weeklyCapacity) * 100) : 0,
+      scheduledProducerCount,
+      highRiskRequirements,
+    };
+  }, [productionTasks, requirements, schedules, todayDateString]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -662,6 +910,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         filters.reqStatus === "全部" || r.reqStatus === filters.reqStatus;
       const matchProdStatus =
         filters.prodStatus === "全部" || r.prodStatus === filters.prodStatus;
+      const matchAssetType =
+        filters.assetType === "全部" || r.assetType === filters.assetType;
 
       return (
         matchSearch &&
@@ -670,7 +920,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         matchCreative &&
         matchPriority &&
         matchReqStatus &&
-        matchProdStatus
+        matchProdStatus &&
+        matchAssetType
       );
     });
 
@@ -687,6 +938,13 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     roots.forEach((r) => flatten(r, 0));
     return result;
   }, [requirements, searchQuery, filters]);
+
+  const hasActiveRequirementQuery = useMemo(
+    () =>
+      Boolean(searchQuery.trim()) ||
+      Object.values(filters).some((value) => value !== "全部"),
+    [filters, searchQuery],
+  );
 
   const handleAddSubRequirement = (
     parent: Requirement,
@@ -740,47 +998,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
 
-    const newReq: Requirement = {
-      id: `cp${3377 + requirements.length}-01`,
-      name: `${schedule.directionName} - 需求`,
-      assetType: schedule.form as any,
-      assetIndex: 3377 + requirements.length,
-      assetVersion: "01",
-      projectName: "Panthia",
-      materialStage: "新",
-      broadDirection: schedule.directionType.includes("3D")
-        ? "3D玩法"
-        : "原始玩法",
-      creativePersonnel: schedule.owner,
-      productionPersonnel: ["张欢"],
-      language: "en",
-      channels: ["all"],
-      testDirections: ["前贴"],
-      dimensions: ["916"],
-
-      duration: "0:30",
-      goal: "根据创意排期新建",
-      template: "A+B",
-      has3DPlot: schedule.directionType.includes("3D"),
-      direction: schedule.directionName,
-      owner: schedule.owner,
-      priority: schedule.priority,
-      reqStatus: "Draft",
-      prodStatus: "Scheduled",
-      deliveryStatus: "Paused",
-      status: "Draft",
-      rating: 0,
-      createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
-      completedAt: "",
-      stageType: "Original Gameplay",
-      script: "",
-      aTags: [],
-      bTags: [],
-      difficulty: "C",
-      tasks: [],
-      scheduleId: schedule.id,
-      previews: [`https://picsum.photos/100/100?random=${requirements.length}`],
-    };
+    const newReq = buildRequirementFromSchedule(
+      schedule,
+      requirements.length + 1,
+      {
+        name: `新创意需求 - ${schedule.directionName}`,
+        assetType: schedule.form || "Video",
+      },
+    );
 
     setRequirements([newReq, ...requirements]);
     setSelectedReq(newReq);
@@ -903,10 +1128,31 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   };
 
   const updateRequirement = (id: string, updates: Partial<Requirement>) => {
+    const mergeRequirement = (req: Requirement) => {
+      const next = { ...req, ...updates };
+      return { ...next, prodStatus: summarizeProductionStatus(next) };
+    };
     setRequirements((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+      prev.map((r) => (r.id === id ? mergeRequirement(r) : r)),
     );
+    setSelectedReq((prev) => (prev?.id === id ? mergeRequirement(prev) : prev));
   };
+
+  const handleRequirementDetailChange = useCallback((updatedReq: Requirement) => {
+    const normalizedReq = {
+      ...updatedReq,
+      prodStatus: summarizeProductionStatus(updatedReq),
+    };
+    setSelectedReq(normalizedReq);
+    setRequirements((prev) =>
+      prev.map((r) => (r.id === normalizedReq.id ? normalizedReq : r)),
+    );
+  }, []);
+
+  const handleRequirementDetailDelete = useCallback((requirementId: string) => {
+    setRequirements((prev) => prev.filter((r) => r.id !== requirementId));
+    setSelectedReq((prev) => (prev?.id === requirementId ? null : prev));
+  }, []);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1000,13 +1246,75 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     setCollapsedWeeks((prev) => ({ ...prev, [week]: !prev[week] }));
   };
 
+  const openAddWeekPopup = () => {
+    const today = new Date();
+    setNewWeekCalendarYear(today.getFullYear());
+    setNewWeekCalendarMonth(today.getMonth() + 1);
+    setNewWeekStart("");
+    setNewWeekEnd("");
+    setNewWeekRange("");
+    setShowAddWeekPopup(true);
+  };
+
+  const jumpNewWeekCalendarToToday = () => {
+    const today = new Date();
+    setNewWeekCalendarYear(today.getFullYear());
+    setNewWeekCalendarMonth(today.getMonth() + 1);
+  };
+
+  const handleSelectNewWeekDay = (dateString: string) => {
+    if (!newWeekStart || (newWeekStart && newWeekEnd)) {
+      setNewWeekStart(dateString);
+      setNewWeekEnd("");
+      setNewWeekRange("");
+      return;
+    }
+
+    const startTime = parseDateValue(newWeekStart) ?? 0;
+    const selectedTime = parseDateValue(dateString) ?? 0;
+    const start = selectedTime < startTime ? dateString : newWeekStart;
+    const end = selectedTime < startTime ? newWeekStart : dateString;
+    setNewWeekStart(start);
+    setNewWeekEnd(end);
+    setNewWeekRange(`${start} ~ ${end}`);
+  };
+
+  const handlePrevNewWeekMonth = () => {
+    if (newWeekCalendarMonth === 1) {
+      setNewWeekCalendarYear((prev) => prev - 1);
+      setNewWeekCalendarMonth(12);
+    } else {
+      setNewWeekCalendarMonth((prev) => prev - 1);
+    }
+  };
+
+  const handleNextNewWeekMonth = () => {
+    if (newWeekCalendarMonth === 12) {
+      setNewWeekCalendarYear((prev) => prev + 1);
+      setNewWeekCalendarMonth(1);
+    } else {
+      setNewWeekCalendarMonth((prev) => prev + 1);
+    }
+  };
+
   const handleAddWeek = () => {
-    if (!newWeekRange) return;
+    if (!newWeekStart || !newWeekEnd) return;
+    const range = `${newWeekStart} ~ ${newWeekEnd}`;
     // Add a dummy schedule for that week to make the row appear
-    addScheduleRow(newWeekRange);
+    addScheduleRow(range);
+    setSelectedWeekRange(range);
+    setDateRangeStart("");
+    setDateRangeEnd("");
     setShowAddWeekPopup(false);
     setNewWeekRange("");
+    setNewWeekStart("");
+    setNewWeekEnd("");
   };
+
+  const newWeekCalendarWeeks = useMemo(
+    () => getMonthWeeks(newWeekCalendarYear, newWeekCalendarMonth),
+    [newWeekCalendarYear, newWeekCalendarMonth],
+  );
 
   const getDifficultyStyle = (difficulty: CreativeDifficulty) => {
     switch (difficulty) {
@@ -1117,20 +1425,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                 {/* 周期切换与全局搜索与过滤 */}
                 <div className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1 no-scrollbar max-w-full sm:max-w-[75%] md:max-w-[80%]">
-                      <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-indigo-505" />{" "}
-                        运行周期 (Period Target):
-                      </span>
-                      {weekRanges.map((w) => {
-                        const isActive = selectedWeekRange === w;
+                    <div className="flex flex-wrap items-center gap-2 pb-1 max-w-full sm:max-w-[75%] md:max-w-[80%] overflow-visible">
+                      {pinnedWeekRanges.map((w) => {
+                        const isActive =
+                          !dateRangeStart &&
+                          !dateRangeEnd &&
+                          selectedWeekRange === w;
                         const status = weekStatusMap[w] || "inprogress";
                         return (
                           <button
                             key={w}
                             onClick={() => {
                               setSelectedWeekRange(w);
-                              setSelectedWeekRanges([w]);
+                              setDateRangeStart("");
+                              setDateRangeEnd("");
                             }}
                             className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all border outline-none shrink-0 flex items-center gap-1.5 ${
                               isActive
@@ -1150,8 +1458,74 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         );
                       })}
 
+                      {overflowWeekRanges.length > 0 && (
+                        <div className="relative shrink-0" ref={weekFilterRef}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowWeekFilterDropdown((prev) => !prev)
+                            }
+                            className={`h-[34px] px-3 rounded-xl text-[11px] font-black transition-all border outline-none flex items-center gap-1.5 ${
+                              overflowWeekRanges.includes(selectedWeekRange) &&
+                              !dateRangeStart &&
+                              !dateRangeEnd
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                            }`}
+                          >
+                            <span>更多周期</span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500">
+                              {overflowWeekRanges.length}
+                            </span>
+                            <ChevronDown
+                              className={`w-3 h-3 transition-transform ${
+                                showWeekFilterDropdown ? "rotate-180" : ""
+                              }`}
+                            />
+                          </button>
+
+                          {showWeekFilterDropdown && (
+                            <div className="absolute left-0 top-full z-[100] mt-2 w-64 rounded-2xl border border-slate-100 bg-white p-1.5 shadow-2xl shadow-slate-900/10">
+                              {overflowWeekRanges.map((w) => {
+                                const isActive =
+                                  !dateRangeStart &&
+                                  !dateRangeEnd &&
+                                  selectedWeekRange === w;
+                                const status = weekStatusMap[w] || "inprogress";
+                                return (
+                                  <button
+                                    key={w}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedWeekRange(w);
+                                      setDateRangeStart("");
+                                      setDateRangeEnd("");
+                                      setShowWeekFilterDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-colors ${
+                                      isActive
+                                        ? "bg-indigo-50 text-indigo-700"
+                                        : "text-slate-600 hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    <span className="font-mono">{w}</span>
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        status === "completed"
+                                          ? "bg-emerald-500"
+                                          : "bg-amber-500"
+                                      }`}
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <button
-                        onClick={() => setShowAddWeekPopup(true)}
+                        onClick={openAddWeekPopup}
                         className="px-2.5 py-1.5 bg-slate-50 border border-dashed border-slate-200 hover:border-slate-400 rounded-xl text-[11px] font-extrabold text-slate-450 hover:text-slate-650 flex items-center gap-1 transition-all shrink-0"
                       >
                         <Plus className="w-3 h-3" /> 新周期
@@ -1248,6 +1622,26 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           </select>
                         </div>
 
+                        {/* 时间范围 */}
+                        <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-150 text-slate-700 font-bold">
+                          <span className="text-slate-400 font-semibold whitespace-nowrap">
+                            时间范围:
+                          </span>
+                          <input
+                            type="date"
+                            value={dateRangeStart}
+                            onChange={(e) => setDateRangeStart(e.target.value)}
+                            className="bg-transparent border-none p-0 focus:ring-0 text-[10px] font-extrabold text-slate-700 outline-none cursor-pointer w-[104px]"
+                          />
+                          <span className="text-slate-300 font-black">~</span>
+                          <input
+                            type="date"
+                            value={dateRangeEnd}
+                            onChange={(e) => setDateRangeEnd(e.target.value)}
+                            className="bg-transparent border-none p-0 focus:ring-0 text-[10px] font-extrabold text-slate-700 outline-none cursor-pointer w-[104px]"
+                          />
+                        </div>
+
                         <button
                           onClick={() => {
                             setFilters({
@@ -1256,6 +1650,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               assetType: "全部",
                               broadDirection: "全部",
                             });
+                            setDateRangeStart("");
+                            setDateRangeEnd("");
                           }}
                           className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors cursor-pointer pl-1.5"
                         >
@@ -1382,7 +1778,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               <div className="flex items-center justify-between gap-1.5 mb-3">
                                 <div
                                   className="flex flex-wrap gap-1.5"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={
+                                    isEditing
+                                      ? (e: React.MouseEvent) =>
+                                          e.stopPropagation()
+                                      : undefined
+                                  }
                                 >
                                   {isEditing ? (
                                     <>
@@ -1541,7 +1942,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                                 <div
                                   className="flex items-center gap-1.5"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={
+                                    isEditing
+                                      ? (e: React.MouseEvent) =>
+                                          e.stopPropagation()
+                                      : undefined
+                                  }
                                 >
                                   {/* Priority tag (Selector or Display dropdown) */}
                                   {isEditing ? (
@@ -1628,7 +2034,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               {/* 方向 & 目标 - 采用精美的高级背景色块作为底色 */}
                               <div
                                 className="mb-3"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={
+                                  isEditing
+                                    ? (e: React.MouseEvent) =>
+                                        e.stopPropagation()
+                                    : undefined
+                                }
                               >
                                 {isEditing ? (
                                   <input
@@ -1666,7 +2077,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                               <div
                                 className="mb-4 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100 flex items-start gap-1"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={
+                                  isEditing
+                                    ? (e: React.MouseEvent) =>
+                                        e.stopPropagation()
+                                    : undefined
+                                }
                               >
                                 <Target className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
                                 {isEditing ? (
@@ -1697,7 +2113,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 {/* 负责人 */}
                                 <div
                                   className="flex items-center gap-1 text-slate-600"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={
+                                    isEditing
+                                      ? (e: React.MouseEvent) =>
+                                          e.stopPropagation()
+                                      : undefined
+                                  }
                                 >
                                   <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <span className="font-semibold text-slate-400 shrink-0">
@@ -1727,7 +2148,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 {/* 场景 */}
                                 <div
                                   className="flex items-center gap-1 text-slate-600"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={
+                                    isEditing
+                                      ? (e: React.MouseEvent) =>
+                                          e.stopPropagation()
+                                      : undefined
+                                  }
                                 >
                                   <Compass className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <span className="font-semibold text-slate-400 shrink-0">
@@ -1769,7 +2195,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 {/* 渠道 */}
                                 <div
                                   className="flex items-center gap-1 text-slate-600 col-span-2"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={
+                                    isEditing
+                                      ? (e: React.MouseEvent) =>
+                                          e.stopPropagation()
+                                      : undefined
+                                  }
                                 >
                                   <Radio className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                   <span className="font-semibold text-slate-400 shrink-0">
@@ -1834,7 +2265,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 {/* 初版验收与截止时间 */}
                                 <div
                                   className="flex items-center gap-x-3 gap-y-1.5 text-slate-600 col-span-2 flex-wrap"
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={
+                                    isEditing
+                                      ? (e: React.MouseEvent) =>
+                                          e.stopPropagation()
+                                      : undefined
+                                  }
                                 >
                                   {/* 初版 Acceptance Date */}
                                   <div className="flex items-center gap-1 flex-1 min-w-[124px]">
@@ -1936,7 +2372,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     <>
                                       <div
                                         className="flex items-center justify-between mb-1 text-[10px]"
-                                        onClick={(e) => e.stopPropagation()}
+                                        onClick={
+                                          isEditing
+                                            ? (e: React.MouseEvent) =>
+                                                e.stopPropagation()
+                                            : undefined
+                                        }
                                       >
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className="font-extrabold text-slate-500 uppercase tracking-tight flex items-center gap-1 shrink-0">
@@ -2169,9 +2610,17 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   )}
                                 </div>
 
-                                <span className="text-[10px] font-extrabold text-indigo-600 ring-1 ring-indigo-100/50 py-1 shadow-3xs px-2 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all duration-200 shrink-0 text-right whitespace-nowrap">
-                                  查看需求详情 📑
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddRequirementForDirection(s.id);
+                                  }}
+                                  className="relative z-20 inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-[11px] font-black shadow-lg shadow-indigo-600/20 ring-1 ring-indigo-500 hover:bg-slate-950 hover:ring-slate-950 hover:-translate-y-0.5 transition-all duration-200 shrink-0 whitespace-nowrap"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  新建需求
+                                </button>
                               </div>
                             </div>
 
@@ -2329,7 +2778,58 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                 {/* 主视图 */}
                 <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
-                  {viewMode === "list" ? (
+                  {!hasActiveRequirementQuery ? (
+                    <div className="h-full min-h-[520px] flex items-center justify-center p-8 bg-gradient-to-b from-white to-slate-50/70">
+                      <div className="w-full max-w-xl text-center flex flex-col items-center">
+                        <div className="w-16 h-16 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shadow-sm mb-5">
+                          <PlusCircle className="w-8 h-8 text-indigo-600" />
+                        </div>
+                        <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                          新建需求
+                        </h2>
+                        <p className="mt-2 text-sm font-semibold text-slate-500 leading-relaxed max-w-md">
+                          先创建新的创意需求；需要查历史需求时，再使用上方搜索或筛选条件展开对应列表。
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCreateType("Video");
+                            setShowScheduleSelector(true);
+                          }}
+                          className="mt-8 inline-flex items-center justify-center gap-3 rounded-3xl bg-indigo-600 px-10 py-5 text-base font-black text-white shadow-xl shadow-indigo-600/20 ring-1 ring-indigo-500 transition-all hover:-translate-y-0.5 hover:bg-slate-950 hover:ring-slate-950 active:translate-y-0"
+                        >
+                          <Plus className="w-5 h-5" />
+                          创建新需求
+                        </button>
+
+                        <div className="mt-8 grid grid-cols-3 gap-3 w-full max-w-lg text-left">
+                          {[
+                            ["Video", "视频", "进入视频需求脚本模板"],
+                            ["Image", "图片", "进入图片需求模板"],
+                            ["Playable", "试玩", "进入试玩需求模板"],
+                          ].map(([type, label, desc]) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCreateType(type as CreativeForm);
+                                setShowScheduleSelector(true);
+                              }}
+                              className="rounded-2xl border border-slate-150 bg-white px-4 py-3 text-left shadow-3xs transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-md"
+                            >
+                              <div className="text-xs font-black text-slate-800">
+                                {label}
+                              </div>
+                              <div className="mt-1 text-[10px] font-semibold text-slate-400">
+                                {desc}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : viewMode === "list" ? (
                     <div className="h-full overflow-auto no-scrollbar">
                       <table className="w-full text-left border-collapse">
                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-100">
@@ -2663,1059 +3163,183 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     </div>
                     <div>
                       <h2 className="text-sm font-black text-slate-800 leading-tight">制作排期</h2>
-                      <p className="text-[10px] text-slate-400 font-bold mt-0.5">用来辅助自动排期与管理制作团队包的排产与工时负荷</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-0.5">用于手动排期时查看人员占用、任务风险和团队工时负荷</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* 视图切换：日历 & 甘特图 */}
-                    <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
-                      <button 
-                        onClick={() => setProductionView('calendar')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${productionView === 'calendar' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        <Calendar className="w-3.5 h-3.5" /> 日历视图
-                      </button>
-                      <button 
-                        onClick={() => setProductionView('gantt')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${productionView === 'gantt' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        <Layers className="w-3.5 h-3.5" /> 甘特图
-                      </button>
-                    </div>
-
-                    {/* 配置与自动排期按钮 */}
                     <button
-                      onClick={() => setShowConfigModal(true)}
-                      className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 hover:border-indigo-300 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-3xs"
+                      type="button"
+                      onClick={() => setShowPersonnelScheduleModal(true)}
+                      className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white shadow-sm transition-all hover:bg-black"
                     >
-                      <Hammer className="w-3.5 h-3.5 text-indigo-605" />
-                      辅助排期配置
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const activeNames = PRODUCERS.filter(p => p.status === '在职').map(p => p.name);
-                        const nextAvailDay: Record<string, number> = {};
-                        activeNames.forEach(name => { nextAvailDay[name] = 1; });
-                        
-                        const prioWeights = { 'Highest': 4, 'High': 3, 'Mid': 2, 'Low': 1, '': 0 };
-                        const sorted = [...requirements].sort((a, b) => {
-                          const wA = prioWeights[a.priority as RequirementPriority] || 0;
-                          const wB = prioWeights[b.priority as RequirementPriority] || 0;
-                          return wB - wA;
-                        });
-
-                        const updated = sorted.map(req => {
-                          const diff = (req.difficulty || 'B') as string;
-                          const reqType = getReqType(req);
-                          
-                          // Sort active designers by Priority weight (descending)
-                          // If weights are equal (or for fallback), sort by their next available day (accomplished load balancing!)
-                          const sortedDesigners = [...activeNames].sort((nameA, nameB) => {
-                            const wA = difficultyPriorityWeights[nameA]?.[reqType]?.[diff] ?? 5;
-                            const wB = difficultyPriorityWeights[nameB]?.[reqType]?.[diff] ?? 5;
-                            
-                            if (wB !== wA) {
-                              return wB - wA; // highest weight first
-                            }
-                            return nextAvailDay[nameA] - nextAvailDay[nameB]; // earliest available first
-                          });
-                          
-                          const bestDesigner = sortedDesigners[0] || activeNames[0];
-                          const start = nextAvailDay[bestDesigner] || 1;
-                          
-                          // Look up dynamic effort based on designer + type + difficulty
-                          const effortVal = difficultyWorkHours[bestDesigner]?.[reqType]?.[diff] || 2;
-                          const end = start + Math.ceil(effortVal) - 1;
-                          const daysInMonth = new Date(calendarYear, calendarMonth, 0).getDate();
-                          const finalEnd = Math.min(daysInMonth, end);
-
-                          nextAvailDay[bestDesigner] = finalEnd + 1;
-
-                          const startStr = `${calendarYear}-${String(calendarMonth).padStart(2, '0')}-${start < 10 ? '0' + start : start}`;
-                          const endStr = `${calendarYear}-${String(calendarMonth).padStart(2, '0')}-${finalEnd < 10 ? '0' + finalEnd : finalEnd}`;
-
-                          return {
-                            ...req,
-                            productionPersonnel: [bestDesigner],
-                            startDate: startStr,
-                            endDate: endStr,
-                            prodStatus: 'InProgress' as RequirementProdStatus
-                          };
-                        });
-
-                        setRequirements(updated);
-                        const summaryText = activeNames.map(des => `- ${des} 排产至: ${calendarMonth}月${nextAvailDay[des] - 1}日`).join('\n');
-                        alert(`🎉 智能算法自动排期成功！已结合 [每个设计制作类型的分级工时工日] 与 [每个人各类型难度的承接优先级权重（${activeNames.length}位可派单人员）] 重新编排 ${updated.length} 项产品材料需求排程：\n\n${summaryText}\n\n排期看板与日历已实时计算构建重塑！`);
-                      }}
-                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/10 hover:-translate-y-0.5"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5 text-indigo-200" />
-                      辅助自动排期
+                      <Calendar className="h-4 w-4" />
+                      查看人员排期情况
                     </button>
                   </div>
                 </div>
 
-                {/* 制作排期核心工作区：顶段是人员横向切换面板，下方是工作区 (日历或甘特图) */}
-                <div className="flex-1 flex flex-col gap-4 overflow-hidden min-h-0">
-                  {/* 顶部人员横向切换面板，只有在日历视图下渲染；且为一体化一排极简横滑布局 */}
-                  {productionView === "calendar" && (
-                    <div className="bg-white p-2.5 px-4 rounded-2xl border border-slate-100 shadow-3xs flex flex-col gap-1.5 shrink-0">
-                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 select-none w-full shrink-0">
-                        {(() => {
-                          const activeProducers = PRODUCERS.filter(p => p.status === '在职');
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              {activeProducers.map(prod => {
-                                const isSelected = selectedProducer === prod.name;
-                                const pendingCount = requirements.filter(r => r.productionPersonnel?.includes(prod.name) && r.prodStatus !== "Completed").length;
-                                
-                                let colorTag = "bg-slate-100 text-slate-700";
-                                if (prod.group === "美宣-平面") colorTag = "bg-purple-50 text-purple-650 border border-purple-100";
-                                else if (prod.group === "美宣-AI") colorTag = "bg-amber-50 text-amber-650 border border-amber-100";
-                                else if (prod.group === "美宣-2D") colorTag = "bg-rose-50 text-rose-650 border border-rose-100";
-                                else if (prod.group === "美宣-3D") colorTag = "bg-blue-50 text-blue-650 border border-blue-105";
-                                else colorTag = "bg-emerald-50 text-emerald-650 border border-emerald-100";
-
-                                return (
-                                  <button
-                                    type="button"
-                                    key={prod.name}
-                                    onClick={() => setSelectedProducer(prod.name)}
-                                    className={`px-3 py-1.5 rounded-xl border flex items-center gap-2.5 text-[11.5px] font-extrabold transition-all relative shrink-0 ${
-                                      isSelected
-                                        ? 'bg-slate-900 border-slate-900 text-white shadow-md'
-                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                                    }`}
-                                  >
-                                    <div className="flex flex-col items-start leading-[1.3]">
-                                      <span className="text-[11.5px] font-black">{prod.name}</span>
-                                      <span className={`text-[7.5px] font-black font-sans px-1 rounded mt-0.5 ${isSelected ? 'bg-white/20 text-white' : colorTag}`}>
-                                        {prod.group.replace("美宣-", "")}
-                                      </span>
-                                    </div>
-                                    <span className={`text-[9.5px] font-black font-mono px-1.5 py-0.5 rounded-lg ${isSelected ? 'bg-white/20 text-indigo-100' : 'bg-slate-100 text-slate-600 border border-slate-150'}`}>
-                                      {pendingCount}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
-
-                        {(() => {
-                          const resignedProducers = PRODUCERS.filter(p => p.status === '离职');
-                          if (resignedProducers.length === 0) return null;
-                          return (
-                            <div className="relative inline-block select-none shrink-0 pl-2 border-l border-slate-150">
-                              <select
-                                onChange={(e) => {
-                                  const name = e.target.value;
-                                  if (name) {
-                                    setSelectedProducer(name);
-                                    e.target.value = "";
-                                  }
-                                }}
-                                className="h-9 pl-2.5 pr-8 py-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-600 cursor-pointer focus:ring-0 focus:outline-none transition-all appearance-none outline-none"
-                                defaultValue=""
-                              >
-                                <option value="" disabled>📁 离职归档 ({resignedProducers.length})</option>
-                                {resignedProducers.map(r => {
-                                  const pendingCount = requirements.filter(eq => eq.productionPersonnel?.includes(r.name) && eq.prodStatus !== "Completed").length;
-                                  return (
-                                    <option key={r.name} value={r.name} className="text-slate-705 bg-white font-bold">
-                                      {r.name} ({r.group.replace("美宣-", "")}) [待完成: {pendingCount}]
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                              <span className="absolute right-2.5 top-2.5 pointer-events-none text-[8px] text-slate-400 font-bold">▼</span>
-                            </div>
-                          );
-                        })()}
-                      </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 shrink-0">
+                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">未来7天任务</div>
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                      <span className="text-2xl font-black text-slate-900">{productionInsights.upcomingTaskCount}</span>
+                      <span className="pb-1 text-[10px] font-bold text-slate-400">
+                        {productionInsights.weekStart} ~ {productionInsights.weekEnd}
+                      </span>
                     </div>
-                  )}
-
-                  {/* 下方工作区 (自适应高度) */}
-                  <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-                    {/* 1. 日历视图 */}
-                    {productionView === "calendar" ? (
-                      <div className="flex-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4 overflow-hidden animate-in fade-in duration-200">
-                        {/* 顶部指示条 */}
-                        <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-100 pb-2.5 shrink-0">
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 font-mono">
-                            <span className="flex items-center gap-1">
-                              <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                              已完成
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
-                              制作中
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                              待开始
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* 月换页操作条 */}
-                        <div className="flex items-center justify-between px-1 shrink-0">
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={handlePrevMonth}
-                              className="p-1 hover:bg-slate-100 active:bg-slate-200 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer"
-                              title="上个月"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span className="text-sm font-black text-slate-800 font-sans tracking-tight">
-                              {calendarYear}年 {calendarMonth}月 ({new Date(calendarYear, calendarMonth - 1, 1).toLocaleString('en-US', { month: 'long' })} {calendarYear})
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleNextMonth}
-                              className="p-1 hover:bg-slate-100 active:bg-slate-200 border border-slate-200 rounded-lg text-slate-600 transition-all cursor-pointer"
-                              title="下个月"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <span className="text-[10px] bg-indigo-50 text-indigo-650 px-2.5 py-1 rounded-xl font-black font-mono">
-                            {calendarYear === 2026 && calendarMonth === 6 ? "🎯 本日 (2026-06-03)" : `📅 浏览阅览中`}
-                          </span>
-                        </div>
-
-                        {/* 动态日长周维度移动通道：周排期泳道图 (同一天可承载多条任务并行流动，条状拉伸，极高清晰度) */}
-                        <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-3.5 bg-slate-50/10 p-1.5 rounded-2xl border border-slate-150 min-h-[450px]">
-                          {/* 星期标头 */}
-                          <div className="grid grid-cols-7 gap-2 bg-slate-100/85 p-2 rounded-xl text-center select-none shrink-0 border border-slate-200">
-                            {[
-                              "周一 (Mon)",
-                              "周二 (Tue)",
-                              "周三 (Wed)",
-                              "周四 (Thu)",
-                              "周五 (Fri)",
-                              "周六 (Sat)",
-                              "周日 (Sun)",
-                            ].map((d) => (
-                              <div
-                                key={d}
-                                className="text-[10px] font-black text-slate-500 uppercase tracking-wider font-mono"
-                              >
-                                {d}
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* 泳道通道网格主内容 (以周为单元独立进行非重叠跑道排布) */}
-                          <div className="flex flex-col gap-4 flex-1 animate-in fade-in duration-200">
-                            {(() => {
-                              const weeks = getMonthWeeks(calendarYear, calendarMonth);
-                              return weeks.map((week, wIdx) => {
-                                const weekStart = week.days[0].dateString;
-                                const weekEnd = week.days[6].dateString;
-
-                                const weekReqs = requirements.filter(req => {
-                                  const isAssigned = req.productionPersonnel?.includes(selectedProducer);
-                                  if (!isAssigned) return false;
-                                  return (req.startDate || "") <= weekEnd && (req.endDate || "") >= weekStart;
-                                });
-
-                                // 分配不重叠的泳道 (tracks)
-                                const tracks: Requirement[][] = [];
-                                const sortedWeekReqs = [...weekReqs].sort((a, b) => 
-                                  (a.startDate || "").localeCompare(b.startDate || "") || a.id.localeCompare(b.id)
-                                );
-
-                                sortedWeekReqs.forEach(req => {
-                                  let assignedTrackIndex = -1;
-                                  for (let t = 0; t < tracks.length; t++) {
-                                    const trackReqs = tracks[t];
-                                    const lastReqInTrack = trackReqs[trackReqs.length - 1];
-                                    if ((lastReqInTrack.endDate || "") < (req.startDate || "")) {
-                                      assignedTrackIndex = t;
-                                      break;
-                                    }
-                                  }
-                                  if (assignedTrackIndex === -1) {
-                                    tracks.push([req]);
-                                  } else {
-                                    tracks[assignedTrackIndex].push(req);
-                                  }
-                                });
-
-                                return (
-                                  <div key={wIdx} className="border border-slate-200 rounded-2xl bg-white shadow-3xs overflow-hidden flex flex-col shrink-0">
-                                    {/* 日期数字行 */}
-                                    <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-55/60 py-2 px-2 select-none">
-                                      {week.days.map((day, dIdx) => (
-                                        <div key={dIdx} className={`text-center flex flex-col items-center justify-center ${day.isWeekend ? 'text-rose-500 font-extrabold' : 'text-slate-500 font-bold'}`}>
-                                          <div className="flex items-center gap-1">
-                                            <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
-                                              day.isToday 
-                                                ? "bg-indigo-600 text-white font-black shadow-3xs rounded-full px-2.5" 
-                                                : day.isCurrentMonth ? "text-slate-700 font-bold" : "text-slate-350 font-normal"
-                                            }`}>
-                                              {day.dayNum}
-                                            </span>
-                                            {day.isToday && (
-                                              <span className="text-[7.5px] bg-indigo-100 text-indigo-700 px-1 rounded font-black origin-left scale-90">本日</span>
-                                            )}
-                                            {day.isWeekend && day.isCurrentMonth && (
-                                              <span className="text-[7.5px] bg-rose-50 text-rose-500 border border-rose-100/50 px-1 rounded origin-left scale-90 font-black">放假</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-
-                                    {/* 泳道区域 */}
-                                    <div className="p-3 relative min-h-[60px] bg-slate-50/10 space-y-2.5">
-                                      {/* 背景垂直虚线分隔 */}
-                                      <div className="absolute inset-0 grid grid-cols-7 pointer-events-none divide-x divide-slate-100/80 pb-0.5">
-                                        <div className="h-full"></div>
-                                        <div className="h-full"></div>
-                                        <div className="h-full"></div>
-                                        <div className="h-full"></div>
-                                        <div className="h-full"></div>
-                                        <div className="h-full"></div>
-                                        <div className="h-full"></div>
-                                      </div>
-
-                                      {tracks.length === 0 ? (
-                                        <div className="flex items-center justify-center py-3 text-[10px] text-slate-350 font-bold italic">
-                                          暂无制作中需求
-                                        </div>
-                                      ) : (
-                                        tracks.map((track, tIdx) => (
-                                          <div key={tIdx} className="grid grid-cols-7 gap-2 relative z-10 min-h-[30px]">
-                                            {track.map(req => {
-                                              const startIdx = week.days.findIndex(d => d.dateString === req.startDate);
-                                              const endIdx = week.days.findIndex(d => d.dateString === req.endDate);
-                                              
-                                              const sIdx = startIdx === -1 ? 0 : startIdx;
-                                              const eIdx = endIdx === -1 ? 6 : endIdx;
-                                              const colSpan = eIdx - sIdx + 1;
-
-                                              let statusBg = "bg-indigo-50 hover:bg-indigo-100/60 text-indigo-905 border-indigo-200 border-l-4 border-l-indigo-600 font-extrabold";
-                                              if (req.prodStatus === "Completed") {
-                                                statusBg = "bg-emerald-50 hover:bg-emerald-100/60 text-emerald-800 border-emerald-200 border-l-4 border-l-emerald-500";
-                                              } else if (req.prodStatus === "InProgress") {
-                                                statusBg = "bg-indigo-50 hover:bg-indigo-100/60 text-indigo-905 border-indigo-205 border-l-4 border-l-indigo-600 font-extrabold";
-                                              } else {
-                                                statusBg = "bg-amber-50 hover:bg-amber-100/60 text-amber-805 border-amber-200 border-l-4 border-l-amber-500";
-                                              }
-
-                                              const isLeftClipped = (req.startDate || "") < week.days[0].dateString;
-                                              const isRightClipped = (req.endDate || "") > week.days[6].dateString;
-                                              const pipeline = getRequirementPipeline(req);
-
-                                              return (
-                                                <button
-                                                  type="button"
-                                                  key={req.id}
-                                                  onClick={() => setSelectedReq(req)}
-                                                  style={{ gridColumnStart: sIdx + 1, gridColumnEnd: eIdx + 2 }}
-                                                  className={`rounded-xl border p-1.5 flex items-center justify-between text-[11px] font-black cursor-pointer shadow-3xs transition-all hover:scale-[1.01] overflow-hidden ${statusBg}`}
-                                                  title={`${req.id}: ${req.name} (制作期限: ${req.startDate} 至 ${req.endDate})`}
-                                                >
-                                                  <div className="flex items-center gap-2 min-w-0">
-                                                    <span className="font-mono text-[10px] text-slate-805 shrink-0 font-black">
-                                                      {isLeftClipped && "◀ "}{req.id}{isRightClipped && " ▶"}
-                                                    </span>
-                                                    <span className="truncate text-slate-700 text-[10px] font-bold hidden sm:inline">
-                                                      {req.name}
-                                                    </span>
-                                                  </div>
-
-                                                  <div className="flex items-center gap-0.5 shrink-0 pl-1 scale-90">
-                                                    {pipeline.map((stage, s1Idx) => (
-                                                      <span
-                                                        key={s1Idx}
-                                                        className={`w-4 h-4 rounded flex items-center justify-center text-[8px] font-black ${
-                                                          stage.status === 'completed' ? 'bg-emerald-500 text-white' :
-                                                          stage.status === 'inprogress' ? 'bg-amber-400 text-slate-900 animate-pulse' :
-                                                          'bg-slate-200 text-slate-405'
-                                                        }`}
-                                                        title={`${stage.name}: ${stage.status === 'completed' ? '已完成' : stage.status === 'inprogress' ? '制作中' : '未开始'}`}
-                                                      >
-                                                        {stage.name[0]}
-                                                      </span>
-                                                    ))}
-                                                  </div>
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        ))
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              });
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* 2. 甘特图视图 (Gantt View - Stick Left and Horizontal Scroll Workspace) */
-                      <div className="flex-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4 overflow-hidden animate-in fade-in duration-200">
-                        <div className="flex flex-wrap items-center justify-between border-b border-slate-105 pb-3 gap-3">
-                          <div>
-                            <h4 className="text-sm font-black text-slate-800 flex items-center gap-1.5 font-sans tracking-tight">
-                              <Hammer className="w-4 h-4 text-indigo-550" />
-                              全球全员排期进度双向检索甘特图
-                            </h4>
-                            <p className="text-[10px] text-slate-400 font-bold mt-0.5 font-mono">
-                              支持横向拖滑 / 触控左右滑动 / 点击下方快进按钮，不限量追溯 60 天长跨度排程
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {/* 滑动控制栏 */}
-                            <div className="flex items-center gap-1 mr-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                              <button
-                                type="button"
-                                onClick={() => scrollGantt("left")}
-                                className="px-2 py-1 text-[10px] font-black bg-white hover:bg-slate-50 rounded-lg border border-slate-205 text-slate-705 cursor-pointer shadow-3xs flex items-center gap-1"
-                                title="向左滚动10天"
-                              >
-                                ◀ 前期
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => scrollGantt("right")}
-                                className="px-2 py-1 text-[10px] font-black bg-white hover:bg-slate-50 rounded-lg border border-slate-205 text-slate-705 cursor-pointer shadow-3xs flex items-center gap-1"
-                                title="向右滚动10天"
-                              >
-                                后期 ▶
-                              </button>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-3 text-[9px] font-bold font-mono text-slate-400 bg-slate-50 border border-slate-150 px-3 py-1.5 rounded-xl select-none">
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 bg-rose-500 rounded-sm"></span>
-                                S级高难
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 bg-amber-500 rounded-sm"></span>
-                                A级中难
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 bg-indigo-500 rounded-sm"></span>
-                                B级标准
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm"></span>
-                                C级基础
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Gantt Area - Highly optimized layout with horizontal scroll and sticky rows */}
-                        <div ref={ganttContainerRef} className="flex-1 overflow-auto border border-slate-150 rounded-2xl bg-white flex flex-col select-none relative min-h-[400px]">
-                          {/* 1. Month header line (Scrollable) */}
-                          {(() => {
-                            const daysCount = 60;
-                            const ganttStartDate = new Date(calendarYear, calendarMonth - 1, 1);
-                            const ganttDays: { dateStr: string; dayNum: number; isWeekend: boolean; isToday: boolean; monthName: string }[] = [];
-
-                            for (let i = 0; i < daysCount; i++) {
-                              const d = new Date(ganttStartDate);
-                              d.setDate(ganttStartDate.getDate() + i);
-                              const y = d.getFullYear();
-                              const m = d.getMonth() + 1;
-                              const dayVal = d.getDate();
-                              const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(dayVal).padStart(2, '0')}`;
-                              
-                              const dayOfWeek = d.getDay();
-                              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                              const isToday = y === 2026 && m === 6 && dayVal === 3;
-                              const monthName = `${y}年${m}月`;
-                              
-                              ganttDays.push({
-                                dateStr,
-                                dayNum: dayVal,
-                                isWeekend,
-                                isToday,
-                                monthName
-                              });
-                            }
-
-                            const monthsSpan: { name: string; count: number }[] = [];
-                            ganttDays.forEach(day => {
-                              const last = monthsSpan[monthsSpan.length - 1];
-                              if (last && last.name === day.monthName) {
-                                last.count++;
-                              } else {
-                                monthsSpan.push({ name: day.monthName, count: 1 });
-                              }
-                            });
-
-                            return (
-                              <>
-                                {/* Table header row */}
-                                <div className="flex border-b border-slate-150 bg-slate-50 shrink-0 sticky top-0 z-20">
-                                  {/* Sticky Left placeholder */}
-                                  <div className="w-[220px] bg-slate-50 border-r border-slate-205 flex items-center justify-center font-black text-[11px] text-slate-500 sticky left-0 z-30 shrink-0 select-none">
-                                    设计制作人员 (Producers)
-                                  </div>
-                                  {/* Horizontal Month Headers */}
-                                  <div className="flex relative" style={{ width: `${daysCount * 44}px` }}>
-                                    {monthsSpan.map((ms, idx) => (
-                                      <div 
-                                        key={idx} 
-                                        style={{ width: `${ms.count * 44}px` }}
-                                        className="shrink-0 bg-indigo-50/50 border-r border-slate-200/60 p-2 text-center text-[10.5px] font-black text-indigo-750 border-b select-none font-mono tracking-wider truncate"
-                                      >
-                                        📅 {ms.name} ({ms.count}天)
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Day list header row */}
-                                <div className="flex border-b border-slate-200 bg-white sticky top-[34px] z-20 shrink-0 select-none">
-                                  {/* Sticky Left placeholder */}
-                                  <div className="w-[220px] bg-white border-r border-slate-205 flex flex-col justify-center px-4 sticky left-0 z-30 shrink-0 font-bold">
-                                    <div className="text-[10px] text-slate-400 font-mono">岗位类型 / 排产工时</div>
-                                  </div>
-                                  {/* Day Numbers */}
-                                  <div className="flex relative" style={{ width: `${daysCount * 44}px` }}>
-                                    {ganttDays.map((day, dIdx) => (
-                                      <div
-                                        key={dIdx}
-                                        style={{ width: "44px" }}
-                                        className={`shrink-0 flex flex-col justify-center items-center py-1 text-[10px] border-r border-slate-150/60 font-mono ${
-                                          day.isToday
-                                            ? "bg-indigo-600 text-white font-extrabold"
-                                            : day.isWeekend
-                                            ? "bg-rose-50 text-rose-500 font-extrabold"
-                                            : "text-slate-600 font-bold"
-                                        }`}
-                                        title={day.dateStr}
-                                      >
-                                        <span>{day.dayNum}</span>
-                                        <span className="text-[7.5px] scale-90">{day.isWeekend ? "休" : "作"}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Rows body block */}
-                                <div className="flex-1 flex flex-col min-h-0 overflow-y-auto no-scrollbar">
-                                  {PRODUCERS.map((prod) => {
-                                    const producer = prod.name;
-                                    
-                                    // 过滤得出与 60 天时间轴有交集的该人所有需求
-                                    const producerReqs = requirements.filter(r => {
-                                      const isAssigned = r.productionPersonnel?.includes(producer);
-                                      if (!isAssigned) return false;
-                                      return (r.startDate || "") <= ganttDays[daysCount - 1].dateStr && (r.endDate || "") >= ganttDays[0].dateStr;
-                                    });
-
-                                    // 计算此人在本时间段内的工负
-                                    const totalEffort = producerReqs.reduce((sum, r) => {
-                                      const diff = (r.difficulty || "B") as string;
-                                      const reqType = getReqType(r);
-                                      const hours = difficultyWorkHours[producer]?.[reqType]?.[diff];
-                                      const val = typeof hours === 'number' ? hours : 2;
-                                      return sum + val;
-                                    }, 0);
-
-                                    // 按开始日期排序
-                                    const sortedReqs = [...producerReqs].sort((a, b) => 
-                                      (a.startDate || "").localeCompare(b.startDate || "") || a.id.localeCompare(b.id)
-                                    );
-
-                                    // 编译出绝对定位可视条和对应的高度
-                                    const producerLayoutElements: Array<
-                                      | { type: 'parent'; req: Requirement; y: number; hasSub: boolean; isExpanded: boolean; relationSubReqsCount: number }
-                                      | { type: 'pre-sub'; parentReq: Requirement; subReqs: Requirement[]; y: number }
-                                      | { type: 'post-lane-and-toggle'; parentReq: Requirement; subReqs: Requirement[]; isPostExpanded: boolean; y: number }
-                                    > = [];
-                                    let currentYOffset = 10;
-
-                                    sortedReqs.forEach((req) => {
-                                      // 筛选由其他人承接的前置和后置子需求
-                                      const relationSubReqs = requirements.filter(sr => 
-                                        sr.parentId === req.id && 
-                                        sr.productionPersonnel && 
-                                        sr.productionPersonnel.some(p => p !== producer)
-                                      );
-
-                                      const hasSub = relationSubReqs.length > 0;
-                                      const isExpanded = !!expandedGanttRelations[req.id];
-
-                                      // 1. 添加主/父需求
-                                      producerLayoutElements.push({
-                                        type: 'parent',
-                                        req,
-                                        y: currentYOffset,
-                                        hasSub,
-                                        isExpanded,
-                                        relationSubReqsCount: relationSubReqs.length
-                                      });
-                                      currentYOffset += 38;
-
-                                      if (hasSub && isExpanded) {
-                                        const preSubReqs = relationSubReqs.filter(sr => {
-                                          if (sr.name?.includes("后置")) return false;
-                                          if (sr.name?.includes("前置")) return true;
-                                          if (sr.endDate && req.startDate) {
-                                            return sr.endDate <= req.startDate;
-                                          }
-                                          return true; // 默认前置
-                                        });
-
-                                        const postSubReqs = relationSubReqs.filter(sr => !preSubReqs.includes(sr));
-                                        const isPostExpanded = !!expandedPostReqs[req.id];
-
-                                        // 2. 前置子需求 (默认显示)
-                                        if (preSubReqs.length > 0) {
-                                          producerLayoutElements.push({
-                                            type: 'pre-sub',
-                                            parentReq: req,
-                                            subReqs: preSubReqs,
-                                            y: currentYOffset
-                                          });
-                                          currentYOffset += 38;
-                                        }
-
-                                        // 3. 后置子需求 (默认收起，点击后再展开)
-                                        if (postSubReqs.length > 0) {
-                                          producerLayoutElements.push({
-                                            type: 'post-lane-and-toggle',
-                                            parentReq: req,
-                                            subReqs: postSubReqs,
-                                            isPostExpanded,
-                                            y: currentYOffset
-                                          });
-                                          currentYOffset += 38;
-                                        }
-                                      }
-                                    });
-
-                                    const rowHeight = Math.max(76, currentYOffset + 14);
-
-                                    return (
-                                      <div 
-                                        key={producer}
-                                        className={`flex border-b border-slate-150 relative transition-all ${
-                                          prod.status === "离职" ? "bg-amber-50/10" : "bg-white hover:bg-slate-50/30"
-                                        }`}
-                                        style={{ height: `${rowHeight}px` }}
-                                      >
-                                        {/* Sticky Left producer info */}
-                                        <div className="w-[220px] bg-white border-r border-slate-200 flex flex-col justify-between p-3 sticky left-0 z-10 shrink-0 shadow-xs h-full select-none">
-                                          <div className="flex flex-col gap-1.5 h-full">
-                                            <div className="flex items-center gap-2">
-                                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-black ${
-                                                prod.status === "离职" ? "bg-slate-350" : "bg-slate-900 shadow-sm"
-                                              }`}>
-                                                {producer.charAt(0)}
-                                              </div>
-                                              <div className="flex flex-col truncate leading-none mt-0.5">
-                                                <span className={`text-[12.5px] font-black ${prod.status === "离职" ? "text-slate-400 line-through" : "text-slate-800"}`}>
-                                                  {producer}
-                                                </span>
-                                                <span className="text-[8.5px] text-indigo-600 font-bold mt-0.5">
-                                                  {prod.alias} · {prod.group.replace("美宣-", "")}
-                                                </span>
-                                              </div>
-                                            </div>
-
-                                            {/* Sub schedule togglers on the left column */}
-                                            {sortedReqs.map(req => {
-                                              const rels = requirements.filter(sr => sr.parentId === req.id && sr.productionPersonnel?.some(p => p !== producer));
-                                              if (rels.length === 0) return null;
-                                              const isExpanded = !!expandedGanttRelations[req.id];
-                                              return (
-                                                <div key={req.id} className="text-[8px] bg-indigo-50/35 border border-indigo-100/60 p-1.5 rounded-xl flex flex-col gap-1 select-none animate-in fade-in duration-200">
-                                                  <div className="font-extrabold text-indigo-805 truncate text-[8px] leading-tight font-sans">
-                                                    🔗 关联子排期: {req.id}
-                                                  </div>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => setExpandedGanttRelations(prev => ({...prev, [req.id]: !isExpanded}))}
-                                                    className={`w-full py-0.5 px-1 rounded text-[7.5px] font-black border cursor-pointer select-none transition-all text-center ${
-                                                      isExpanded 
-                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-3xs' 
-                                                        : 'bg-white text-indigo-600 border-indigo-200 hover:bg-slate-50'
-                                                    }`}
-                                                  >
-                                                    {isExpanded ? '收起子排期' : '展开子排期'}
-                                                  </button>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                          
-                                          <div className="flex items-center justify-between gap-1 mt-1.5 pt-1.5 border-t border-slate-100 font-mono shrink-0">
-                                            <span className="text-[8.5px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold">
-                                              {producerReqs.length}个任务
-                                            </span>
-                                            <span className="text-[9.5px] font-bold text-slate-500">
-                                              负荷: <span className="text-indigo-650 font-black">{totalEffort}天</span>
-                                            </span>
-                                          </div>
-                                        </div>
-
-                                        {/* Right scrollable timeline container for bars */}
-                                        <div className="flex-1 relative" style={{ width: `${daysCount * 44}px` }}>
-                                          {/* Daily columns background indicator marks */}
-                                          <div className="absolute inset-0 flex pointer-events-none h-full bg-slate-50/10">
-                                            {ganttDays.map((day, dIdx) => (
-                                              <div
-                                                key={dIdx}
-                                                style={{ width: "44px" }}
-                                                className={`h-full border-r border-slate-150/40 shrink-0 ${
-                                                  day.isWeekend ? "bg-rose-50/20" : ""
-                                                } ${day.isToday ? "bg-indigo-500/5 ring-1 ring-inset ring-indigo-500/10" : ""}`}
-                                              ></div>
-                                            ))}
-                                          </div>
-
-                                          {/* Render Dynamic Layout Elements */}
-                                          {producerLayoutElements.map((el, elIdx) => {
-                                            if (el.type === 'parent') {
-                                              const { req, y, hasSub, isExpanded, relationSubReqsCount } = el;
-                                              const sIdx = ganttDays.findIndex(d => d.dateStr === req.startDate);
-                                              const eIdx = ganttDays.findIndex(d => d.dateStr === req.endDate);
-
-                                              const startPosIndex = sIdx !== -1 ? sIdx : 0;
-                                              const endPosIndex = eIdx !== -1 ? eIdx : (req.startDate && req.startDate < ganttDays[0].dateStr ? 0 : daysCount - 1);
-
-                                              const isClippedStart = sIdx === -1 && req.startDate && req.startDate < ganttDays[0].dateStr;
-                                              const isClippedEnd = eIdx === -1 && req.endDate && req.endDate > ganttDays[daysCount - 1].dateStr;
-
-                                              const barLeft = startPosIndex * 44;
-                                              const barWidth = Math.max(28, (endPosIndex - startPosIndex + 1) * 44);
-                                              const spanDays = Math.round(
-                                                (new Date(req.endDate || "").getTime() - new Date(req.startDate || "").getTime()) / (1000 * 60 * 60 * 24)
-                                              ) + 1;
-
-                                              let bgClass = "bg-indigo-50 hover:bg-indigo-100/90 text-indigo-900 border-indigo-200 border-l-4 border-l-indigo-600";
-                                              if (req.difficulty === "S") {
-                                                bgClass = "bg-rose-50 hover:bg-rose-100/90 text-rose-900 border-rose-200 border-l-4 border-l-rose-500";
-                                              } else if (req.difficulty === "A") {
-                                                bgClass = "bg-amber-50 hover:bg-amber-100/90 text-amber-900 border-amber-200 border-l-4 border-l-amber-500";
-                                              } else if (req.difficulty === "C") {
-                                                bgClass = "bg-emerald-50 hover:bg-emerald-100/90 text-emerald-950 border-emerald-205 border-l-4 border-l-emerald-555";
-                                              }
-
-                                              return (
-                                                <div 
-                                                  key={req.id}
-                                                  className={`absolute h-8 rounded-lg border flex items-center justify-between px-2.5 py-0.5 text-[9.5px] font-black cursor-pointer transition-all shadow-3xs overflow-hidden leading-tight text-left ${bgClass}`}
-                                                  style={{
-                                                    left: `${barLeft}px`,
-                                                    width: `${barWidth}px`,
-                                                    top: `${y}px`,
-                                                  }}
-                                                  onClick={() => setSelectedReq(req)}
-                                                  title={`${req.id}: ${req.name} (${req.startDate} 至 ${req.endDate})`}
-                                                >
-                                                  <div className="flex flex-col justify-center truncate mr-1">
-                                                    <div className="flex items-center gap-1.5">
-                                                      <span className="font-mono text-[9px] font-black shrink-0">
-                                                        {isClippedStart && "◀ "}{req.id} {isClippedEnd && " ▶"}
-                                                      </span>
-                                                      <span className="text-[7.5px] font-bold opacity-80 font-mono shrink-0">
-                                                        {spanDays}天
-                                                      </span>
-                                                    </div>
-                                                    <div className="truncate text-slate-700/95 text-[8.5px] font-medium font-sans">
-                                                      {req.name}
-                                                    </div>
-                                                  </div>
-
-                                                  {hasSub && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setExpandedGanttRelations(prev => ({...prev, [req.id]: !isExpanded}));
-                                                      }}
-                                                      className={`px-1.5 py-0.5 rounded text-[8px] font-black border flex items-center gap-1 transition-all ${
-                                                        isExpanded 
-                                                          ? 'bg-indigo-650 text-white border-indigo-600 shadow-3xs' 
-                                                          : 'bg-white text-indigo-750 border-indigo-200 hover:bg-indigo-50'
-                                                      }`}
-                                                    >
-                                                      <span>🔗</span>
-                                                      <span>{isExpanded ? '收起' : `关联(${relationSubReqsCount})`}</span>
-                                                    </button>
-                                                  )}
-                                                </div>
-                                              );
-                                            }
-
-                                            if (el.type === 'pre-sub') {
-                                              const { subReqs, y, parentReq } = el;
-                                              return (
-                                                <div key={`pre-sub-${parentReq.id}`} style={{ top: `${y}px` }} className="absolute left-0 right-0 h-8 flex items-center bg-slate-50/20 border-y border-dashed border-slate-100 pointer-events-none">
-                                                  {/* Reference horizontal guide line strip */}
-                                                  {subReqs.map(sub => {
-                                                    const sIdx = ganttDays.findIndex(d => d.dateStr === sub.startDate);
-                                                    const eIdx = ganttDays.findIndex(d => d.dateStr === sub.endDate);
-                                                    const startPosIndex = sIdx !== -1 ? sIdx : 0;
-                                                    const endPosIndex = eIdx !== -1 ? eIdx : (sub.startDate && sub.startDate < ganttDays[0].dateStr ? 0 : daysCount - 1);
-                                                    const barLeft = startPosIndex * 44;
-                                                    const barWidth = Math.max(28, (endPosIndex - startPosIndex + 1) * 44);
-
-                                                    return (
-                                                      <div
-                                                        key={sub.id}
-                                                        className="absolute h-7.5 rounded-md border border-dashed border-indigo-300 bg-indigo-50/80 text-indigo-950 flex flex-col justify-center px-2 py-0.5 text-[8.5px] font-black select-none pointer-events-auto shadow-4xs truncate transition-all leading-tight text-left cursor-pointer hover:bg-indigo-100"
-                                                        style={{
-                                                          left: `${barLeft}px`,
-                                                          width: `${barWidth}px`,
-                                                          top: '1px'
-                                                        }}
-                                                        onClick={() => setSelectedReq(sub)}
-                                                        title={`[前置子需求] ${sub.id}: ${sub.name} (承接人: ${sub.productionPersonnel?.join(', ') || '暂无'})`}
-                                                      >
-                                                        <div className="flex items-center gap-1.5 truncate">
-                                                          <span className="px-1 bg-indigo-600 text-white rounded-[4px] text-[7px] font-sans font-black scale-90 tracking-tighter self-center shrink-0">前置</span>
-                                                          <span className="px-1 bg-white border border-indigo-200 text-indigo-700 rounded-[4px] text-[7.5px] font-black max-w-[50px] truncate shrink-0">👤 {sub.productionPersonnel?.[0] || '待定'}</span>
-                                                          <span className="truncate opacity-90 text-[8.2px] font-extrabold">{sub.name}</span>
-                                                        </div>
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              );
-                                            }
-
-                                            if (el.type === 'post-lane-and-toggle') {
-                                              const { subReqs, isPostExpanded, y, parentReq } = el;
-                                              return (
-                                                <div key={`post-sub-${parentReq.id}`} style={{ top: `${y}px` }} className="absolute left-0 right-0 h-8 flex items-center bg-slate-50/20 border-y border-dashed border-slate-100 pointer-events-none">
-                                                  {/* Inline Toggle Button */}
-                                                  <div className="absolute left-4 top-1.5 z-10 pointer-events-auto">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => setExpandedPostReqs(prev => ({...prev, [parentReq.id]: !isPostExpanded}))}
-                                                      className={`px-2 py-0.5 rounded-lg text-[8px] font-black flex items-center gap-1 hover:scale-105 border cursor-pointer select-none shadow-3xs transition-all ${
-                                                        isPostExpanded 
-                                                          ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' 
-                                                          : 'bg-indigo-50 text-indigo-805 border-indigo-220 hover:bg-indigo-100'
-                                                      }`}
-                                                    >
-                                                      <span>{isPostExpanded ? '收起后置 ◀' : `展开后置子需求 (${subReqs.length}) ▶`}</span>
-                                                    </button>
-                                                  </div>
-
-                                                  {isPostExpanded && subReqs.map(sub => {
-                                                    const sIdx = ganttDays.findIndex(d => d.dateStr === sub.startDate);
-                                                    const eIdx = ganttDays.findIndex(d => d.dateStr === sub.endDate);
-                                                    const startPosIndex = sIdx !== -1 ? sIdx : 0;
-                                                    const endPosIndex = eIdx !== -1 ? eIdx : (sub.startDate && sub.startDate < ganttDays[0].dateStr ? 0 : daysCount - 1);
-                                                    const barLeft = startPosIndex * 44;
-                                                    const barWidth = Math.max(28, (endPosIndex - startPosIndex + 1) * 44);
-
-                                                    return (
-                                                      <div
-                                                        key={sub.id}
-                                                        className="absolute h-7.5 rounded-md border border-dashed border-rose-300 bg-rose-50/80 text-rose-950 flex flex-col justify-center px-2 py-0.5 text-[8.5px] font-black select-none pointer-events-auto shadow-4xs truncate transition-all leading-tight text-left cursor-pointer hover:bg-rose-100"
-                                                        style={{
-                                                          left: `${barLeft}px`,
-                                                          width: `${barWidth}px`,
-                                                          top: '1px'
-                                                        }}
-                                                        onClick={() => setSelectedReq(sub)}
-                                                        title={`[后置子需求] ${sub.id}: ${sub.name} (承接人: ${sub.productionPersonnel?.join(', ') || '暂无'})`}
-                                                      >
-                                                        <div className="flex items-center gap-1.5 truncate">
-                                                          <span className="px-1 bg-rose-500 text-white rounded-[4px] text-[7px] font-sans font-black scale-90 tracking-tighter self-center shrink-0">后置</span>
-                                                          <span className="px-1 bg-white border border-rose-200 text-rose-600 rounded-[4px] text-[7.5px] font-black max-w-[50px] truncate shrink-0">👤 {sub.productionPersonnel?.[0] || '待定'}</span>
-                                                          <span className="truncate opacity-90 text-[8.2px] font-extrabold">{sub.name}</span>
-                                                        </div>
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              );
-                                            }
-
-                                            return null;
-                                          })}
-
-                                          {producerReqs.length === 0 && (
-                                            <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-350 italic font-bold select-none">
-                                              🌿 暂无排产需求，轻松休假
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    )}
                   </div>
-              </div>
+                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">团队产能占用</div>
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                      <span className={`text-2xl font-black ${productionInsights.loadRate > 100 ? "text-rose-600" : productionInsights.loadRate > 80 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {productionInsights.loadRate}%
+                      </span>
+                      <span className="pb-1 text-[10px] font-bold text-slate-400">
+                        {productionInsights.scheduledWorkDays.toFixed(1)} / {productionInsights.weeklyCapacity}天
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">排期人员数</div>
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                      <span className="text-2xl font-black text-indigo-600">{productionInsights.scheduledProducerCount}</span>
+                      <span className="pb-1 text-[10px] font-bold text-slate-400">未来7天有任务</span>
+                    </div>
+                  </div>
+                  <div className={`rounded-2xl border px-4 py-3 shadow-3xs ${productionInsights.highRiskRequirements.length > 0 ? "border-rose-200 bg-rose-50" : "border-slate-150 bg-white"}`}>
+                    <div className={`text-[9px] font-black uppercase tracking-widest ${productionInsights.highRiskRequirements.length > 0 ? "text-rose-500" : "text-slate-400"}`}>
+                      最高/高优风险
+                    </div>
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                      <span className={`text-2xl font-black ${productionInsights.highRiskRequirements.length > 0 ? "text-rose-600" : "text-slate-900"}`}>
+                        {productionInsights.highRiskRequirements.length}
+                      </span>
+                      <span className="pb-1 text-[10px] font-bold text-slate-400">
+                        {productionInsights.highRiskRequirements.length > 0 ? "需优先处理" : "暂无风险"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-              {/* 3. 辅助排期配置模态窗 / Panel Flyout */}
-                {showConfigModal && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300 select-none">
-                    <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-250 max-h-[90vh] overflow-hidden border border-slate-150">
-                      
-                      {/* Modal Header */}
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
-                        <div className="flex items-center gap-2">
-                          <Settings className="w-5 h-5 text-indigo-600 font-black animate-spin-slow" />
-                          <div>
-                            <h3 className="text-sm font-black text-slate-800">
-                              辅助排期系统参数设定
-                            </h3>
-                            <p className="text-[10px] text-slate-400 font-bold mt-0.5 font-mono">配置全岗位所有人在每种设计类型的各级难度工期与自动分单优先级权重</p>
-                          </div>
+                {productionInsights.highRiskRequirements.length > 0 && (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[11px] font-bold text-rose-700 shadow-3xs shrink-0">
+                    <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-rose-500">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      排期预警
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {productionInsights.highRiskRequirements.slice(0, 4).map(({ req, dueDate, reason }) => (
+                        <button
+                          key={req.id}
+                          type="button"
+                          onClick={() => setSelectedReq(req)}
+                          className="rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-left text-[10px] font-black text-rose-700 transition-all hover:border-rose-300 hover:bg-rose-50"
+                        >
+                          {req.id} · {reason}
+                          {dueDate && <span className="ml-1 font-bold text-rose-400">截止 {dueDate}</span>}
+                        </button>
+                      ))}
+                      {productionInsights.highRiskRequirements.length > 4 && (
+                        <span className="rounded-xl bg-rose-100 px-3 py-1.5 text-[10px] font-black text-rose-500">
+                          +{productionInsights.highRiskRequirements.length - 4} 个
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex-1 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-3xs">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+                    <Calendar className="h-7 w-7" />
+                  </div>
+                  <h3 className="mt-4 text-base font-black text-slate-900">人员排期情况</h3>
+                  <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-6 text-slate-400">
+                    手动排期时打开弹窗查看所有制作人员的日历和甘特图。同一天同一个人允许存在多条任务，日历中会按泳道堆叠展示。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowPersonnelScheduleModal(true)}
+                    className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-black text-white shadow-sm transition-all hover:bg-black"
+                  >
+                    <Calendar className="h-4 w-4" />
+                    打开人员排期弹窗
+                  </button>
+                </div>
+
+                {showPersonnelScheduleModal ? (
+                  <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/45 p-6 backdrop-blur-sm">
+                    <div className="flex h-[88vh] w-full max-w-[1280px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+                      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
+                        <div>
+                          <h3 className="text-base font-black text-slate-900">人员排期情况</h3>
+                          <p className="mt-1 text-[10px] font-bold text-slate-400">手动排期时查看人员占用，同一天同一人可显示多条任务。</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowConfigModal(false)}
-                          className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                        >
-                          <X className="w-5 h-5 font-black" />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <div className="flex rounded-xl bg-slate-100 p-1">
+                            <button
+                              type="button"
+                              onClick={() => setProductionView('calendar')}
+                              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition-all ${productionView === 'calendar' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              <Calendar className="h-3.5 w-3.5" /> 日历视图
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProductionView('gantt')}
+                              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black transition-all ${productionView === 'gantt' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              <Layers className="h-3.5 w-3.5" /> 甘特图
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowPersonnelScheduleModal(false)}
+                            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition-all hover:bg-slate-50 hover:text-slate-700"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Modal Tabs Switching Header layout */}
-                      <div className="flex border-b border-slate-150 my-4 shrink-0 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => setConfigModalTab("hours")}
-                          className={`flex-1 text-center py-2 text-xs font-black rounded-xl transition-all ${
-                            configModalTab === "hours"
-                              ? "bg-white text-indigo-700 font-extrabold shadow-sm"
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          🕒 1. 每个人按类型/难度划分工期 (工期设置)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfigModalTab("weights")}
-                          className={`flex-1 text-center py-2 text-xs font-black rounded-xl transition-all ${
-                            configModalTab === "weights"
-                              ? "bg-white text-indigo-700 font-extrabold shadow-sm"
-                              : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          🎯 2. 每个人按类型/难度不同优先级 (权重分数)
-                        </button>
-                      </div>
-
-                      {/* Scrollable Main Area */}
-                      <div className="flex-1 overflow-y-auto no-scrollbar space-y-6 pr-1 my-2">
-                        
-                        {configModalTab === "hours" ? (
-                          /* Tab A: Estimated Work Hours per Designer, production type and difficulty level */
-                          <div className="space-y-6">
-                            <div className="flex items-center justify-between pl-1">
-                              <div>
-                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider pl-1.5 border-l-2 border-indigo-650">
-                                  单项难度制作耗时工期设定 (单位: 天)
-                                </h4>
-                                <span className="text-[10px] text-slate-400 font-extrabold block mt-0.5">
-                                  用于系统自动排期根据选定设计师与材料类型折算工期
-                                </span>
-                              </div>
-                              <span className="text-[10px] bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-lg text-slate-500 font-black">
-                                双向实时联动
-                              </span>
-                            </div>
-
-                            {/* Outer Group by Positions loop */}
-                            {(["美宣-平面", "美宣-AI", "美宣-2D", "美宣-3D", "程序"] as const).map(groupName => {
-                              const groupActiveProducers = PRODUCERS.filter(p => p.group === groupName && (p.status === '在职' || showResignedProducers));
-                              if (groupActiveProducers.length === 0) return null;
-
+                      <div className="flex-1 overflow-auto bg-slate-50/70 p-5">
+                        {productionView === 'calendar' ? (
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            {PRODUCERS.filter(prod => prod.status === '在职').map(prod => {
+                              const producerTasks = productionTasks
+                                .filter(task => task.producer === prod.name)
+                                .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
                               return (
-                                <div key={groupName} className="space-y-3 bg-slate-50/45 p-4 rounded-3xl border border-slate-200/60 shadow-3xs">
-                                  <div className="flex items-center gap-1.5 pb-1">
-                                    <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-lg ${
-                                      groupName === "美宣-平面" ? "bg-purple-100 text-purple-700" :
-                                      groupName === "美宣-AI" ? "bg-amber-100 text-amber-700" :
-                                      groupName === "美宣-2D" ? "bg-rose-100 text-rose-700" :
-                                      groupName === "美宣-3D" ? "bg-blue-100 text-blue-700" :
-                                      "bg-emerald-100 text-emerald-700"
-                                    }`}>
-                                      {groupName} 岗位
-                                    </span>
-                                    <span className="text-[9px] text-slate-400 font-bold">该岗位可编辑成员数: {groupActiveProducers.length}人</span>
+                                <div key={prod.name} className="rounded-2xl border border-slate-150 bg-white p-4 shadow-3xs">
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div>
+                                      <div className="text-sm font-black text-slate-900">{prod.name}</div>
+                                      <div className="mt-0.5 text-[9px] font-black text-slate-400">{prod.group}</div>
+                                    </div>
+                                    <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[9px] font-black text-slate-500">{producerTasks.length} 个任务</span>
                                   </div>
-
-                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                    {groupActiveProducers.map(prod => (
-                                      <div key={prod.name} className="bg-white rounded-2xl border border-slate-150 p-3 shadow-3xs hover:border-slate-200 transition-all">
-                                        <div className="flex items-center gap-2 border-b border-slate-100 pb-2 mb-2 font-black text-xs text-slate-800">
-                                          <div className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-[9px] text-white shrink-0">
-                                            {prod.name.charAt(0)}
+                                  <div className="space-y-2">
+                                    {producerTasks.length === 0 ? (
+                                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-[10px] font-bold text-slate-400">暂无排期</div>
+                                    ) : producerTasks.slice(0, 8).map(task => (
+                                      <button
+                                        key={task.id}
+                                        type="button"
+                                        onClick={() => setSelectedReq(task.requirement)}
+                                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-150 bg-slate-50 px-3 py-2 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50/40"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <span className="rounded-md bg-slate-900 px-1.5 py-0.5 text-[8px] font-black text-white">{task.role}</span>
+                                            <span className="truncate text-[10px] font-black text-slate-800">{task.requirement.id}</span>
                                           </div>
-                                          <span>{prod.name}</span>
-                                          <span className="text-[9.5px] font-mono font-bold text-slate-400">({prod.alias})</span>
-                                          {prod.status === '离职' && (
-                                            <span className="text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md ml-auto">离职</span>
-                                          )}
+                                          <div className="mt-0.5 truncate text-[9px] font-bold text-slate-400">{task.requirement.name}</div>
                                         </div>
-
-                                        <table className="w-full text-left border-collapse text-[10px] text-slate-650">
-                                          <thead>
-                                            <tr className="border-b border-slate-100 font-bold text-slate-400">
-                                              <th className="py-1">制作类型</th>
-                                              <th className="text-center py-1">S 级</th>
-                                              <th className="text-center py-1">A 级</th>
-                                              <th className="text-center py-1">B 级</th>
-                                              <th className="text-center py-1">C 级</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-slate-100/50">
-                                            {["视频", "Playable", "3D", "平面"].map(type => (
-                                              <tr key={type} className="hover:bg-slate-50/50 font-bold">
-                                                <td className="py-2 text-slate-700 font-extrabold">{type}</td>
-                                                {["S", "A", "B", "C"].map(diff => (
-                                                  <td key={diff} className="text-center py-2">
-                                                    <input
-                                                      type="number"
-                                                      step="0.5"
-                                                      min="0.5"
-                                                      max="30"
-                                                      value={difficultyWorkHours[prod.name]?.[type]?.[diff] ?? 1.5}
-                                                      onChange={(e) => {
-                                                        const val = parseFloat(e.target.value) || 0.5;
-                                                        setDifficultyWorkHours(prev => ({
-                                                          ...prev,
-                                                          [prod.name]: {
-                                                            ...prev[prod.name],
-                                                            [type]: {
-                                                              ...prev[prod.name]?.[type],
-                                                              [diff]: val
-                                                            }
-                                                          }
-                                                        }));
-                                                      }}
-                                                      className="w-11 text-center bg-white border border-slate-200 hover:border-slate-350 px-1 py-0.5 rounded-md text-[10.5px] font-black font-mono focus:outline-none focus:ring-1 focus:ring-indigo-100"
-                                                    />
-                                                  </td>
-                                                ))}
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      </div>
+                                        <div className="shrink-0 text-right text-[9px] font-black text-slate-500">
+                                          <div>{task.startDate} ~ {task.endDate}</div>
+                                          <div className="mt-0.5 text-[8px] text-slate-350">{task.status}</div>
+                                        </div>
+                                      </button>
                                     ))}
                                   </div>
                                 </div>
@@ -3723,103 +3347,33 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             })}
                           </div>
                         ) : (
-                          /* Tab B: Priority Weight Assignment with tie support */
-                          <div className="space-y-6">
-                            <div className="p-3 bg-amber-50/40 border border-amber-200/50 rounded-2xl text-[10px] text-amber-800 leading-relaxed font-semibold shrink-0">
-                              💡 <strong>算法说明 (优先级分数数值权重系统):</strong>{" "}
-                              此处使用数值权重(1~10分数)表示当某类难度需求到达时，设计师的接单优先级，<strong>分数越高表示接单顺位越靠前</strong>。
-                              支持多个设计师设置<strong>完全相同的优先级分数</strong>，此时自动排期算法会进行<strong>负载均衡（谁先空闲谁接单）</strong>，完美规避排空或爆工期问题。
-                            </div>
-
-                            <div className="flex items-center justify-between pl-1">
-                              <div>
-                                <h4 className="text-xs font-black text-slate-805 uppercase tracking-wider pl-1.5 border-l-2 border-indigo-650">
-                                  每个人/每个类型的分配优先级分数 (权重值范围: 1 ~ 100)
-                                </h4>
-                                <span className="text-[10px] text-slate-400 font-extrabold block mt-0.5">
-                                  用于自动排班在同类型同难度需求下对在职组员进行权重优先配单
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Outer Group by Positions loop */}
-                            {(["美宣-平面", "美宣-AI", "美宣-2D", "美宣-3D", "程序"] as const).map(groupName => {
-                              const groupActiveProducers = PRODUCERS.filter(p => p.group === groupName && (p.status === '在职' || showResignedProducers));
-                              if (groupActiveProducers.length === 0) return null;
-
+                          <div className="space-y-3">
+                            {PRODUCERS.map(prod => {
+                              const producerTasks = productionTasks
+                                .filter(task => task.producer === prod.name)
+                                .sort((a, b) => a.startDate.localeCompare(b.startDate));
                               return (
-                                <div key={groupName} className="space-y-3 bg-slate-50/45 p-4 rounded-3xl border border-slate-200/60 shadow-3xs">
-                                  <div className="flex items-center gap-1.5 pb-1">
-                                    <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-lg ${
-                                      groupName === "美宣-平面" ? "bg-purple-100 text-purple-700" :
-                                      groupName === "美宣-AI" ? "bg-amber-100 text-amber-700" :
-                                      groupName === "美宣-2D" ? "bg-rose-100 text-rose-700" :
-                                      groupName === "美宣-3D" ? "bg-blue-100 text-blue-700" :
-                                      "bg-emerald-100 text-emerald-700"
-                                    }`}>
-                                      {groupName} 岗位
-                                    </span>
-                                    <span className="text-[9px] text-slate-400 font-bold">该岗位可编辑成员数: {groupActiveProducers.length}人</span>
+                                <div key={prod.name} className="rounded-2xl border border-slate-150 bg-white p-4 shadow-3xs">
+                                  <div className="mb-3 flex items-center justify-between">
+                                    <div className="text-xs font-black text-slate-800">{prod.name}</div>
+                                    <div className="text-[9px] font-black text-slate-400">{producerTasks.length} 个任务</div>
                                   </div>
-
-                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                    {groupActiveProducers.map(prod => (
-                                      <div key={prod.name} className="bg-white rounded-2xl border border-slate-150 p-3 shadow-3xs hover:border-slate-200 transition-all">
-                                        <div className="flex items-center gap-2 border-b border-slate-100 pb-2 mb-2 font-black text-xs text-slate-800">
-                                          <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-[9px] text-white shrink-0 font-mono">
-                                            {prod.name.charAt(0)}
-                                          </div>
-                                          <span>{prod.name}</span>
-                                          <span className="text-[9.5px] font-mono font-bold text-indigo-405">({prod.alias})</span>
-                                          {prod.status === '离职' && (
-                                            <span className="text-[8px] bg-amber-105 text-amber-700 px-1.5 py-0.5 rounded-md ml-auto">离职</span>
-                                          )}
+                                  <div className="flex min-h-12 gap-2 overflow-x-auto pb-1">
+                                    {producerTasks.length === 0 ? (
+                                      <div className="text-[10px] font-bold text-slate-350">暂无排期</div>
+                                    ) : producerTasks.map(task => (
+                                      <button
+                                        key={task.id}
+                                        type="button"
+                                        onClick={() => setSelectedReq(task.requirement)}
+                                        className="min-w-[220px] rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-left text-[10px] font-bold text-indigo-900"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-black">{task.requirement.id}</span>
+                                          <span className="rounded bg-white/70 px-1.5 py-0.5 text-[8px] font-black">{task.role}</span>
                                         </div>
-
-                                        <table className="w-full text-left border-collapse text-[10px] text-slate-650">
-                                          <thead>
-                                            <tr className="border-b border-slate-100 font-bold text-slate-400">
-                                              <th className="py-1">制作类型</th>
-                                              <th className="text-center py-1">S 级权重</th>
-                                              <th className="text-center py-1">A 级权重</th>
-                                              <th className="text-center py-1">B 级权重</th>
-                                              <th className="text-center py-1">C 级权重</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-slate-100/50 font-bold">
-                                            {["视频", "Playable", "3D", "平面"].map(type => (
-                                              <tr key={type} className="hover:bg-slate-50/50 font-bold">
-                                                <td className="py-2 text-slate-700 font-extrabold">{type}</td>
-                                                {["S", "A", "B", "C"].map(diff => (
-                                                  <td key={diff} className="text-center py-2">
-                                                    <input
-                                                      type="number"
-                                                      min="1"
-                                                      max="100"
-                                                      value={difficultyPriorityWeights[prod.name]?.[type]?.[diff] ?? 5}
-                                                      onChange={(e) => {
-                                                        const val = parseInt(e.target.value) || 1;
-                                                        setDifficultyPriorityWeights(prev => ({
-                                                          ...prev,
-                                                          [prod.name]: {
-                                                            ...prev[prod.name],
-                                                            [type]: {
-                                                              ...prev[prod.name]?.[type],
-                                                              ...prev[prod.name]?.[type],
-                                                              [diff]: val
-                                                            }
-                                                          }
-                                                        }));
-                                                      }}
-                                                      className="w-11 text-center bg-indigo-25 text-indigo-700 border border-indigo-200 hover:border-indigo-350 px-1 py-0.5 rounded-md text-[10.5px] font-black font-mono focus:outline-none focus:ring-1 focus:ring-indigo-150"
-                                                    />
-                                                  </td>
-                                                ))}
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      </div>
+                                        <div className="mt-1 truncate text-[9px] text-indigo-700/70">{task.startDate} ~ {task.endDate}</div>
+                                      </button>
                                     ))}
                                   </div>
                                 </div>
@@ -3827,31 +3381,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             })}
                           </div>
                         )}
-
-                        {/* Help Guide Box */}
-                        <div className="p-4 bg-indigo-50/30 border border-indigo-100 rounded-2xl flex gap-3 text-[10.5px] text-indigo-850 leading-relaxed font-bold shrink-0">
-                          <span className="text-base scale-110 shrink-0 select-none">💡</span>
-                          <p>
-                            辅助一键自动分配排期程序，首先将当前月份所有待待定待制的需求进行优先级（Highest &gt; High &gt; Mid &gt; Low）全局重排序。
-                            针对某项特定需求，根据对应【制作类型】与需求【分级工时】，对当前岗位所有活动中在职的设计师进行各阶级【承接优先级权重】排序。
-                            若权重分数相同，将自动按照负载分担策略（哪位设计师目前累计接单工期排期结束时间最前）来就近调优负载平衡！
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Modal Footer */}
-                      <div className="border-t border-slate-100 pt-4 mt-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setShowConfigModal(false)}
-                          className="w-full py-2.5 bg-slate-900 hover:bg-slate-850 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-slate-900/10 hover:-translate-y-0.5 uppercase tracking-wide cursor-pointer"
-                        >
-                          保存排期规则权重配置 · 重新校对智能排期
-                        </button>
                       </div>
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             ) : (
                 <div className="hidden">
@@ -4355,14 +3888,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       {/* 排期卡片选择器 (新增需求的第一步) */}
       {showScheduleSelector && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300 p-6">
-          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-5xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
             <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-black text-slate-900 leading-tight">
-                  选择创意排期方向
+                  创建需求
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 font-medium">
-                  请先选择一个排期方向来创建具体的需求 (2026-05-12 ~ 2026-05-19)
+                  先按制作类型筛选方向，再选择要挂靠的方向；创建后的需求类型会跟随方向规定。
                 </p>
               </div>
               <button
@@ -4373,83 +3906,164 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 md:grid-cols-2 gap-6 no-scrollbar">
-              {schedules.map((sched) => (
-                <div
-                  key={sched.id}
-                  onClick={() => handleAddRequirementFromSchedule(sched.id)}
-                  className="group relative bg-slate-50 p-6 rounded-3xl border-2 border-transparent hover:border-primary hover:bg-white hover:shadow-xl transition-all cursor-pointer flex flex-col gap-4"
-                >
-                  <div className="flex justify-between items-start">
-                    <div
-                      className={`px-2 py-1 rounded text-[9px] font-black ${getPriorityStyle(sched.priority)} shadow-sm`}
+            <div className="px-8 pt-6 pb-4 border-b border-slate-100 bg-slate-50/40">
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest shrink-0">
+                  制作类型
+                </span>
+                {[
+                  {
+                    type: "Video" as CreativeForm,
+                    label: "视频",
+                    desc: "进入视频脚本模板",
+                    icon: Video,
+                  },
+                  {
+                    type: "Image" as CreativeForm,
+                    label: "图片",
+                    desc: "进入图片需求模板",
+                    icon: ImageIcon,
+                  },
+                  {
+                    type: "Playable" as CreativeForm,
+                    label: "试玩",
+                    desc: "进入试玩需求模板",
+                    icon: Gamepad2,
+                  },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isActive = selectedCreateType === item.type;
+                  return (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => setSelectedCreateType(item.type)}
+                      className={`flex-1 min-w-0 rounded-2xl border px-4 py-3 text-left transition-all ${
+                        isActive
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/15"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/40"
+                      }`}
                     >
-                      {sched.priority === "High"
-                        ? "高"
-                        : sched.priority === "Mid"
-                          ? "中"
-                          : "低"}
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-[10px] text-slate-400 font-bold">
-                        需求截止
-                      </span>
-                      <span className="text-xs font-black text-slate-800">
-                        {sched.requirementEnd}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="text-base font-black text-slate-900 group-hover:text-primary transition-colors">
-                      {sched.directionName}
-                    </h4>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      <span className="px-2 py-0.5 bg-slate-200 rounded text-[9px] font-bold text-slate-600">
-                        {sched.directionType}
-                      </span>
-                      <span className="px-2 py-0.5 bg-slate-200 rounded text-[9px] font-bold text-slate-600">
-                        {sched.form}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] text-slate-400 font-bold">
-                        负责人
-                      </span>
-                      <span className="text-xs font-black text-slate-700">
-                        {sched.owner}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-[10px] text-slate-400 font-bold">
-                        进度 (已提/总需)
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-black text-primary">
-                          {sched.submittedCount}
-                        </span>
-                        <span className="text-slate-300">/</span>
-                        <span className="text-sm font-black text-slate-800">
-                          {sched.totalRequiredCount}
-                        </span>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            isActive ? "bg-white/15" : "bg-slate-50"
+                          }`}
+                        >
+                          <Icon
+                            className={`w-4.5 h-4.5 ${
+                              isActive ? "text-white" : "text-indigo-600"
+                            }`}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-black">{item.label}</div>
+                          <div
+                            className={`mt-0.5 text-[10px] font-semibold ${
+                              isActive ? "text-indigo-100" : "text-slate-400"
+                            }`}
+                          >
+                            {item.desc}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                  <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all transform group-hover:translate-x-2">
-                    <ChevronRight className="w-8 h-8 text-primary" />
-                  </div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-4 no-scrollbar">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900">
+                    选择挂靠方向
+                  </h4>
+                  <p className="text-[11px] font-semibold text-slate-400 mt-1">
+                    只展示创建时需要判断的关键信息：方向、优先级、负责人、截止和剩余容量。
+                  </p>
                 </div>
-              ))}
+                <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-[11px] font-black text-slate-500">
+                  筛选方向类型：{selectedCreateType === "Video" ? "视频" : selectedCreateType === "Image" ? "图片" : "试玩"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {schedules
+                  .filter((sched) => sched.form === selectedCreateType)
+                  .map((sched) => {
+                  const associatedReqs = requirements.filter(
+                    (req) => req.scheduleId === sched.id,
+                  );
+                  const remainingCount = Math.max(
+                    0,
+                    (sched.totalRequiredCount || 0) - associatedReqs.length,
+                  );
+                  const formConfig = getFormConfig(sched.form);
+                  const FormIcon = formConfig.icon || Video;
+
+                  return (
+                    <button
+                      key={sched.id}
+                      type="button"
+                      onClick={() => handleAddRequirementFromSchedule(sched.id)}
+                      className="group relative bg-white p-5 rounded-3xl border border-slate-150 hover:border-indigo-300 hover:shadow-xl hover:shadow-slate-900/5 transition-all cursor-pointer flex flex-col gap-4 text-left"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2 py-1 rounded-lg text-[10px] font-black ${getPriorityStyle(sched.priority)} shadow-sm`}>
+                              {sched.priority === "Highest"
+                                ? "最高"
+                                : sched.priority === "High"
+                                  ? "高"
+                                  : sched.priority === "Low"
+                                    ? "低"
+                                    : "中"}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-black ${formConfig.color}`}>
+                              <FormIcon className="w-3 h-3" />
+                              方向类型 {sched.form === "Video" ? "视频" : sched.form === "Image" ? "图片" : "试玩"}
+                            </span>
+                          </div>
+                          <h5 className="text-sm font-black text-slate-900 group-hover:text-indigo-700 transition-colors truncate">
+                            {sched.directionName}
+                          </h5>
+                          <p className="mt-1 line-clamp-1 text-[11px] font-semibold text-slate-400">
+                            {sched.validationGoal || "暂无验证目标"}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all shrink-0 mt-1" />
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
+                        {[
+                          ["负责人", sched.owner || "未指派"],
+                          ["截止", sched.submissionDeadline || sched.requirementEnd || "--"],
+                          ["渠道", sched.channels?.[0]?.toUpperCase() || "ALL"],
+                          ["剩余", `${remainingCount}/${sched.totalRequiredCount || 0}`],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-2xl bg-slate-50 px-3 py-2">
+                            <div className="text-[9px] font-black text-slate-400">
+                              {label}
+                            </div>
+                            <div className="mt-1 truncate text-[11px] font-black text-slate-700">
+                              {value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
               <div
-                className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center p-8 gap-4 hover:border-primary/50 transition-all group cursor-pointer"
+                className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center p-6 gap-4 hover:border-primary/50 hover:bg-white transition-all group cursor-pointer"
                 onClick={() => {
+                  const assetIndex = 3377 + requirements.length;
                   const newReq: Requirement = {
-                    id: `cp${3377 + requirements.length}-01`,
+                    id: `${selectedCreateType === "Video" ? "cp" : selectedCreateType === "Image" ? "tp" : "sw"}${assetIndex}-01`,
                     name: `未关联方向需求 - ${requirements.length + 1}`,
                     previews: ["https://picsum.photos/270/480?random=none"],
                     duration: "0:30",
@@ -4477,16 +4091,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     language: "en",
                     channels: ["all"],
                     testDirections: ["前贴"],
-                    dimensions: ["916"],
-                    assetType: "Video",
-                    assetIndex: 3377 + requirements.length,
+                    dimensions: ["9:16"],
+                    assetType: selectedCreateType,
+                    assetIndex,
                     assetVersion: "01",
                     projectName: "Panthia",
                     script: "",
                     aTags: [],
                     bTags: [],
                     difficulty: "C",
-                    tasks: [],
+                    tasks: createDefaultProductionTasks(
+                      `${selectedCreateType === "Video" ? "cp" : selectedCreateType === "Image" ? "tp" : "sw"}${assetIndex}-01`,
+                      selectedCreateType,
+                      "原始玩法",
+                    ),
                   };
                   setRequirements([...requirements, newReq]);
                   setSelectedReq(newReq);
@@ -4496,12 +4114,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                 <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-slate-350 flex items-center justify-center group-hover:border-primary group-hover:text-primary transition-all group-hover:scale-110">
                   <Plus className="w-6 h-6 text-slate-400 group-hover:text-primary" />
                 </div>
-                <div className="text-center">
+                <div>
                   <p className="text-xs font-extrabold text-slate-800 uppercase tracking-tight group-hover:text-primary transition-colors">
                     不关联，直接创建空模版
                   </p>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    自主设计非标/测试类需求
+                    使用当前制作类型：{selectedCreateType === "Video" ? "视频" : selectedCreateType === "Image" ? "图片" : "试玩"}
                   </p>
                 </div>
               </div>
@@ -4525,22 +4143,128 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       {/* 创建周周期弹窗 */}
       {showAddWeekPopup && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-6">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6 gap-4">
-            <h3 className="text-lg font-black text-slate-900">创建排期周期</h3>
-            <div className="space-y-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[420px] overflow-hidden flex flex-col p-6 gap-5">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <label className="text-xs font-bold text-slate-400 block mb-1.5">
-                  时间范围 (如: 2026-05-20 ~ 2026-05-27)
-                </label>
-                <input
-                  type="text"
-                  placeholder="YYYY-MM-DD ~ YYYY-MM-DD"
-                  value={newWeekRange}
-                  onChange={(e) => setNewWeekRange(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
-                />
+                <h3 className="text-lg font-black text-slate-900">创建排期周期</h3>
+                <p className="text-[11px] font-bold text-slate-400 mt-1">
+                  点击开始日期，再点击结束日期。
+                </p>
               </div>
-              <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setShowAddWeekPopup(false)}
+                className="p-2 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-indigo-600" />
+                <span className="text-[11px] font-black text-slate-500">
+                  今天
+                </span>
+                <span className="font-mono text-xs font-black text-indigo-700">
+                  {todayDateString}
+                </span>
+              </div>
+              <button
+                onClick={jumpNewWeekCalendarToToday}
+                className="px-2.5 py-1 rounded-lg bg-white text-[10px] font-black text-indigo-600 border border-indigo-100 hover:border-indigo-200 hover:bg-indigo-50 transition-all"
+              >
+                回到今天
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={handlePrevNewWeekMonth}
+                  className="w-8 h-8 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all flex items-center justify-center"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="text-sm font-black text-slate-800">
+                  {newWeekCalendarYear} 年 {newWeekCalendarMonth} 月
+                </div>
+                <button
+                  onClick={handleNextNewWeekMonth}
+                  className="w-8 h-8 rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all flex items-center justify-center"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black text-slate-400 mb-1">
+                {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
+                  <span key={day} className="py-1">
+                    {day}
+                  </span>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1">
+                {newWeekCalendarWeeks.flatMap((week) =>
+                  week.days.map((day) => {
+                    const dateString = day.dateString;
+                    const dayTime = parseDateValue(dateString) ?? 0;
+                    const startTime = parseDateValue(newWeekStart);
+                    const endTime = parseDateValue(newWeekEnd);
+                    const isStart = dateString === newWeekStart;
+                    const isEnd = dateString === newWeekEnd;
+                    const isInRange =
+                      startTime !== null &&
+                      endTime !== null &&
+                      dayTime >= startTime &&
+                      dayTime <= endTime;
+                    const isSelected = isStart || isEnd;
+
+                    return (
+                      <button
+                        key={dateString}
+                        onClick={() => handleSelectNewWeekDay(dateString)}
+                        title={day.isToday ? `今天 ${dateString}` : dateString}
+                        className={`relative h-9 rounded-xl text-[11px] font-black transition-all border ${
+                          isSelected
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/15"
+                            : isInRange
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-100"
+                              : day.isToday
+                                ? "bg-white text-indigo-700 border-indigo-300 ring-2 ring-indigo-100"
+                              : day.isCurrentMonth
+                                ? "bg-white text-slate-700 border-slate-200 hover:border-indigo-200 hover:text-indigo-600"
+                                : "bg-transparent text-slate-300 border-transparent hover:bg-white/70"
+                        }`}
+                      >
+                        {day.dayNum}
+                        {day.isToday && !isSelected && (
+                          <span className="absolute left-1/2 bottom-0.5 h-1 w-1 -translate-x-1/2 rounded-full bg-indigo-500" />
+                        )}
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  已选时间范围
+                </div>
+                <div className="text-xs font-black text-slate-800 mt-1 font-mono">
+                  {newWeekRange || "请选择开始与结束日期"}
+                </div>
+              </div>
+              {newWeekStart && newWeekEnd && (
+                <span className="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 text-[11px] font-black shrink-0">
+                  {getDateRangeDays(newWeekStart, newWeekEnd)} 天
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-2">
                 <button
                   onClick={() => setShowAddWeekPopup(false)}
                   className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-all"
@@ -4549,11 +4273,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                 </button>
                 <button
                   onClick={handleAddWeek}
-                  className="flex-1 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-all"
+                  disabled={!newWeekStart || !newWeekEnd}
+                  className="flex-1 px-4 py-2 bg-primary text-white rounded-xl text-xs font-bold hover:bg-slate-900 transition-all disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
                 >
                   确认创建
                 </button>
-              </div>
             </div>
           </div>
         </div>
@@ -4634,22 +4358,21 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                   <div className="bg-white rounded-2xl border border-slate-150 shadow-sm flex flex-col overflow-hidden">
                     <div className="px-6 py-5 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div>
-                        <h3 className="text-xs font-black text-slate-850 uppercase tracking-wider flex items-center gap-1.5">
-                          <ListTodo className="w-4 h-4 text-indigo-550" />
-                          关联具体创意需求契约列表 ({associatedReqs.length}{" "}
-                          REQUIRES)
-                        </h3>
-                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                          点击各行可在右侧全屏展开具体创意设计稿/子版本信息/物料历史
-                        </p>
+	                        <h3 className="text-xs font-black text-slate-850 uppercase tracking-wider flex items-center gap-1.5">
+	                          <ListTodo className="w-4 h-4 text-indigo-550" />
+	                          方向下需求列表 ({associatedReqs.length})
+	                        </h3>
+	                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+	                          字段顺序与需求大表保持一致，点击任意行进入需求详情
+	                        </p>
                       </div>
 
                       <button
                         onClick={() => handleAddRequirementForDirection(s.id)}
                         className="px-3.5 py-1.8 bg-white hover:bg-slate-50 text-indigo-650 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-3xs active:scale-95 cursor-pointer"
                       >
-                        <Plus className="w-3.5 h-3.5" /> 快速追加一行创意
-                      </button>
+	                        <Plus className="w-3.5 h-3.5" /> 新建需求
+	                      </button>
                     </div>
 
                     {associatedReqs.length === 0 ? (
@@ -4670,21 +4393,21 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-55 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 select-none">
-                              <th className="px-5 py-3.5 pl-8">需求编号</th>
-                              <th className="px-5 py-3.5">预览设计图</th>
-                              <th className="px-5 py-3.5">创意需求名称</th>
-                              <th className="px-5 py-3.5 text-center">
-                                设计优先级
-                              </th>
-                              <th className="px-5 py-3.5">核心创意人</th>
-                              <th className="px-5 py-3.5">交付状态</th>
-                              <th className="px-5 py-3.5">制作生命周期</th>
-                              <th className="px-5 py-3.5 text-center">
-                                本地提审测试
-                              </th>
-                              <th className="px-5 py-3.5 text-center">
-                                推广投放
-                              </th>
+	                              <th className="px-5 py-3.5 pl-8">编号</th>
+	                              <th className="px-5 py-3.5">预览</th>
+	                              <th className="px-5 py-3.5">需求名称</th>
+	                              <th className="px-5 py-3.5 text-center">
+	                                优先级
+	                              </th>
+	                              <th className="px-5 py-3.5">创意人员</th>
+	                              <th className="px-5 py-3.5 text-center">需求状态</th>
+	                              <th className="px-5 py-3.5 text-center">制作状态</th>
+	                              <th className="px-5 py-3.5 text-center">
+	                                测试状态
+	                              </th>
+	                              <th className="px-5 py-3.5 text-center">
+	                                投放状态
+	                              </th>
                               <th className="px-5 py-3.5 text-right pr-8">
                                 操作
                               </th>
@@ -4785,11 +4508,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     <span className="font-extrabold text-slate-705">
                                       {req.creativePersonnel}
                                     </span>
-                                    <span className="text-[9.5px] text-slate-400 font-semibold italic">
-                                      制作方:{" "}
-                                      {(req.productionPersonnel || ["-"]).join(
-                                        ", ",
-                                      )}
+	                                  <span className="text-[9.5px] text-slate-400 font-semibold italic">
+	                                      制作人员:{" "}
+	                                      {(req.productionPersonnel || ["-"]).join(
+	                                        ", ",
+	                                      )}
                                     </span>
                                   </div>
                                 </td>
@@ -4809,16 +4532,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     }
                                     className={`px-2.5 py-1 rounded-full text-[10px] font-black cursor-pointer border-none shadow-3xs ${getStatusStyle(req.reqStatus)}`}
                                   >
-                                    <option value="Draft">草稿 Draft</option>
-                                    <option value="Pending">
-                                      待审核 Pending
-                                    </option>
-                                    <option value="Approved">
-                                      通过 Approved
-                                    </option>
-                                    <option value="Modification">
-                                      修改 Modification
-                                    </option>
+	                                    <option value="Draft">草稿 Draft</option>
+	                                    <option value="Pending">
+	                                      待审核 Pending
+	                                    </option>
+	                                    <option value="Approved">
+	                                      审核通过 Approved
+	                                    </option>
+	                                    <option value="Modification">
+	                                      需求修改 Modification
+	                                    </option>
                                   </select>
                                 </td>
 
@@ -4835,14 +4558,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           .value as RequirementProdStatus,
                                       })
                                     }
-                                    className={`px-2 py-1 border rounded-lg text-[10px] font-bold focus:ring-1 focus:ring-slate-150 cursor-pointer tracking-tight transition-all ${getProdStatusStyle(req.prodStatus)}`}
-                                  >
-                                    <option value="Scheduled">🕓 排期中</option>
-                                    <option value="InProgress">
-                                      🚀 制作中
-                                    </option>
-                                    <option value="Completed">✅ 已完成</option>
-                                  </select>
+	                                    className={`px-2 py-1 border rounded-lg text-[10px] font-bold focus:ring-1 focus:ring-slate-150 cursor-pointer tracking-tight transition-all ${getProdStatusStyle(req.prodStatus)}`}
+	                                  >
+	                                    <option value="Scheduled">已排期</option>
+	                                    <option value="InProgress">
+	                                      进行中
+	                                    </option>
+	                                    <option value="Completed">已完成</option>
+	                                  </select>
                                 </td>
 
                                 {/* Test status */}
@@ -4860,18 +4583,18 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       }
                                       className="bg-purple-50 text-purple-700 font-black px-2 py-1 rounded-lg text-[10px] border border-purple-200 focus:outline-none cursor-pointer"
                                     >
-                                      <option value="待测试 font-bold">
-                                        待测试
-                                      </option>
-                                      <option value="测试中 font-bold">
-                                        测试中
-                                      </option>
-                                      <option value="数据合格 font-bold">
-                                        数据合格
-                                      </option>
-                                      <option value="不达标 font-bold">
-                                        不达标
-                                      </option>
+	                                      <option value="待测试">
+	                                        待测试
+	                                      </option>
+	                                      <option value="测试中">
+	                                        测试中
+	                                      </option>
+	                                      <option value="数据合格">
+	                                        数据合格
+	                                      </option>
+	                                      <option value="不达标">
+	                                        不达标
+	                                      </option>
                                     </select>
                                   ) : (
                                     <span className="text-slate-350 italic text-[10px]">
@@ -4906,12 +4629,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           <Play className="w-2.5 h-2.5 fill-current text-emerald-600" />
                                           <span>投放中</span>
                                         </>
-                                      ) : (
-                                        <>
-                                          <Pause className="w-2.5 h-2.5 fill-current text-slate-400" />
-                                          <span>暂停</span>
-                                        </>
-                                      )}
+	                                      ) : (
+	                                        <>
+	                                          <Pause className="w-2.5 h-2.5 fill-current text-slate-400" />
+	                                          <span>暂停投放</span>
+	                                        </>
+	                                      )}
                                     </button>
                                   </div>
                                 </td>
@@ -4951,6 +4674,33 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
             <RequirementDetail
               requirement={selectedReq}
               onClose={() => setSelectedReq(null)}
+              onChange={handleRequirementDetailChange}
+              onDelete={handleRequirementDetailDelete}
+              scheduleDeadline={
+                (() => {
+                  const selectedSchedule = schedules.find(
+                    (schedule) => schedule.id === selectedReq.scheduleId,
+                  );
+                  return (
+                    selectedSchedule?.productionEnd ||
+                    selectedSchedule?.submissionDeadline ||
+                    selectedSchedule?.requirementEnd ||
+                    selectedReq.endDate ||
+                    ""
+                  );
+                })()
+              }
+              productionScheduleContext={productionTasks.map((task) => ({
+                id: task.id,
+                requirementId: task.requirement.id,
+                requirementName: task.requirement.name,
+                priority: task.requirement.priority,
+                role: task.role,
+                producer: task.producer,
+                status: task.status,
+                startDate: task.startDate,
+                endDate: task.endDate,
+              }))}
             />
           </div>
         </div>

@@ -168,12 +168,17 @@ export interface ClipMetrics {
 
 export interface ProductionTask {
   id: string;
-  type: 'Graphic' | 'Composition' | 'AI' | 'Other';
+  type: 'Graphic' | 'Video' | 'Composition' | 'Program' | 'Model3D' | 'Scene3D' | 'AI' | 'Other';
+  role?: string;
+  version?: string;
+  versionName?: string;
   status: string;
   designer: string;
   startDate: string;
   endDate: string;
   duration: string;
+  estimatedWorkDays?: number;
+  dependencyIds?: string[];
 }
 
 export type CreativeDifficulty = 'Senior' | 'Junior' | 'Test';
