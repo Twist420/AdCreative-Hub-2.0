@@ -1,13 +1,43 @@
 
 import React, { useState, useMemo } from 'react';
 import { AnalysisDimension, MaterialDetailRow } from '../types';
-import { generateCreativeAnalysisData, generateMaterialDetails } from '../services/mockData';
+import {
+  generateCreativeAnalysisData,
+  generateMaterialDetails,
+  generateRequirements,
+  generateSchedules,
+  generateFinishedCreativePerformance,
+  summarizeDirectionFeedback,
+} from '../services/mockData';
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Cell, AreaChart, Area, ReferenceLine, Label
 } from 'recharts';
 import { Calendar, Clock, Globe, Layers, Table as TableIcon, LayoutGrid, Minus, ChevronDown, X, Play, TrendingUp } from 'lucide-react';
+import DateRangePicker from './DateRangePicker';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+const formatCurrencyCompact = (value: number) => {
+  if (value >= 10000) return `$${(value / 10000).toFixed(1)}w`;
+  return `$${Math.round(value).toLocaleString()}`;
+};
+
+const formatRatioPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+const getFeedbackStatusStyle = (status: string) => {
+  switch (status) {
+    case 'Winner':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'Failed':
+      return 'border-rose-200 bg-rose-50 text-rose-700';
+    case 'Flat':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'Paused':
+      return 'border-slate-200 bg-slate-100 text-slate-500';
+    default:
+      return 'border-indigo-200 bg-indigo-50 text-indigo-700';
+  }
+};
 
 const CustomTooltip = ({ active, payload, label, metricType }: any) => {
   if (active && payload && payload.length) {
@@ -526,6 +556,20 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
   
   const [language, setLanguage] = useState<'all' | 'en' | 'localized'>('all');
   const [channel, setChannel] = useState<string>('all');
+  const feedbackRequirements = useMemo(() => generateRequirements(), []);
+  const feedbackSchedules = useMemo(() => generateSchedules(), []);
+  const scheduleNameMap = useMemo(
+    () => new Map(feedbackSchedules.map((item) => [item.id, item.directionName])),
+    [feedbackSchedules],
+  );
+  const feedbackRows = useMemo(
+    () => generateFinishedCreativePerformance(feedbackRequirements),
+    [feedbackRequirements],
+  );
+  const directionFeedback = useMemo(
+    () => summarizeDirectionFeedback(feedbackRows),
+    [feedbackRows],
+  );
 
   const renderCategorizedAnalysis = (tabType: string) => {
     let tabDims: { id: AnalysisDimension, label: string }[] = [];
@@ -606,11 +650,16 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
                     <Calendar className="w-4 h-4 text-indigo-500" />
                     <span>素材投产期</span>
                 </div>
-                <div className="flex items-center gap-2 bg-slate-50 px-5 py-3 rounded-2xl border border-slate-200">
-                    <input type="date" value={launchStart} onChange={(e) => setLaunchStart(e.target.value)} className="bg-transparent text-[11px] font-black text-slate-700 focus:outline-none w-full" />
-                    <span className="text-slate-300 text-[10px] font-bold px-1">~</span>
-                    <input type="date" value={launchEnd} onChange={(e) => setLaunchEnd(e.target.value)} className="bg-transparent text-[11px] font-black text-slate-700 focus:outline-none w-full" />
-                </div>
+                <DateRangePicker
+                    start={launchStart}
+                    end={launchEnd}
+                    onChange={({ start, end }) => {
+                        setLaunchStart(start);
+                        setLaunchEnd(end);
+                    }}
+                    compact
+                    buttonClassName="h-12 rounded-2xl px-5"
+                />
             </div>
 
             <div className="space-y-3 border-l border-slate-100 pl-10">
@@ -648,14 +697,79 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
                     <Clock className="w-4 h-4 text-emerald-500" />
                     <span>花费统计跨度</span>
                 </div>
-                <div className="flex items-center gap-2 bg-slate-50 px-5 py-3 rounded-2xl border border-slate-200">
-                    <input type="date" value={spendStart} onChange={(e) => setSpendStart(e.target.value)} className="bg-transparent text-[11px] font-black text-slate-700 focus:outline-none w-full" />
-                    <span className="text-slate-300 text-[10px] font-bold px-1">~</span>
-                    <input type="date" value={spendEnd} onChange={(e) => setSpendEnd(e.target.value)} className="bg-transparent text-[11px] font-black text-slate-700 focus:outline-none w-full" />
-                </div>
+                <DateRangePicker
+                    start={spendStart}
+                    end={spendEnd}
+                    onChange={({ start, end }) => {
+                        setSpendStart(start);
+                        setSpendEnd(end);
+                    }}
+                    align="right"
+                    compact
+                    buttonClassName="h-12 rounded-2xl px-5"
+                />
             </div>
         </div>
       </div>
+
+      <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Direction Review</p>
+            <h3 className="text-sm font-black text-slate-900">方向数据回流复盘</h3>
+            <p className="mt-1 text-xs font-bold text-slate-400">成片表现回流到需求、版本和方向，用于判断放量、迭代、暂停或继续观察。</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-right">
+            <div className="rounded-2xl border border-slate-150 bg-slate-50 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">上线</p>
+              <p className="text-sm font-black text-slate-900">{feedbackRows.length}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Winner</p>
+              <p className="text-sm font-black text-emerald-700">{feedbackRows.filter((item) => item.status === 'Winner').length}</p>
+            </div>
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-rose-500">复盘</p>
+              <p className="text-sm font-black text-rose-700">{feedbackRows.filter((item) => item.status === 'Failed').length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-150">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-400">
+              <tr>
+                <th className="px-3 py-3">方向</th>
+                <th className="px-3 py-3 text-right">上线成片</th>
+                <th className="px-3 py-3 text-right">Winner</th>
+                <th className="px-3 py-3 text-right">消耗</th>
+                <th className="px-3 py-3 text-right">CPI</th>
+                <th className="px-3 py-3 text-right">IR</th>
+                <th className="px-3 py-3">状态</th>
+                <th className="px-3 py-3">结论</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {directionFeedback.slice(0, 8).map((row) => (
+                <tr key={row.scheduleId} className="hover:bg-slate-50">
+                  <td className="px-3 py-3 font-black text-slate-800">{scheduleNameMap.get(row.scheduleId) || row.scheduleId}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-600">{row.launchedCreativeCount}</td>
+                  <td className="px-3 py-3 text-right font-bold text-emerald-600">{row.winnerCount}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-600">{formatCurrencyCompact(row.totalSpent)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-600">${row.avgCpi.toFixed(2)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-600">{formatRatioPercent(row.avgIr)}</td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${getFeedbackStatusStyle(row.status)}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-xs font-bold text-slate-500">{row.insight}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* 内容展示区 */}
       <div className="px-2">

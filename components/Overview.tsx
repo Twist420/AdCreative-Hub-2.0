@@ -6,6 +6,7 @@ import { analyzeMaterials } from '../services/geminiService';
 import { AdMaterial, KeywordAnalysisData } from '../types';
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, Play, Calendar, Clock, Globe, Layers } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, BarChart, Bar, CartesianGrid } from 'recharts';
+import DateRangePicker from './DateRangePicker';
 
 type MetricKey = 'totalCost' | 'newCost' | 'newCostShare' | 'totalCount' | 'successCount' | 'successCost' | 'successRate';
 
@@ -208,21 +209,15 @@ const Overview: React.FC = () => {
               </div>
            </div>
            
-           <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200 w-full">
-                <input 
-                    type="date" 
-                    value={launchStart}
-                    onChange={(e) => setLaunchStart(e.target.value)}
-                    className="bg-transparent text-sm font-medium text-slate-700 focus:outline-none flex-1 min-w-0"
-                />
-                <span className="text-slate-400 text-xs font-bold px-1">至</span>
-                <input 
-                    type="date" 
-                    value={launchEnd}
-                    onChange={(e) => setLaunchEnd(e.target.value)}
-                    className="bg-transparent text-sm font-medium text-slate-700 focus:outline-none flex-1 min-w-0"
-                />
-           </div>
+           <DateRangePicker
+             start={launchStart}
+             end={launchEnd}
+             onChange={({ start, end }) => {
+               setLaunchStart(start);
+               setLaunchEnd(end);
+             }}
+             buttonClassName="h-[42px]"
+           />
         </div>
 
         {/* 2. Channel Filter */}
@@ -276,21 +271,16 @@ const Overview: React.FC = () => {
               </div>
            </div>
            
-           <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200 w-full">
-               <input 
-                  type="date" 
-                  value={spendStart}
-                  onChange={(e) => setSpendStart(e.target.value)}
-                  className="bg-transparent text-sm font-medium text-slate-700 focus:outline-none flex-1 min-w-0"
-               />
-               <span className="text-slate-400 text-xs font-bold px-1">至</span>
-               <input 
-                  type="date" 
-                  value={spendEnd}
-                  onChange={(e) => setSpendEnd(e.target.value)}
-                  className="bg-transparent text-sm font-medium text-slate-700 focus:outline-none flex-1 min-w-0"
-               />
-           </div>
+           <DateRangePicker
+             start={spendStart}
+             end={spendEnd}
+             onChange={({ start, end }) => {
+               setSpendStart(start);
+               setSpendEnd(end);
+             }}
+             align="right"
+             buttonClassName="h-[42px]"
+           />
         </div>
 
       </div>

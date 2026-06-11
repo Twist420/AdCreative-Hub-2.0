@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area 
 } from 'recharts';
+import DateRangePicker from './DateRangePicker';
 
 interface MaterialSpend {
   id: string; // m_01
@@ -412,21 +413,15 @@ export const ConsumptionDataPage: React.FC = () => {
         {/* Launch Time + Toggle Checkbox */}
         <div className="flex flex-col gap-2">
           <span className="text-xs font-bold text-slate-700">投放时间</span>
-          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-            <input
-              type="date"
-              value={launchStart}
-              onChange={e => setLaunchStart(e.target.value)}
-              className="bg-transparent text-[11px] font-bold text-slate-600 focus:outline-none w-full"
-            />
-            <span className="text-slate-400 text-xs">至</span>
-            <input
-              type="date"
-              value={launchEnd}
-              onChange={e => setLaunchEnd(e.target.value)}
-              className="bg-transparent text-[11px] font-bold text-slate-600 focus:outline-none w-full"
-            />
-          </div>
+          <DateRangePicker
+            start={launchStart}
+            end={launchEnd}
+            onChange={({ start, end }) => {
+              setLaunchStart(start);
+              setLaunchEnd(end);
+            }}
+            compact
+          />
           <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -441,21 +436,16 @@ export const ConsumptionDataPage: React.FC = () => {
         {/* Spend Period */}
         <div className="flex flex-col gap-2 border-l-0 md:border-l border-slate-100 md:px-4">
           <span className="text-xs font-bold text-slate-700">花费周期</span>
-          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-            <input
-              type="date"
-              value={spendStart}
-              onChange={e => setSpendStart(e.target.value)}
-              className="bg-transparent text-[11px] font-bold text-slate-600 focus:outline-none w-full"
-            />
-            <span className="text-slate-400 text-xs">至</span>
-            <input
-              type="date"
-              value={spendEnd}
-              onChange={e => setSpendEnd(e.target.value)}
-              className="bg-transparent text-[11px] font-bold text-slate-600 focus:outline-none w-full"
-            />
-          </div>
+          <DateRangePicker
+            start={spendStart}
+            end={spendEnd}
+            onChange={({ start, end }) => {
+              setSpendStart(start);
+              setSpendEnd(end);
+            }}
+            align="right"
+            compact
+          />
         </div>
 
         {/* Channel Selection */}

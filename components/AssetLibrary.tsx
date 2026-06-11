@@ -59,6 +59,279 @@ const FOLDER_TREE: FolderNode[] = [
   }
 ];
 
+interface AssetFacet {
+  id: string;
+  label: string;
+  categoryId: string;
+  group: string;
+  match: (item: LibraryItem) => boolean;
+}
+
+interface AssetFacetGroup {
+  title: string;
+  facets: AssetFacet[];
+}
+
+interface AssetFacetCategory {
+  id: string;
+  label: string;
+  groups: AssetFacetGroup[];
+}
+
+const matchTerms = (terms: string[]) => (item: LibraryItem) => {
+  const content = [item.type, item.subType, item.name, ...item.tags].join(' ').toLowerCase();
+  return terms.some(term => content.includes(term.toLowerCase()));
+};
+
+const createFacet = (
+  id: string,
+  label: string,
+  categoryId: string,
+  group: string,
+  match: (item: LibraryItem) => boolean
+): AssetFacet => ({ id, label, categoryId, group, match });
+
+const ASSET_FACET_CATEGORIES: AssetFacetCategory[] = [
+  {
+    id: 'popular',
+    label: '热门推荐',
+    groups: [
+      {
+        title: '常用入口',
+        facets: [
+          createFacet('all', '全部资产', 'popular', '常用入口', () => true),
+          createFacet('recommended', '推荐资产', 'popular', '常用入口', item => item.status === 'Recommended'),
+          createFacet('with_data', '有投放数据', 'popular', '常用入口', item => Boolean(item.performance?.length)),
+          createFacet('high_citation', '高复用', 'popular', '常用入口', item => item.citationCount >= 40),
+          createFacet('recent', '近期上传', 'popular', '常用入口', item => new Date(item.createdAt).getTime() >= new Date('2026-05-01').getTime()),
+        ],
+      },
+      {
+        title: '高频广告素材',
+        facets: [
+          createFacet('hot_ai_hook', 'AI前贴', 'popular', '高频广告素材', matchTerms(['AI前贴', 'AI生成'])),
+          createFacet('hot_live_hook', '真人前贴', 'popular', '高频广告素材', matchTerms(['真人前贴', '真人实拍', '真人'])),
+          createFacet('hot_gameplay', '玩法展示', 'popular', '高频广告素材', matchTerms(['玩法', '核心玩法', '合成'])),
+          createFacet('hot_billboard', '大字报', 'popular', '高频广告素材', matchTerms(['大字报', '文字'])),
+          createFacet('hot_reward', '奖励爆点', 'popular', '高频广告素材', matchTerms(['奖励', '爆金币', '宝箱'])),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'resource',
+    label: '资源类型',
+    groups: [
+      {
+        title: '视频片段',
+        facets: [
+          createFacet('fragment', '全部片段', 'resource', '视频片段', item => item.type === 'Fragment'),
+          createFacet('pre_hook', '前贴/Hook', 'resource', '视频片段', matchTerms(['前贴'])),
+          createFacet('gameplay_segment', '玩法段', 'resource', '视频片段', matchTerms(['玩法'])),
+          createFacet('story_segment', '剧情段', 'resource', '视频片段', matchTerms(['剧情'])),
+          createFacet('billboard_segment', '大字报段', 'resource', '视频片段', matchTerms(['大字报'])),
+        ],
+      },
+      {
+        title: '组件素材',
+        facets: [
+          createFacet('component', '全部组件', 'resource', '组件素材', item => item.type === 'Component'),
+          createFacet('scene_asset', '场景/背景', 'resource', '组件素材', matchTerms(['场景', '背景'])),
+          createFacet('ui_asset', 'UI/面板', 'resource', '组件素材', matchTerms(['UI', '面板', '弹窗'])),
+          createFacet('effect_asset', '特效/粒子', 'resource', '组件素材', matchTerms(['特效', '粒子'])),
+          createFacet('audio_asset', '音效/BGM', 'resource', '组件素材', matchTerms(['音效', 'BGM', '音乐', '环境音'])),
+          createFacet('character_asset', '人物/形象', 'resource', '组件素材', matchTerms(['人物', '形象', '二次元'])),
+          createFacet('model_asset', '3D模型', 'resource', '组件素材', matchTerms(['3D模型', '高模', '3D'])),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'theme',
+    label: '主题题材',
+    groups: [
+      {
+        title: '世界观/氛围',
+        facets: [
+          createFacet('theme_fantasy', '奇幻魔法', 'theme', '世界观/氛围', matchTerms(['冰雪仙子', '恶魔', '龙族', '巨龙', '魔法'])),
+          createFacet('theme_ice', '冰雪极地', 'theme', '世界观/氛围', matchTerms(['冰雪', '冰原', '极地', '寒风'])),
+          createFacet('theme_fire', '火焰恶魔', 'theme', '世界观/氛围', matchTerms(['火焰', '恶魔', '变身'])),
+          createFacet('theme_tech', '科技极客', 'theme', '世界观/氛围', matchTerms(['极客', '电脑', '科技', '朋克'])),
+          createFacet('theme_cartoon', '漫画卡通', 'theme', '世界观/氛围', matchTerms(['漫画', '卡通', '二次元'])),
+        ],
+      },
+      {
+        title: '广告卖点',
+        facets: [
+          createFacet('selling_surprise', '惊喜反应', 'theme', '广告卖点', matchTerms(['惊喜', '惊叹', '爆奖'])),
+          createFacet('selling_reward', '奖励反馈', 'theme', '广告卖点', matchTerms(['奖励', '宝箱', '爆金币', '欧皇'])),
+          createFacet('selling_relief', '解压爽感', 'theme', '广告卖点', matchTerms(['解压', '太空沙', 'ASMR', '舒适'])),
+          createFacet('selling_upgrade', '升级成长', 'theme', '广告卖点', matchTerms(['升级', '解锁', '合成链'])),
+          createFacet('selling_text', '强文案吸睛', 'theme', '广告卖点', matchTerms(['大字报', '文字', '吸睛', '震颤'])),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'character',
+    label: '角色生物',
+    groups: [
+      {
+        title: '人物/身份',
+        facets: [
+          createFacet('char_male', '男性', 'character', '人物/身份', matchTerms(['男性', '小哥'])),
+          createFacet('char_female', '女性', 'character', '人物/身份', matchTerms(['女性', '萌妹', '公主', '仙子'])),
+          createFacet('char_princess', '公主/王子', 'character', '人物/身份', matchTerms(['公主', '王子'])),
+          createFacet('char_wizard', '法师/巫师', 'character', '人物/身份', matchTerms(['法师', '巫师', 'wizard'])),
+        ],
+      },
+      {
+        title: '生物/怪物',
+        facets: [
+          createFacet('creature_dragon', '龙/巨龙', 'character', '生物/怪物', matchTerms(['龙', '巨龙', '龙族'])),
+          createFacet('creature_demon', '恶魔', 'character', '生物/怪物', matchTerms(['恶魔'])),
+          createFacet('creature_unicorn', '独角兽', 'character', '生物/怪物', matchTerms(['独角兽', 'unicorn'])),
+          createFacet('creature_animal', '动物形象', 'character', '生物/怪物', matchTerms(['动物形象', '动物'])),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'gameplay',
+    label: '玩法机制',
+    groups: [
+      {
+        title: '核心玩法',
+        facets: [
+          createFacet('play_merge', '合成', 'gameplay', '核心玩法', matchTerms(['合成', '合成链'])),
+          createFacet('play_tower', '塔防', 'gameplay', '核心玩法', matchTerms(['塔防'])),
+          createFacet('play_match3', '三消', 'gameplay', '核心玩法', matchTerms(['三消', '消消乐', '连爆'])),
+          createFacet('play_boss', 'Boss战', 'gameplay', '核心玩法', matchTerms(['boss', '战斗', 'battle'])),
+          createFacet('play_unlock', '解锁升级', 'gameplay', '核心玩法', matchTerms(['解锁', '升级', '十级'])),
+        ],
+      },
+      {
+        title: '表现形式',
+        facets: [
+          createFacet('format_3d', '3D表现', 'gameplay', '表现形式', matchTerms(['3D', '高模'])),
+          createFacet('format_live', '真人实拍', 'gameplay', '表现形式', matchTerms(['真人实拍', '真人'])),
+          createFacet('format_ai', 'AI生成', 'gameplay', '表现形式', matchTerms(['AI生成', 'AI前贴'])),
+          createFacet('format_text', '全屏文案', 'gameplay', '表现形式', matchTerms(['全屏', '文字', '大字报'])),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'scene',
+    label: '场景环境',
+    groups: [
+      {
+        title: '自然/空间',
+        facets: [
+          createFacet('scene_ice', '冰原/雪地', 'scene', '自然/空间', matchTerms(['冰原', '冰雪', '极地'])),
+          createFacet('scene_castle', '城堡', 'scene', '自然/空间', matchTerms(['城堡'])),
+          createFacet('scene_space', '太空/沙', 'scene', '自然/空间', matchTerms(['太空', '太空沙'])),
+          createFacet('scene_cyber', '朋克/科技', 'scene', '自然/空间', matchTerms(['朋克', '科技', '电脑'])),
+        ],
+      },
+      {
+        title: '画面部件',
+        facets: [
+          createFacet('scene_background', '背景板', 'scene', '画面部件', matchTerms(['背景', '背景板'])),
+          createFacet('scene_panel', '面板弹窗', 'scene', '画面部件', matchTerms(['面板', '弹窗', 'UI'])),
+          createFacet('scene_particle', '粒子特效', 'scene', '画面部件', matchTerms(['粒子', '特效'])),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'usage',
+    label: '适用位置',
+    groups: [
+      {
+        title: '视频结构',
+        facets: [
+          createFacet('usage_a', 'A段 / Hook', 'usage', '视频结构', item => getAssetUsageSlots(item).includes('A段')),
+          createFacet('usage_mid', '中间段', 'usage', '视频结构', item => getAssetUsageSlots(item).includes('中间段')),
+          createFacet('usage_b', 'B段', 'usage', '视频结构', item => getAssetUsageSlots(item).includes('B段')),
+          createFacet('usage_cta', 'CTA', 'usage', '视频结构', item => getAssetUsageSlots(item).includes('CTA')),
+        ],
+      },
+      {
+        title: '组件用途',
+        facets: [
+          createFacet('usage_background', '背景', 'usage', '组件用途', item => getAssetUsageSlots(item).includes('背景')),
+          createFacet('usage_ui', 'UI组件', 'usage', '组件用途', item => getAssetUsageSlots(item).includes('UI组件')),
+          createFacet('usage_fx', '特效', 'usage', '组件用途', item => getAssetUsageSlots(item).includes('特效')),
+          createFacet('usage_audio', '音效', 'usage', '组件用途', item => getAssetUsageSlots(item).includes('音效')),
+          createFacet('usage_character', '角色', 'usage', '组件用途', item => getAssetUsageSlots(item).includes('角色')),
+          createFacet('usage_image', '图片', 'usage', '组件用途', item => getAssetUsageSlots(item).includes('图片')),
+        ],
+      },
+    ],
+  },
+  {
+    id: 'keyword',
+    label: '关键词',
+    groups: [
+      {
+        title: '内容关键词',
+        facets: [
+          createFacet('kw_ice', '冰雪', 'keyword', '内容关键词', matchTerms(['冰雪'])),
+          createFacet('kw_mystery', '神秘', 'keyword', '内容关键词', matchTerms(['神秘'])),
+          createFacet('kw_chest', '宝箱', 'keyword', '内容关键词', matchTerms(['宝箱'])),
+          createFacet('kw_gold', '金币', 'keyword', '内容关键词', matchTerms(['金币', '爆金币'])),
+          createFacet('kw_popup', '弹窗', 'keyword', '内容关键词', matchTerms(['弹窗'])),
+          createFacet('kw_music', '音乐', 'keyword', '内容关键词', matchTerms(['音乐', 'BGM'])),
+          createFacet('kw_asrm', 'ASMR', 'keyword', '内容关键词', matchTerms(['ASMR'])),
+        ],
+      },
+      {
+        title: '数据状态',
+        facets: [
+          createFacet('kw_recommended', '推荐', 'keyword', '数据状态', item => item.status === 'Recommended'),
+          createFacet('kw_disabled', '停用', 'keyword', '数据状态', item => item.status === 'Disabled'),
+          createFacet('kw_insufficient', '数据不足', 'keyword', '数据状态', item => item.status === 'Insufficient Data'),
+          createFacet('kw_not_recommended', '不推荐', 'keyword', '数据状态', item => item.status === 'Not Recommended'),
+        ],
+      },
+    ],
+  },
+];
+
+const ASSET_FACETS = ASSET_FACET_CATEGORIES.flatMap(category =>
+  category.groups.flatMap(group => group.facets)
+);
+
+const getAssetUsageSlots = (item: LibraryItem): string[] => {
+  const content = [item.type, item.subType, item.name, ...item.tags].join(' ').toLowerCase();
+  const slots = new Set<string>();
+
+  if (item.type === 'Fragment') {
+    if (content.includes('前贴') || content.includes('hook') || content.includes('ai生成') || content.includes('真人')) {
+      slots.add('A段');
+    }
+    if (content.includes('玩法') || content.includes('合成') || content.includes('塔防') || content.includes('三消')) {
+      slots.add('中间段');
+    }
+    if (content.includes('大字报') || content.includes('文字') || content.includes('奖励') || content.includes('宝箱')) {
+      slots.add('B段');
+    }
+    if (content.includes('奖励') || content.includes('宝箱') || content.includes('结算')) {
+      slots.add('CTA');
+    }
+  }
+
+  if (content.includes('场景') || content.includes('背景')) slots.add('背景');
+  if (content.includes('ui') || content.includes('面板') || content.includes('弹窗')) slots.add('UI组件');
+  if (content.includes('特效') || content.includes('粒子')) slots.add('特效');
+  if (content.includes('音效') || content.includes('bgm') || content.includes('音乐')) slots.add('音效');
+  if (content.includes('人物') || content.includes('形象') || content.includes('3d模型')) slots.add('角色');
+  if (content.includes('图片') || item.sourceFileUrl?.match(/\.(jpg|jpeg|png|webp)$/i)) slots.add('图片');
+
+  return Array.from(slots).slice(0, 4);
+};
+
 const INITIAL_ITEMS: LibraryItem[] = [
   {
      id: 'fr-ai-01',
@@ -477,6 +750,7 @@ const AssetLibrary: React.FC = () => {
   const [currentPath, setCurrentPath] = useState<string[]>([]);
   const [selectedDetailItem, setSelectedDetailItem] = useState<LibraryItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFacetIds, setActiveFacetIds] = useState<string[]>([]);
   
   // Custom states for Asset Detail View enhancement & direct card play
   const [playingCardId, setPlayingCardId] = useState<string | null>(null);
@@ -828,19 +1102,51 @@ const AssetLibrary: React.FC = () => {
     setSelectedDetailItem(prev => prev && prev.id === itemId ? { ...prev, name: newName.trim() } : prev);
   };
 
+  const activeFacets = activeFacetIds
+    .map(id => ASSET_FACETS.find(facet => facet.id === id))
+    .filter((facet): facet is AssetFacet => Boolean(facet));
+  const activeFacetLabel = activeFacets.length ? activeFacets.map(facet => facet.label).join(' / ') : '全部资产';
+  const activeFacetLabels = activeFacets.map(facet => ({ id: facet.id, label: facet.label }));
+
+  const toggleAssetFacet = (facetId: string) => {
+    if (facetId === 'all') {
+      setActiveFacetIds([]);
+      return;
+    }
+    setActiveFacetIds(prev => (
+      prev.includes(facetId)
+        ? prev.filter(id => id !== facetId)
+        : [...prev, facetId]
+    ));
+  };
+
+  const removeAssetFacet = (facetId: string) => {
+    setActiveFacetIds(prev => prev.filter(id => id !== facetId));
+  };
+
+  const facetCounts = useMemo(() => {
+    const scopedItems = libraryItems.filter(item => isItemInPath(getItemPath(item), currentPath));
+    return ASSET_FACETS.reduce<Record<string, number>>((acc, facet) => {
+      acc[facet.id] = scopedItems.filter(facet.match).length;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [libraryItems, currentPath, folderTree]);
+
   const filteredItems = libraryItems.filter(item => {
     const itemPath = getItemPath(item);
     const isInActivePath = isItemInPath(itemPath, currentPath);
+    const matchesFacet = activeFacets.length === 0 || activeFacets.every(facet => facet.match(item));
+
+    if (!isInActivePath || !matchesFacet) return false;
     
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
-      const matchesSearch = item.name.toLowerCase().includes(query) || 
-                            item.id.toLowerCase().includes(query) ||
-                            item.tags.some(t => t.toLowerCase().includes(query)) ||
-                            item.subType.toLowerCase().includes(query);
-      return isInActivePath && matchesSearch;
+      return item.name.toLowerCase().includes(query) || 
+        item.id.toLowerCase().includes(query) ||
+        item.tags.some(t => t.toLowerCase().includes(query)) ||
+        item.subType.toLowerCase().includes(query);
     }
-    return isInActivePath;
+    return true;
   });
 
   const sortedItems = useMemo(() => {
@@ -1360,6 +1666,85 @@ const AssetLibrary: React.FC = () => {
             </div>
          </div>
 
+         <div className="border-b border-slate-100 bg-slate-50/80">
+            <div className="max-h-64 overflow-y-auto px-6 py-4 no-scrollbar">
+               <div className="space-y-3">
+                  {ASSET_FACET_CATEGORIES.map(category => (
+                     <div key={category.id} className="grid grid-cols-[112px_minmax(0,1fr)] gap-6 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0">
+                        <div className="pt-1">
+                           <p className="text-[12px] font-black text-indigo-600">{category.label}</p>
+                        </div>
+                        <div className="space-y-2.5">
+                           {category.groups.map(group => (
+                              <div key={`${category.id}-${group.title}`} className="grid grid-cols-[104px_minmax(0,1fr)] gap-5">
+                                 <p className="pt-0.5 text-[10px] font-black leading-6 text-slate-400">{group.title}</p>
+                                 <div className="flex flex-wrap items-center gap-x-7 gap-y-2">
+                                    {group.facets.map(facet => {
+                                       const isActive = facet.id === 'all' ? activeFacetIds.length === 0 : activeFacetIds.includes(facet.id);
+                                       const count = facetCounts[facet.id] || 0;
+                                       return (
+                                          <button
+                                             key={facet.id}
+                                             type="button"
+                                             onClick={() => toggleAssetFacet(facet.id)}
+                                             className={`group inline-flex h-6 items-center gap-1 whitespace-nowrap text-[11px] font-black leading-6 transition-all ${
+                                                isActive
+                                                   ? 'text-indigo-600'
+                                                   : 'text-slate-700 hover:text-indigo-600'
+                                             }`}
+                                          >
+                                             <span className={isActive ? 'border-b-2 border-indigo-500 pb-0.5' : 'pb-0.5'}>
+                                                {facet.label}
+                                             </span>
+                                             <span className={`text-[9px] font-black ${isActive ? 'text-indigo-400' : 'text-slate-300 group-hover:text-indigo-300'}`}>
+                                                {count}
+                                             </span>
+                                          </button>
+                                       );
+                                    })}
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+                  ))}
+               </div>
+            </div>
+            <div className="border-t border-slate-100 bg-white/80 px-6 py-3">
+               <div className="flex min-h-7 flex-wrap items-center gap-2">
+                  <span className="mr-1 text-[10px] font-black text-slate-400">已选标签</span>
+                  {activeFacetLabels.length === 0 ? (
+                     <span className="rounded-xl bg-slate-50 px-3 py-1.5 text-[10px] font-black text-slate-300">全部资产</span>
+                  ) : (
+                     activeFacetLabels.map(facet => (
+                        <button
+                           key={facet.id}
+                           type="button"
+                           onClick={() => removeAssetFacet(facet.id)}
+                           className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-[10px] font-black text-indigo-600 transition-all hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500"
+                           title="移除此筛选标签"
+                        >
+                           {facet.label}
+                           <X className="h-3 w-3" />
+                        </button>
+                     ))
+                  )}
+                  {(activeFacetLabels.length > 0 || searchQuery.trim()) && (
+                     <button
+                        type="button"
+                        onClick={() => {
+                           setActiveFacetIds([]);
+                           setSearchQuery('');
+                        }}
+                        className="ml-auto rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                     >
+                        清除全部
+                     </button>
+                  )}
+               </div>
+            </div>
+         </div>
+
          {/* Navigation, Breadcrumbs and folder grid content */}
          <div className="flex-1 overflow-y-auto no-scrollbar p-6">
             
@@ -1453,7 +1838,7 @@ const AssetLibrary: React.FC = () => {
                       保存设置并激活此资产库
                    </button>
                 </div>
-             ) : (!isLeaf && searchQuery.trim() === '') ? (
+             ) : (!isLeaf && searchQuery.trim() === '' && activeFacetIds.length === 0) ? (
               /* Display sub-folder grids */
               <div className="space-y-6">
                 <div>
@@ -1530,11 +1915,29 @@ const AssetLibrary: React.FC = () => {
               </div>
             ) : (
               <div>
+                {(activeFacetIds.length > 0 || searchQuery.trim()) && (
+                  <div className="mb-4 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] font-bold text-slate-500">
+                      当前查看：<span className="font-black text-slate-800">{activeFacetLabel}</span>
+                      {searchQuery.trim() ? <span> / 搜索 “{searchQuery.trim()}”</span> : null}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveFacetIds([]);
+                        setSearchQuery('');
+                      }}
+                      className="text-[10px] font-black text-indigo-600 hover:text-indigo-700"
+                    >
+                      清除筛选
+                    </button>
+                  </div>
+                )}
                 {sortedItems.length === 0 ? (
                   <div className="h-64 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-100 flex flex-col items-center justify-center text-slate-400 font-bold font-sans">
                      <Box className="w-10 h-10 text-slate-300 mb-2.5" />
-                     <p className="text-xs">该目录下暂无资产数据</p>
-                     <p className="text-[10px] text-slate-400 font-normal mt-1">您可以点击右上角“上传素材”来进行添加</p>
+                     <p className="text-xs">当前目录下没有符合「{activeFacetLabel}」的资产</p>
+                     <p className="text-[10px] text-slate-400 font-normal mt-1">可以清除筛选，或上传素材并补充类型标签。</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
@@ -1654,6 +2057,14 @@ const AssetLibrary: React.FC = () => {
                                     <p className="text-[8px] font-bold text-slate-400 font-mono tracking-tight leading-none">
                                        {item.id}
                                     </p>
+                                 </div>
+
+                                 <div className="flex flex-wrap gap-1">
+                                    {getAssetUsageSlots(item).slice(0, 3).map(slot => (
+                                      <span key={slot} className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[7px] font-black leading-none text-indigo-600">
+                                         {slot}
+                                      </span>
+                                    ))}
                                  </div>
 
                                  <div className="flex flex-wrap gap-0.5">

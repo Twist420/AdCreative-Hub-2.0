@@ -49,56 +49,56 @@ const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="flex flex-col h-full bg-slate-50">
       {/* 1. 全局顶层导航栏 */}
-      <header className="h-14 bg-slate-900 text-white flex items-center justify-between px-6 shrink-0 z-30">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2 mr-4">
+      <header className="h-14 bg-slate-900 text-white flex items-center justify-between gap-3 px-4 lg:px-6 shrink-0 z-30">
+        <div className="flex min-w-0 items-center gap-4 lg:gap-8">
+          <div className="flex shrink-0 items-center gap-2 mr-1 lg:mr-4">
              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
                 <BarChart3 className="text-white w-4 h-4" />
              </div>
              <span className="text-lg font-bold tracking-tight">AdPulse Pro</span>
           </div>
           
-          <nav className="flex items-center h-full">
+          <nav className="flex min-w-0 items-center h-full overflow-x-auto no-scrollbar">
             <button 
               onClick={() => onModuleNavigate(MainModule.REQUIREMENT_CENTER)}
-              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${isRequirementModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+              className={`h-14 px-3 lg:px-5 xl:px-6 flex shrink-0 items-center gap-2 text-sm font-bold transition-all border-b-2 ${isRequirementModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <ClipboardList className="w-4 h-4" /> 需求中心
             </button>
             <button 
               onClick={() => onModuleNavigate(MainModule.ASSET_LIBRARY)}
-              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.ASSET_LIBRARY ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+              className={`h-14 px-3 lg:px-5 xl:px-6 flex shrink-0 items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.ASSET_LIBRARY ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <Database className="w-4 h-4" /> 资产库
             </button>
             <button 
               onClick={() => onModuleNavigate(MainModule.ITERATION_RECORD)}
-              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.ITERATION_RECORD ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+              className={`h-14 px-3 lg:px-5 xl:px-6 flex shrink-0 items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.ITERATION_RECORD ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <Activity className="w-4 h-4" /> 迭代记录
             </button>
             <button 
               onClick={() => onModuleNavigate(MainModule.DATA_ANALYSIS)}
-              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${isDataModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+              className={`h-14 px-3 lg:px-5 xl:px-6 flex shrink-0 items-center gap-2 text-sm font-bold transition-all border-b-2 ${isDataModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <Database className="w-4 h-4" /> 数据分析
             </button>
             <button 
               onClick={() => onModuleNavigate(MainModule.TAG_MANAGEMENT)}
-              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${isTagModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+              className={`h-14 px-3 lg:px-5 xl:px-6 flex shrink-0 items-center gap-2 text-sm font-bold transition-all border-b-2 ${isTagModule ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <Tags className="w-4 h-4" /> 标签管理
             </button>
             <button 
               onClick={() => onModuleNavigate(MainModule.UI_SPECIFICATION)}
-              className={`h-14 px-6 flex items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.UI_SPECIFICATION ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
+              className={`h-14 px-3 lg:px-5 xl:px-6 flex shrink-0 items-center gap-2 text-sm font-bold transition-all border-b-2 ${activeModule === MainModule.UI_SPECIFICATION ? 'border-primary bg-white/5 text-white' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
               <Palette className="w-4 h-4" /> 规范画布
             </button>
           </nav>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-3 lg:gap-4">
           <button className="p-2 text-slate-400 hover:text-white"><Settings className="w-4 h-4" /></button>
           <div className="w-px h-6 bg-slate-700"></div>
           <div className="flex items-center gap-3">
@@ -216,7 +216,7 @@ const Layout: React.FC<LayoutProps> = ({
         )}
 
         {/* 页面主视图 */}
-        <main className="flex-1 overflow-y-auto no-scrollbar bg-slate-50 p-6">
+        <main className="flex-1 min-w-0 overflow-y-auto no-scrollbar bg-slate-50 p-4 lg:p-6">
            {children}
         </main>
       </div>

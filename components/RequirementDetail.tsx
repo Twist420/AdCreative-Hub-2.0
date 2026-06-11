@@ -11,7 +11,8 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Requirement, RequirementReqStatus, RequirementProdStatus, ScriptSection,
-  RequirementStageType, ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS
+  RequirementStageType, ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS,
+  FinishedCreativePerformance, RequirementFeedbackSummary
 } from '../types';
 import RequirementScriptWorkbench from './RequirementScriptWorkbench';
 
@@ -149,6 +150,28 @@ const generateFullName = (req: Requirement, versionOverride?: string, nameOverri
   ].filter(Boolean);
   
   return parts.join('-');
+};
+
+const formatCurrencyCompact = (value: number) => {
+  if (value >= 10000) return `$${(value / 10000).toFixed(1)}w`;
+  return `$${Math.round(value).toLocaleString()}`;
+};
+
+const formatFeedbackPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+const getFeedbackStatusStyle = (status: string) => {
+  switch (status) {
+    case 'Winner':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'Failed':
+      return 'border-rose-200 bg-rose-50 text-rose-700';
+    case 'Flat':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'Paused':
+      return 'border-slate-200 bg-slate-100 text-slate-500';
+    default:
+      return 'border-indigo-200 bg-indigo-50 text-indigo-700';
+  }
 };
 
 const MATERIAL_STAGES = [
@@ -297,6 +320,31 @@ const normalizePlannedTaskStatus = (task: ProductionTask): string => {
   return task.status || '待排期';
 };
 
+const getDifficultyEstimatedHours = (
+  task: Pick<ProductionTask, 'role' | 'type'>,
+  difficulty: Requirement['difficulty'] = 'C',
+) => {
+  const role = `${task.role || task.type || ''}`;
+  const level = difficulty || 'C';
+  const presets: Record<string, Record<string, number>> = {
+    Graphic: { S: 12, A: 8, B: 5, C: 3 },
+    Composition: { S: 16, A: 10, B: 6, C: 4 },
+    AI: { S: 8, A: 5, B: 3, C: 2 },
+    Program: { S: 20, A: 14, B: 8, C: 5 },
+    Model3D: { S: 18, A: 12, B: 8, C: 4 },
+    Scene3D: { S: 18, A: 12, B: 8, C: 4 },
+    Other: { S: 8, A: 5, B: 3, C: 2 },
+  };
+
+  if (role.includes('平面')) return presets.Graphic[level] || presets.Graphic.C;
+  if (role.includes('合成') || role.includes('视频')) return presets.Composition[level] || presets.Composition.C;
+  if (role.includes('AI')) return presets.AI[level] || presets.AI.C;
+  if (role.includes('程序')) return presets.Program[level] || presets.Program.C;
+  if (role.includes('模型')) return presets.Model3D[level] || presets.Model3D.C;
+  if (role.includes('地编') || role.includes('3D')) return presets.Scene3D[level] || presets.Scene3D.C;
+  return presets[task.type || 'Other']?.[level] || presets.Other.C;
+};
+
 const deriveRequirementFromTasks = (req: Requirement, tasks: ProductionTask[]): Requirement => {
   const assignedPeople = Array.from(new Set(tasks.map(task => task.designer).filter(Boolean)));
   const startDates = tasks.map(task => task.startDate).filter(Boolean).sort();
@@ -384,6 +432,54 @@ const formatShortDateRange = (start?: string, end?: string) => {
   return start === end ? format(start) : `${format(start)}-${format(end)}`;
 };
 
+const getScheduleGapHints = (
+  occupiedTasks: ProductionScheduleContextItem[],
+  horizonStart: string,
+  horizonEnd: string,
+) => {
+  const startTime = parseDateValue(horizonStart);
+  const endTime = parseDateValue(horizonEnd);
+  if (startTime === null || endTime === null) return [];
+
+  const sortedBusyRanges = occupiedTasks
+    .map(item => ({
+      start: Math.max(parseDateValue(item.startDate) ?? startTime, startTime),
+      end: Math.min(parseDateValue(item.endDate) ?? parseDateValue(item.startDate) ?? startTime, endTime),
+    }))
+    .filter(range => range.end >= startTime && range.start <= endTime)
+    .sort((a, b) => a.start - b.start);
+
+  const gaps: Array<{ start: string; end: string; days: number }> = [];
+  let cursor = startTime;
+
+  sortedBusyRanges.forEach(range => {
+    if (range.start > cursor) {
+      const gapStart = new Date(cursor);
+      const gapEnd = new Date(range.start - 86400000);
+      const days = Math.max(1, Math.round((gapEnd.getTime() - gapStart.getTime()) / 86400000) + 1);
+      gaps.push({
+        start: formatDateInput(gapStart),
+        end: formatDateInput(gapEnd),
+        days,
+      });
+    }
+    cursor = Math.max(cursor, range.end + 86400000);
+  });
+
+  if (cursor <= endTime) {
+    const gapStart = new Date(cursor);
+    const gapEnd = new Date(endTime);
+    const days = Math.max(1, Math.round((gapEnd.getTime() - gapStart.getTime()) / 86400000) + 1);
+    gaps.push({
+      start: formatDateInput(gapStart),
+      end: formatDateInput(gapEnd),
+      days,
+    });
+  }
+
+  return gaps;
+};
+
 const Dropdown = ({ label, value, options, onChange, isMulti = false }: {
   label: string,
   value: string | string[],
@@ -441,6 +537,8 @@ interface RequirementDetailProps {
   onDelete?: (requirementId: string) => void;
   productionScheduleContext?: ProductionScheduleContextItem[];
   scheduleDeadline?: string;
+  finishedCreativePerformance?: FinishedCreativePerformance[];
+  feedbackSummary?: RequirementFeedbackSummary;
 }
 
 const RequirementDetail: React.FC<RequirementDetailProps> = ({
@@ -450,6 +548,8 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   onDelete,
   productionScheduleContext = [],
   scheduleDeadline = '',
+  finishedCreativePerformance = [],
+  feedbackSummary,
 }) => {
   const [activeTab, setActiveTab] = useState<'script' | 'clip'>('script');
   const [rightTab, setRightTab] = useState<'iteration' | 'schedule'>('schedule');
@@ -653,6 +753,10 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
     preset = SCHEDULE_ROLE_PRESETS[3],
   ) => {
     const taskIndex = (currentReq.tasks || []).length + 1;
+    const estimatedHours = getDifficultyEstimatedHours(
+      { role: preset.role, type: preset.type },
+      currentReq.difficulty,
+    );
     const nextTask: ProductionTask = {
       id: `${currentReq.id}-custom-${Date.now()}${version ? `-${version.version}` : ''}`,
       type: preset.type,
@@ -661,8 +765,8 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
       designer: '',
       startDate: '',
       endDate: '',
-      duration: '0.1H',
-      estimatedWorkDays: 0.1,
+      duration: `${estimatedHours}H`,
+      estimatedWorkDays: estimatedHours,
       dependencyIds: [],
       version: version?.version,
       versionName: version?.name,
@@ -759,6 +863,24 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
     [todayDateString],
   );
 
+  const currentRequirementScheduleItems = useMemo(
+    () =>
+      (currentReq.tasks || [])
+        .filter((item) => item.designer && item.startDate && item.endDate)
+        .map((item) => ({
+          id: `${currentReq.id}:draft:${item.id}`,
+          requirementId: currentReq.id,
+          requirementName: `${currentReq.name}${item.version ? ` / v${item.version}` : ''}`,
+          priority: currentReq.priority,
+          role: getScheduleRolePreset(item.role, item.type).role,
+          producer: item.designer,
+          status: item.status || '待排期',
+          startDate: item.startDate,
+          endDate: item.endDate,
+        })),
+    [currentReq],
+  );
+
   const getTaskScheduleContext = (task: ProductionTask) => {
     if (!task.designer) {
       return {
@@ -768,9 +890,10 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
     }
 
     const currentTaskContextId = `${currentReq.id}:${task.id}`;
-    const visibleTasks = productionScheduleContext
+    const visibleTasks = [...productionScheduleContext, ...currentRequirementScheduleItems]
       .filter((item) => {
         if (item.id === currentTaskContextId) return false;
+        if (item.id === `${currentReq.id}:draft:${task.id}`) return false;
         if (item.producer !== task.designer) return false;
         return rangesOverlap(
           item.startDate,
@@ -812,32 +935,110 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
         text: `结束时间超过方向制作截止 ${formatShortDateRange(scheduleDeadline, scheduleDeadline)}。`,
       });
     }
-    if (conflictingTasks.length > 0) {
+    if (task.designer && (!task.startDate || !task.endDate)) {
       warnings.push({
         tone: 'warning',
-        text: `与 ${conflictingTasks.length} 个同人任务撞期，建议确认优先级或调整时间。`,
+        text: '已选择负责人，但开始/结束时间还未补齐，保存后仍会视为待排期。',
+      });
+    }
+    if (conflictingTasks.length > 0) {
+      const currentReqConflicts = conflictingTasks.filter(item => item.id.startsWith(`${currentReq.id}:draft:`)).length;
+      warnings.push({
+        tone: currentReqConflicts > 0 ? 'danger' : 'warning',
+        text: currentReqConflicts > 0
+          ? `与当前需求内 ${currentReqConflicts} 个同人子任务撞期，请调整顺序或拆给其他人。`
+          : `与 ${conflictingTasks.length} 个同人任务撞期，建议确认优先级或调整时间。`,
       });
     }
 
     return warnings;
   };
 
-  const availabilityRows = useMemo(() => {
-    const currentTaskItems: ProductionScheduleContextItem[] = (currentReq.tasks || [])
-      .filter(task => task.designer && task.startDate && task.endDate)
-      .map(task => ({
-        id: `${currentReq.id}:draft:${task.id}`,
-        requirementId: currentReq.id,
-        requirementName: `${currentReq.name}${task.version ? ` / v${task.version}` : ''}`,
-        priority: currentReq.priority,
-        role: getScheduleRolePreset(task.role, task.type).role,
-        producer: task.designer,
-        status: task.status || '待排期',
-        startDate: task.startDate,
-        endDate: task.endDate,
+  const scheduleIssueSummary = useMemo(() => {
+    const issues = (currentReq.tasks || []).flatMap((task) => {
+      const { conflictingTasks } = getTaskScheduleContext(task);
+      return getTaskDateWarnings(task, conflictingTasks).map((warning) => ({
+        task,
+        ...warning,
       }));
+    });
+    return {
+      issues,
+      dangerCount: issues.filter((issue) => issue.tone === 'danger').length,
+      warningCount: issues.filter((issue) => issue.tone === 'warning').length,
+    };
+  }, [currentReq.tasks, currentRequirementScheduleItems, productionScheduleContext, scheduleDeadline, scheduleHorizonEnd, todayDateString]);
 
-    const visibleItems = [...productionScheduleContext, ...currentTaskItems]
+  const getRecommendedScheduleSlots = (task: ProductionTask) => {
+    const estimatedHours =
+      Number(task.estimatedWorkDays) ||
+      parseFloat(task.duration || '') ||
+      getDifficultyEstimatedHours(task, currentReq.difficulty);
+    const requiredDays = Math.max(1, Math.ceil(estimatedHours / 8));
+    const recommendedGroups = new Set(getRecommendedProducerGroups(task));
+    const candidates = task.designer
+      ? PRODUCTION_PEOPLE.filter(person => person.isActive && person.name === task.designer)
+      : PRODUCTION_PEOPLE.filter(person => person.isActive && recommendedGroups.has(person.group));
+    const fallbackCandidates =
+      candidates.length > 0
+        ? candidates
+        : PRODUCTION_PEOPLE.filter(person => person.isActive);
+
+    return fallbackCandidates
+      .map(person => {
+        const visibleTasks = [...productionScheduleContext, ...currentRequirementScheduleItems]
+          .filter(item => {
+            if (item.producer !== person.name) return false;
+            if (item.id === `${currentReq.id}:draft:${task.id}`) return false;
+            if (item.id === `${currentReq.id}:${task.id}`) return false;
+            return rangesOverlap(
+              item.startDate,
+              item.endDate,
+              todayDateString,
+              scheduleHorizonEnd,
+            );
+          })
+          .sort((a, b) => (parseDateValue(a.startDate) || 0) - (parseDateValue(b.startDate) || 0));
+        const gaps = getScheduleGapHints(
+          visibleTasks,
+          todayDateString,
+          scheduleHorizonEnd,
+        ).filter(gap => gap.days >= requiredDays);
+        const firstGap = gaps[0];
+        const startDate = firstGap?.start || todayDateString;
+        const endDate = addDaysToDateString(startDate, requiredDays - 1);
+        const busyDays = visibleTasks.reduce((sum, item) => {
+          const start = parseDateValue(item.startDate);
+          const end = parseDateValue(item.endDate) ?? start;
+          if (start === null || end === null) return sum;
+          return sum + Math.max(1, Math.round((end - start) / 86400000) + 1);
+        }, 0);
+
+        return {
+          person,
+          startDate,
+          endDate,
+          hours: estimatedHours,
+          requiredDays,
+          busyCount: visibleTasks.length,
+          busyDays,
+          hasGap: Boolean(firstGap),
+        };
+      })
+      .sort((a, b) => {
+        if (Number(b.hasGap) !== Number(a.hasGap)) return Number(b.hasGap) - Number(a.hasGap);
+        return (
+          (parseDateValue(a.startDate) || 0) -
+            (parseDateValue(b.startDate) || 0) ||
+          a.busyDays - b.busyDays ||
+          a.busyCount - b.busyCount
+        );
+      })
+      .slice(0, 3);
+  };
+
+  const availabilityRows = useMemo(() => {
+    const visibleItems = [...productionScheduleContext, ...currentRequirementScheduleItems]
       .filter(item => rangesOverlap(item.startDate, item.endDate, todayDateString, scheduleHorizonEnd))
       .sort((a, b) => (parseDateValue(a.startDate) || 0) - (parseDateValue(b.startDate) || 0));
 
@@ -847,11 +1048,80 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
         ...person,
         tasks: visibleItems.filter(item => item.producer === person.name),
       }));
-  }, [currentReq, productionScheduleContext, scheduleHorizonEnd, todayDateString]);
+  }, [currentRequirementScheduleItems, productionScheduleContext, scheduleHorizonEnd, todayDateString]);
 
   const ganttTotalDays = Math.max(
     1,
     ((parseDateValue(scheduleHorizonEnd) || 0) - (parseDateValue(todayDateString) || 0)) / 86400000 + 1,
+  );
+
+  const renderFeedbackSection = () => (
+    <section className="rounded-[28px] border border-slate-150 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data Feedback</p>
+          <h3 className="mt-1 text-sm font-black text-slate-900">数据回流复盘</h3>
+          <p className="mt-1 text-xs font-bold leading-relaxed text-slate-500">
+            成片表现只回流到需求和版本复盘，不自动进入资产库。
+          </p>
+        </div>
+        {feedbackSummary && (
+          <div className={`rounded-2xl border px-3 py-2 text-right ${getFeedbackStatusStyle(feedbackSummary.status)}`}>
+            <p className="text-[10px] font-black opacity-70">建议动作</p>
+            <p className="text-sm font-black">{feedbackSummary.nextAction}</p>
+          </div>
+        )}
+      </div>
+
+      {finishedCreativePerformance.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+          <p className="text-sm font-black text-slate-700">暂无成片投放回流</p>
+          <p className="mt-1 text-xs font-bold text-slate-400">上传并上线成片后，这里展示版本表现与复盘建议。</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-150 bg-white">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-400">
+              <tr>
+                <th className="px-3 py-3">版本</th>
+                <th className="px-3 py-3">渠道</th>
+                <th className="px-3 py-3 text-right">消耗</th>
+                <th className="px-3 py-3 text-right">CPI</th>
+                <th className="px-3 py-3 text-right">IR</th>
+                <th className="px-3 py-3 text-right">D7 ROAS</th>
+                <th className="px-3 py-3">结论</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {finishedCreativePerformance.map((row) => (
+                <tr key={row.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-3">
+                    <div className="font-black text-slate-800">{row.versionName}</div>
+                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.launchedAt} · {row.country}</div>
+                  </td>
+                  <td className="px-3 py-3 font-bold text-slate-500">{row.channel}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-700">{formatCurrencyCompact(row.spent)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-700">${row.cpi.toFixed(2)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-700">{formatFeedbackPercent(row.ir)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-700">{formatFeedbackPercent(row.roasD7)}</td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${getFeedbackStatusStyle(row.status)}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {feedbackSummary && (
+        <div className="mt-3 rounded-2xl border border-slate-150 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-bold leading-relaxed text-slate-600">{feedbackSummary.insight}</p>
+        </div>
+      )}
+    </section>
   );
 
   const fullName = generateFullName(currentReq);
@@ -1190,6 +1460,47 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                     </button>
                   </div>
 
+                  {scheduleIssueSummary.issues.length > 0 && (
+                    <div className="rounded-2xl border border-slate-150 bg-white p-3 shadow-3xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-700">
+                          <AlertCircle className={`h-3.5 w-3.5 ${scheduleIssueSummary.dangerCount > 0 ? 'text-rose-500' : 'text-amber-500'}`} />
+                          <span>排期检查</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] text-slate-500">
+                            {scheduleIssueSummary.dangerCount} 严重 / {scheduleIssueSummary.warningCount} 提醒
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-bold text-slate-400">
+                          保存前建议处理红色问题
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {scheduleIssueSummary.issues.slice(0, 4).map((issue, index) => (
+                          <span
+                            key={`${issue.task.id}-${issue.text}-${index}`}
+                            className={`inline-flex max-w-full items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[9px] font-black ${
+                              issue.tone === 'danger'
+                                ? 'border-rose-100 bg-rose-50 text-rose-600'
+                                : 'border-amber-100 bg-amber-50 text-amber-700'
+                            }`}
+                            title={issue.text}
+                          >
+                            <span className="shrink-0">{getScheduleRolePreset(issue.task.role, issue.task.type).role}</span>
+                            {issue.task.version && (
+                              <span className="shrink-0 text-current/60">v{issue.task.version}</span>
+                            )}
+                            <span className="truncate">{issue.text}</span>
+                          </span>
+                        ))}
+                        {scheduleIssueSummary.issues.length > 4 && (
+                          <span className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-[9px] font-black text-slate-500">
+                            +{scheduleIssueSummary.issues.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {scheduleTaskGroups.map(group => (
                     <div
                       key={group.key}
@@ -1226,9 +1537,15 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                       <div className="space-y-3">
                         {group.tasks.map((task, taskIndex) => {
                           const rolePreset = getScheduleRolePreset(task.role, task.type);
-                          const { conflictingTasks } = getTaskScheduleContext(task);
+                          const { visibleTasks, conflictingTasks } = getTaskScheduleContext(task);
                           const dateWarnings = getTaskDateWarnings(task, conflictingTasks);
                           const producerOptionGroups = getProducerOptionGroups(task);
+                          const gapHints = getScheduleGapHints(
+                            visibleTasks,
+                            todayDateString,
+                            scheduleHorizonEnd,
+                          );
+                          const recommendedSlots = getRecommendedScheduleSlots(task);
 
                           return (
                             <div key={task.id} className="rounded-2xl border border-slate-150 bg-slate-50/60 p-3">
@@ -1335,6 +1652,125 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                                 />
                               </div>
 
+                              {recommendedSlots.length > 0 && (
+                                <div className="mt-2 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-2.5">
+                                  <div className="mb-2 flex items-center justify-between gap-2">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black text-indigo-600">
+                                      <Lightbulb className="h-3 w-3" />
+                                      {task.designer ? '推荐时间' : '推荐人员与时间'}
+                                    </span>
+                                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[8px] font-black text-slate-400">
+                                      {currentReq.difficulty || 'C'} 级 · {recommendedSlots[0].hours}H
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {recommendedSlots.map(slot => (
+                                      <button
+                                        key={`${task.id}-${slot.person.name}-${slot.startDate}`}
+                                        type="button"
+                                        onClick={() =>
+                                          updateProductionTask(task.id, {
+                                            designer: slot.person.name,
+                                            startDate: slot.startDate,
+                                            endDate: slot.endDate,
+                                            estimatedWorkDays: slot.hours,
+                                            duration: `${slot.hours}H`,
+                                            status: normalizePlannedTaskStatus({
+                                              ...task,
+                                              designer: slot.person.name,
+                                              startDate: slot.startDate,
+                                              endDate: slot.endDate,
+                                            }),
+                                          })
+                                        }
+                                        className="inline-flex max-w-full items-center gap-1.5 rounded-xl border border-indigo-100 bg-white px-2.5 py-1.5 text-left text-[9px] font-black text-slate-600 transition-all hover:border-indigo-250 hover:bg-indigo-100 hover:text-indigo-700"
+                                        title={`采纳 ${slot.person.name} / ${formatShortDateRange(slot.startDate, slot.endDate)} / ${slot.hours}H`}
+                                      >
+                                        <span className="shrink-0 text-indigo-600">{slot.person.name}</span>
+                                        <span className="shrink-0 text-slate-350">·</span>
+                                        <span className="shrink-0">{formatShortDateRange(slot.startDate, slot.endDate)}</span>
+                                        {!slot.hasGap && (
+                                          <span className="shrink-0 rounded bg-amber-50 px-1 text-amber-600">
+                                            需确认
+                                          </span>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {task.designer && (
+                                <div className="mt-2 rounded-2xl border border-slate-150 bg-white p-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 text-[10px] font-black text-slate-700">
+                                      <User className="h-3.5 w-3.5 text-indigo-500" />
+                                      <span>{task.designer} · 未来两周占用</span>
+                                    </div>
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
+                                        conflictingTasks.length > 0
+                                          ? 'bg-amber-50 text-amber-700'
+                                          : visibleTasks.length > 0
+                                            ? 'bg-slate-100 text-slate-500'
+                                            : 'bg-emerald-50 text-emerald-600'
+                                      }`}
+                                    >
+                                      {conflictingTasks.length > 0
+                                        ? `${conflictingTasks.length} 个撞期`
+                                        : visibleTasks.length > 0
+                                          ? `${visibleTasks.length} 个占用`
+                                          : '暂无占用'}
+                                    </span>
+                                  </div>
+
+                                  {visibleTasks.length > 0 ? (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {visibleTasks.slice(0, 3).map(item => {
+                                        const isConflict = conflictingTasks.some(conflict => conflict.id === item.id);
+                                        return (
+                                          <span
+                                            key={item.id}
+                                            className={`inline-flex max-w-full items-center gap-1 rounded-lg border px-2 py-1 text-[9px] font-bold ${
+                                              isConflict
+                                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                                : 'border-slate-150 bg-slate-50 text-slate-500'
+                                            }`}
+                                            title={`${item.requirementName} / ${item.role} / ${formatShortDateRange(item.startDate, item.endDate)}`}
+                                          >
+                                            <span className="shrink-0">{formatShortDateRange(item.startDate, item.endDate)}</span>
+                                            <span className="max-w-[120px] truncate">{item.requirementId}</span>
+                                          </span>
+                                        );
+                                      })}
+                                      {visibleTasks.length > 3 && (
+                                        <span className="rounded-lg bg-slate-100 px-2 py-1 text-[9px] font-black text-slate-400">
+                                          +{visibleTasks.length - 3}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-2 rounded-xl border border-dashed border-emerald-100 bg-emerald-50 px-3 py-2 text-[9px] font-black text-emerald-600">
+                                      未来两周暂无其它任务，可优先安排。
+                                    </div>
+                                  )}
+
+                                  {gapHints.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9px] font-bold">
+                                      <span className="text-slate-400">可参考空档:</span>
+                                      {gapHints.slice(0, 3).map(gap => (
+                                        <span
+                                          key={`${gap.start}-${gap.end}`}
+                                          className="rounded-lg bg-indigo-50 px-2 py-1 text-indigo-600"
+                                        >
+                                          {formatShortDateRange(gap.start, gap.end)} · {gap.days}天
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               {dateWarnings.length > 0 && (
                                 <div className="mt-2 space-y-1">
                                   {dateWarnings.map((warning, index) => (
@@ -1368,6 +1804,10 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
             )}
           </div>
         </div>
+      </div>
+
+      <div className="shrink-0 border-t border-slate-100 bg-slate-50/80 px-8 py-5">
+        {renderFeedbackSection()}
       </div>
 
       {/* Bottom Control Bar */}

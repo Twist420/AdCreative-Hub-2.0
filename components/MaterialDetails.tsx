@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { generateMaterialDetails } from '../services/mockData';
 import { Filter, Settings, ChevronDown, ChevronUp, Plus, Trash2, X, Check, Calendar, Clock, Search, Globe, Layers } from 'lucide-react';
 import { MaterialDetailRow } from '../types';
+import DateRangePicker from './DateRangePicker';
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -238,21 +239,16 @@ const MaterialDetails: React.FC = () => {
                     <span className="whitespace-nowrap">投放开始时间</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
-                        <input 
-                            type="date" 
-                            value={launchStart}
-                            onChange={(e) => setLaunchStart(e.target.value)}
-                            className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto"
-                        />
-                        <span className="text-slate-400 text-[10px] font-bold">-</span>
-                        <input 
-                            type="date" 
-                            value={launchEnd}
-                            onChange={(e) => setLaunchEnd(e.target.value)}
-                            className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto"
-                        />
-                    </div>
+                    <DateRangePicker
+                        start={launchStart}
+                        end={launchEnd}
+                        onChange={({ start, end }) => {
+                            setLaunchStart(start);
+                            setLaunchEnd(end);
+                        }}
+                        compact
+                        className="min-w-[240px]"
+                    />
                     {/* Quick Selects */}
                     <div className="flex bg-slate-50 p-0.5 rounded-lg border border-slate-100 hidden sm:flex">
                         {[
@@ -328,21 +324,17 @@ const MaterialDetails: React.FC = () => {
                     <span className="whitespace-nowrap">花费周期</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
-                        <input 
-                            type="date" 
-                            value={spendStart}
-                            onChange={(e) => setSpendStart(e.target.value)}
-                            className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto"
-                        />
-                        <span className="text-slate-400 text-[10px] font-bold">-</span>
-                        <input 
-                            type="date" 
-                            value={spendEnd}
-                            onChange={(e) => setSpendEnd(e.target.value)}
-                            className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto"
-                        />
-                    </div>
+                    <DateRangePicker
+                        start={spendStart}
+                        end={spendEnd}
+                        onChange={({ start, end }) => {
+                            setSpendStart(start);
+                            setSpendEnd(end);
+                        }}
+                        align="right"
+                        compact
+                        className="min-w-[240px]"
+                    />
                     {/* Quick Selects */}
                     <div className="flex bg-slate-50 p-0.5 rounded-lg border border-slate-100 hidden sm:flex">
                          {[

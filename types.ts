@@ -283,6 +283,65 @@ export interface PerformanceData {
   cpa: number;
 }
 
+export type CreativeFeedbackStatus = 'Learning' | 'Winner' | 'Flat' | 'Failed' | 'Paused';
+export type CreativeFeedbackNextAction = 'Scale' | 'Iterate' | 'Pause' | 'Observe';
+
+export interface FinishedCreativePerformance {
+  id: string;
+  requirementId: string;
+  scheduleId?: string;
+  version: string;
+  versionName: string;
+  creativeName: string;
+  thumbnail: string;
+  channel: string;
+  country: string;
+  language: string;
+  ratio: string;
+  launchedAt: string;
+  daysRunning: number;
+  spent: number;
+  impressions: number;
+  installs: number;
+  paidUsers: number;
+  cpm: number;
+  cpi: number;
+  cpa: number;
+  ctr: number;
+  cvr: number;
+  ir: number;
+  roasD7: number;
+  status: CreativeFeedbackStatus;
+  insight: string;
+  nextAction: CreativeFeedbackNextAction;
+}
+
+export interface RequirementFeedbackSummary {
+  requirementId: string;
+  totalSpent: number;
+  totalInstalls: number;
+  bestVersion?: string;
+  bestChannel?: string;
+  status: CreativeFeedbackStatus;
+  insight: string;
+  nextAction: CreativeFeedbackNextAction;
+}
+
+export interface DirectionFeedbackSummary {
+  scheduleId: string;
+  requirementCount: number;
+  launchedCreativeCount: number;
+  totalSpent: number;
+  totalInstalls: number;
+  winnerCount: number;
+  failedCount: number;
+  avgCpi: number;
+  avgCpa: number;
+  avgIr: number;
+  status: CreativeFeedbackStatus;
+  insight: string;
+}
+
 export interface LibraryItem {
   id: string;
   type: 'Fragment' | 'Component';

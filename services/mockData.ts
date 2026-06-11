@@ -3,7 +3,9 @@ import {
   AdMaterial, AnalysisDimension, ChartDataPoint, PersonnelData, 
   MaterialDetailRow, KeywordAnalysisData, Requirement, BenchmarkRule,
   RequirementReqStatus, RequirementProdStatus, RequirementDeliveryStatus, RequirementPriority,
-  CreativeSchedule, CreativeDifficulty, CreativeForm, CreativeScenario, CreativeDirectionType
+  CreativeSchedule, CreativeDifficulty, CreativeForm, CreativeScenario, CreativeDirectionType,
+  FinishedCreativePerformance, RequirementFeedbackSummary, DirectionFeedbackSummary,
+  CreativeFeedbackStatus, CreativeFeedbackNextAction
 } from '../types';
 
 // Helper for deterministic random based on seed
@@ -18,6 +20,28 @@ const seedRandom = (seed: string) => {
     h = Math.imul(h ^ (h >>> 13), 3266489909);
     return (h >>> 0) / 4294967296;
   }
+};
+
+const getFeedbackStatus = (cpi: number, ir: number, roasD7: number): CreativeFeedbackStatus => {
+  if (roasD7 >= 0.85 || (cpi <= 3.2 && ir >= 0.18)) return 'Winner';
+  if (roasD7 < 0.35 || cpi >= 8) return 'Failed';
+  if (roasD7 < 0.55) return 'Flat';
+  return 'Learning';
+};
+
+const getNextAction = (status: CreativeFeedbackStatus): CreativeFeedbackNextAction => {
+  if (status === 'Winner') return 'Scale';
+  if (status === 'Failed') return 'Pause';
+  if (status === 'Flat') return 'Iterate';
+  return 'Observe';
+};
+
+const getFeedbackInsight = (status: CreativeFeedbackStatus, versionName: string): string => {
+  if (status === 'Winner') return `${versionName} 已出现放量信号，建议优先扩渠道并保留核心表达。`;
+  if (status === 'Failed') return `${versionName} 转化效率偏低，建议暂停或回到需求侧重拆卖点。`;
+  if (status === 'Flat') return `${versionName} 数据平平，建议小步迭代 hook、节奏或 CTA。`;
+  if (status === 'Paused') return `${versionName} 已暂停，保留复盘记录但不继续观察。`;
+  return `${versionName} 仍在学习期，先观察消耗和付费回收趋势。`;
 };
 
 export const generateSchedules = (): CreativeSchedule[] => {
@@ -143,7 +167,129 @@ export const generateRequirements = (): Requirement[] => {
   });
 };
 
-// ... existing code ...
+export const generateFinishedCreativePerformance = (
+  requirements: Requirement[],
+): FinishedCreativePerformance[] => {
+  return requirements.flatMap((requirement, requirementIndex) => {
+    const versions = requirement.subVersions?.length
+      ? requirement.subVersions
+      : [{ version: requirement.assetVersion || '01', name: requirement.name, testDirections: requirement.testDirections || [] }];
+
+    return versions.slice(0, 3).map((version, versionIndex) => {
+      const spent = 1200 + requirementIndex * 260 + versionIndex * 420;
+      const impressions = 48000 + requirementIndex * 3200 + versionIndex * 5400;
+      const installs = Math.max(80, Math.round(spent / (2.8 + ((requirementIndex + versionIndex) % 5))));
+      const paidUsers = Math.max(4, Math.round(installs * (0.08 + ((requirementIndex + versionIndex) % 4) * 0.035)));
+      const cpi = Number((spent / installs).toFixed(2));
+      const cpa = Number((spent / paidUsers).toFixed(2));
+      const ctr = Number((0.85 + ((requirementIndex + versionIndex) % 6) * 0.18).toFixed(2));
+      const cvr = Number((8.5 + ((requirementIndex + versionIndex) % 5) * 1.6).toFixed(2));
+      const ir = Number((paidUsers / installs).toFixed(3));
+      const cpm = Number(((spent / impressions) * 1000).toFixed(2));
+      const roasD7 = Number((0.32 + ((requirementIndex + versionIndex) % 7) * 0.11).toFixed(2));
+      const status = getFeedbackStatus(cpi, ir, roasD7);
+      const versionName = version.name || `版本 ${version.version}`;
+      const previewCount = Math.max(requirement.previews?.length || 0, 1);
+
+      return {
+        id: `fc-${requirement.id}-${version.version}`,
+        requirementId: requirement.id,
+        scheduleId: requirement.scheduleId,
+        version: version.version,
+        versionName,
+        creativeName: `${requirement.name} / ${versionName}`,
+        thumbnail: requirement.previews?.[versionIndex % previewCount] || `https://picsum.photos/seed/${requirement.id}-${version.version}/320/568`,
+        channel: requirement.channels?.[versionIndex % Math.max(requirement.channels.length, 1)] || 'all',
+        country: ['US', 'JP', 'KR', 'TW'][versionIndex % 4],
+        language: requirement.language || 'EN',
+        ratio: requirement.assetType === 'Image' ? '1:1' : '9:16',
+        launchedAt: `2026-05-${String(12 + ((requirementIndex + versionIndex) % 15)).padStart(2, '0')}`,
+        daysRunning: 2 + ((requirementIndex + versionIndex) % 12),
+        spent,
+        impressions,
+        installs,
+        paidUsers,
+        cpm,
+        cpi,
+        cpa,
+        ctr,
+        cvr,
+        ir,
+        roasD7,
+        status,
+        insight: getFeedbackInsight(status, versionName),
+        nextAction: getNextAction(status),
+      };
+    });
+  });
+};
+
+export const summarizeRequirementFeedback = (
+  performances: FinishedCreativePerformance[],
+): RequirementFeedbackSummary[] => {
+  const grouped = performances.reduce<Record<string, FinishedCreativePerformance[]>>((acc, item) => {
+    acc[item.requirementId] = [...(acc[item.requirementId] || []), item];
+    return acc;
+  }, {});
+
+  return Object.entries(grouped).map(([requirementId, items]) => {
+    const best = [...items].sort((a, b) => b.roasD7 - a.roasD7 || a.cpi - b.cpi)[0];
+    const totalSpent = items.reduce((sum, item) => sum + item.spent, 0);
+    const totalInstalls = items.reduce((sum, item) => sum + item.installs, 0);
+
+    return {
+      requirementId,
+      totalSpent,
+      totalInstalls,
+      bestVersion: best?.version,
+      bestChannel: best?.channel,
+      status: best?.status || 'Learning',
+      insight: best?.insight || '暂无投放数据，等待成片上线后回流。',
+      nextAction: best?.nextAction || 'Observe',
+    };
+  });
+};
+
+export const summarizeDirectionFeedback = (
+  performances: FinishedCreativePerformance[],
+): DirectionFeedbackSummary[] => {
+  const grouped = performances.reduce<Record<string, FinishedCreativePerformance[]>>((acc, item) => {
+    if (!item.scheduleId) return acc;
+    acc[item.scheduleId] = [...(acc[item.scheduleId] || []), item];
+    return acc;
+  }, {});
+
+  return Object.entries(grouped).map(([scheduleId, items]) => {
+    const totalSpent = items.reduce((sum, item) => sum + item.spent, 0);
+    const totalInstalls = items.reduce((sum, item) => sum + item.installs, 0);
+    const winnerCount = items.filter((item) => item.status === 'Winner').length;
+    const failedCount = items.filter((item) => item.status === 'Failed').length;
+    const avgCpi = totalInstalls > 0 ? Number((totalSpent / totalInstalls).toFixed(2)) : 0;
+    const avgCpa = Number((items.reduce((sum, item) => sum + item.cpa, 0) / items.length).toFixed(2));
+    const avgIr = Number((items.reduce((sum, item) => sum + item.ir, 0) / items.length).toFixed(3));
+    const status: CreativeFeedbackStatus = winnerCount > 0 ? 'Winner' : failedCount >= Math.ceil(items.length / 2) ? 'Failed' : 'Learning';
+
+    return {
+      scheduleId,
+      requirementCount: new Set(items.map((item) => item.requirementId)).size,
+      launchedCreativeCount: items.length,
+      totalSpent,
+      totalInstalls,
+      winnerCount,
+      failedCount,
+      avgCpi,
+      avgCpa,
+      avgIr,
+      status,
+      insight: status === 'Winner'
+        ? '该方向已有可放量版本，建议复盘共性表达并继续扩量。'
+        : status === 'Failed'
+          ? '该方向多数版本未达标，建议回到方向假设重新拆解。'
+          : '该方向仍在观察期，继续积累版本和渠道表现。',
+    };
+  });
+};
+
 export interface OverviewMetric {
   label: string;
   value: number;

@@ -3,6 +3,7 @@ import {
   Filter, Settings, Search, Check, Play, Eye, 
   ChevronDown, ChevronUp, RefreshCw, Layers, ArrowUpDown, X 
 } from 'lucide-react';
+import DateRangePicker from './DateRangePicker';
 
 // Define structures matching types.ts
 interface SetItem {
@@ -466,21 +467,15 @@ export const RecoveryDataPage: React.FC = () => {
         {/* 1. Launch Time and filter toggle */}
         <div className="flex flex-col gap-2.5">
           <label className="text-xs font-bold text-slate-700">投放时间围度</label>
-          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-            <input
-              type="date"
-              value={launchStart}
-              onChange={(e) => setLaunchStart(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-600 focus:outline-none w-full"
-            />
-            <span className="text-slate-400 text-xs">至</span>
-            <input
-              type="date"
-              value={launchEnd}
-              onChange={(e) => setLaunchEnd(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-600 focus:outline-none w-full"
-            />
-          </div>
+          <DateRangePicker
+            start={launchStart}
+            end={launchEnd}
+            onChange={({ start, end }) => {
+              setLaunchStart(start);
+              setLaunchEnd(end);
+            }}
+            compact
+          />
           <label className="flex items-center gap-2 cursor-pointer mt-1 select-none">
             <input
               type="checkbox"
@@ -495,21 +490,16 @@ export const RecoveryDataPage: React.FC = () => {
         {/* 2. Spend Period (花费周期) */}
         <div className="flex flex-col gap-2.5 border-l-0 md:border-l md:px-4 border-slate-150">
           <label className="text-xs font-bold text-slate-700">花费周期</label>
-          <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-            <input
-              type="date"
-              value={spendStart}
-              onChange={(e) => setSpendStart(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-600 focus:outline-none w-full"
-            />
-            <span className="text-slate-400 text-xs">至</span>
-            <input
-              type="date"
-              value={spendEnd}
-              onChange={(e) => setSpendEnd(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-600 focus:outline-none w-full"
-            />
-          </div>
+          <DateRangePicker
+            start={spendStart}
+            end={spendEnd}
+            onChange={({ start, end }) => {
+              setSpendStart(start);
+              setSpendEnd(end);
+            }}
+            align="right"
+            compact
+          />
           {/* Quick choices: 本月, 近7天, 近30天, 近90天, 上月 */}
           <div className="flex flex-wrap gap-1 mt-1">
             {[

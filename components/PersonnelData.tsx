@@ -10,6 +10,7 @@ import {
   Calendar, TrendingUp, DollarSign, Target, Users, 
   Clock, ChevronDown, ChevronUp, Globe, Award, Zap 
 } from 'lucide-react';
+import DateRangePicker from './DateRangePicker';
 
 const PersonnelDataPage: React.FC = () => {
   // --- Date & Language Filters ---
@@ -126,13 +127,15 @@ const PersonnelDataPage: React.FC = () => {
                     <Calendar className="w-3.5 h-3.5 text-indigo-600" />
                     <span className="whitespace-nowrap">投放开始时间</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
-                        <input type="date" value={launchStart} onChange={(e) => setLaunchStart(e.target.value)} className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto" />
-                        <span className="text-slate-400 text-[10px] font-bold">-</span>
-                        <input type="date" value={launchEnd} onChange={(e) => setLaunchEnd(e.target.value)} className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto" />
-                    </div>
-                </div>
+                <DateRangePicker
+                    start={launchStart}
+                    end={launchEnd}
+                    onChange={({ start, end }) => {
+                        setLaunchStart(start);
+                        setLaunchEnd(end);
+                    }}
+                    compact
+                />
             </div>
 
             <div className="flex flex-col gap-2 xl:border-l border-slate-100 xl:px-4 min-w-[140px]">
@@ -152,13 +155,16 @@ const PersonnelDataPage: React.FC = () => {
                     <Clock className="w-3.5 h-3.5 text-emerald-600" />
                     <span className="whitespace-nowrap">花费周期</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
-                        <input type="date" value={spendStart} onChange={(e) => setSpendStart(e.target.value)} className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto" />
-                        <span className="text-slate-400 text-[10px] font-bold">-</span>
-                        <input type="date" value={spendEnd} onChange={(e) => setSpendEnd(e.target.value)} className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none w-24 sm:w-auto" />
-                    </div>
-                </div>
+                <DateRangePicker
+                    start={spendStart}
+                    end={spendEnd}
+                    onChange={({ start, end }) => {
+                        setSpendStart(start);
+                        setSpendEnd(end);
+                    }}
+                    align="right"
+                    compact
+                />
             </div>
         </div>
       </div>

@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
+  ChevronDown,
+  ChevronRight,
   Check,
   Copy,
+  Folder,
   Layers,
   Play,
   Plus,
@@ -44,6 +47,36 @@ interface SelectableOption {
   previewUrl: string;
 }
 
+interface PickerFacet {
+  id: string;
+  label: string;
+  group: string;
+  match: (item: SelectableOption) => boolean;
+}
+
+interface PickerDirectory {
+  id: string;
+  label: string;
+  desc: string;
+  match: (item: SelectableOption) => boolean;
+}
+
+interface PickerDirectoryNode {
+  id: string;
+  label: string;
+  desc?: string;
+  match: (item: SelectableOption) => boolean;
+  children?: PickerDirectoryNode[];
+}
+
+type AssetPickerTarget = {
+  mode: 'asset' | 'finished' | 'landing';
+  type: 'simple' | 'shared' | 'version' | 'matrix';
+  version?: string;
+  segmentId?: string;
+  field?: 'reference' | 'insert';
+};
+
 interface RequirementScriptWorkbenchProps {
   requirement: Requirement;
   onRequirementChange: (requirement: Requirement) => void;
@@ -70,12 +103,109 @@ const ASSET_OPTIONS: SelectableOption[] = [
   { id: 'IMG-STORE-06', name: '商店图-主视觉竖版', type: '图片', duration: '-', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=480&h=640&fit=crop' }
 ];
 
+const FINISHED_OPTIONS: SelectableOption[] = [
+  { id: 'FIN-3683-01', name: '3683口播大字报换山下湖泊背景', type: '成片 / 当前方向', duration: '00:22', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=480&h=640&fit=crop' },
+  { id: 'FIN-3684-02', name: '3684口播大字报换蔚蓝海滩背景', type: '成片 / 当前方向', duration: '00:21', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=480&h=640&fit=crop' },
+  { id: 'FIN-3370-01', name: '吸量大字报-爆金币转场成片', type: '成片 / 近期待观察', duration: '00:18', status: 'Insufficient Data', previewUrl: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=480&h=640&fit=crop' },
+  { id: 'FIN-3366-03', name: '3D剧情-冰原Boss压迫感成片', type: '成片 / 已初投', duration: '00:26', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=480&h=640&fit=crop' },
+];
+
 const ATTACHMENT_OPTIONS = ['参考录屏', '口播音频', '竞品截图', '玩法录屏', 'UI线框', '翻译表'];
 const LANDING_OPTIONS: SelectableOption[] = [
   { id: '9:16', name: '9:16 竖版视频', type: '视频落版', duration: '主规格', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=480&h=640&fit=crop' },
   { id: '1:1', name: '1:1 信息流方版', type: '视频落版', duration: '补充', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=480&h=640&fit=crop' },
   { id: '16:9', name: '16:9 横版视频', type: '视频落版', duration: '补充', status: 'Insufficient Data', previewUrl: 'https://images.unsplash.com/photo-1516245834210-c4c142787335?w=480&h=640&fit=crop' },
   { id: '4:5', name: '4:5 Feed 版', type: '视频落版', duration: '补充', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=480&h=640&fit=crop' }
+];
+
+const pickerMatchTerms = (terms: string[]) => (item: SelectableOption) => {
+  const content = [item.id, item.name, item.type, item.status].join(' ').toLowerCase();
+  return terms.some(term => content.includes(term.toLowerCase()));
+};
+
+const ASSET_PICKER_FACETS: PickerFacet[] = [
+  { id: 'all', label: '全部资产', group: '热门推荐', match: () => true },
+  { id: 'recommended', label: '推荐资产', group: '热门推荐', match: item => item.status === 'Recommended' },
+  { id: 'segment_a', label: '前贴 / A段', group: '资源类型', match: pickerMatchTerms(['A段', '前贴']) },
+  { id: 'segment_mid', label: '玩法 / 中间段', group: '资源类型', match: pickerMatchTerms(['中间段', '玩法']) },
+  { id: 'segment_b', label: 'B段 / 大字报', group: '资源类型', match: pickerMatchTerms(['B段', '大字报']) },
+  { id: 'image', label: '图片视觉', group: '资源类型', match: pickerMatchTerms(['图片', '商店图']) },
+  { id: 'ice', label: '冰雪极地', group: '主题题材', match: pickerMatchTerms(['冰雪', '仙子']) },
+  { id: 'live', label: '真人反应', group: '主题题材', match: pickerMatchTerms(['真人', '爆奖', '反应']) },
+  { id: 'reward', label: '奖励爆点', group: '主题题材', match: pickerMatchTerms(['宝箱', '奖励']) },
+  { id: 'merge', label: '合成升级', group: '玩法机制', match: pickerMatchTerms(['合成', '升级', '塔防']) },
+  { id: 'copy_text', label: '强文案吸睛', group: '玩法机制', match: pickerMatchTerms(['大字报', '震颤', '提词']) },
+  { id: 'insufficient', label: '数据不足', group: '关键词状态', match: item => item.status === 'Insufficient Data' },
+];
+
+const FINISHED_PICKER_FACETS: PickerFacet[] = [
+  { id: 'all', label: '全部成片', group: '成片范围', match: () => true },
+  { id: 'current_direction', label: '当前方向', group: '成片范围', match: pickerMatchTerms(['当前方向']) },
+  { id: 'recent_pending', label: '近期待观察', group: '成片范围', match: pickerMatchTerms(['近期待观察', 'Pending Data']) },
+  { id: 'insufficient', label: '数据不足', group: '数据状态', match: item => item.status === 'Insufficient Data' },
+  { id: 'billboard', label: '大字报成片', group: '内容类型', match: pickerMatchTerms(['大字报', '口播']) },
+  { id: 'story_3d', label: '3D剧情成片', group: '内容类型', match: pickerMatchTerms(['3D', '剧情', 'Boss']) },
+];
+
+const ASSET_PICKER_DIRECTORIES: PickerDirectory[] = [
+  { id: 'all', label: '全部资产', desc: '所有可引用素材', match: () => true },
+];
+
+const ASSET_PICKER_DIRECTORY_TREE: PickerDirectoryNode[] = [
+  {
+    id: 'fragment',
+    label: '片段',
+    desc: '视频片段体系',
+    match: pickerMatchTerms(['A段', 'B段', '中间段', '前贴', '玩法', '大字报', 'CTA']),
+    children: [
+      {
+        id: 'pre_hook',
+        label: '前贴',
+        desc: '开头吸引片段',
+        match: pickerMatchTerms(['A段', '前贴']),
+        children: [
+          { id: 'ai_pre', label: 'AI前贴', desc: 'AI生成前贴', match: pickerMatchTerms(['AI前贴', 'AI生成', '冰雪仙子']) },
+          { id: 'live_pre', label: '真人前贴', desc: '真人反应前贴', match: pickerMatchTerms(['真人前贴', '真人', '爆奖反应']) },
+          { id: 'comic_pre', label: '漫画前贴', desc: '漫画风前贴', match: pickerMatchTerms(['漫画', '卡通']) },
+          { id: 'gameplay_pre', label: '玩法前贴', desc: '玩法开头片段', match: pickerMatchTerms(['玩法', '塔防', '合成']) },
+          { id: 'billboard_pre', label: '大字报前贴', desc: '强文案开头', match: pickerMatchTerms(['大字报', '文字']) },
+          { id: 'reward_pre', label: '奖励前贴', desc: '奖励反馈开头', match: pickerMatchTerms(['奖励', '宝箱']) },
+          { id: 'decompress_pre', label: '解压前贴', desc: '解压吸引片段', match: pickerMatchTerms(['解压']) },
+          { id: 'story_pre', label: '剧情前贴', desc: '剧情开头片段', match: pickerMatchTerms(['剧情']) },
+        ],
+      },
+      { id: 'play_segment', label: '玩法', desc: '核心玩法片段', match: pickerMatchTerms(['中间段', '玩法', '塔防', '合成']) },
+      { id: 'billboard_segment', label: '大字报', desc: '结尾或文案片段', match: pickerMatchTerms(['B段', '大字报', '文字']) },
+    ],
+  },
+  {
+    id: 'component',
+    label: '组件',
+    desc: '组件素材体系',
+    match: pickerMatchTerms(['图片', '商店图', 'CTA', '场景', '背景', 'UI', '特效', '音效', 'BGM', '形象']),
+    children: [
+      { id: 'scene_component', label: '场景', desc: '场景和背景', match: pickerMatchTerms(['场景', '背景', '商店图']) },
+      { id: 'merge_component', label: '合成链', desc: '玩法合成链', match: pickerMatchTerms(['合成链', '合成', '升级']) },
+      { id: 'ui_component', label: 'UI', desc: '界面与面板', match: pickerMatchTerms(['UI', '面板', '弹窗']) },
+      { id: 'fx_component', label: '特效', desc: '粒子和反馈', match: pickerMatchTerms(['特效', '粒子']) },
+      { id: 'sfx_component', label: '音效', desc: '音效反馈', match: pickerMatchTerms(['音效']) },
+      { id: 'bgm_component', label: 'BGM', desc: '音乐素材', match: pickerMatchTerms(['BGM', '音乐']) },
+      { id: 'character_component', label: '人物形象', desc: '角色形象', match: pickerMatchTerms(['人物', '形象', '真人', '仙子']) },
+      { id: 'animal_component', label: '动物形象', desc: '动物或怪物形象', match: pickerMatchTerms(['动物', '怪物']) },
+    ],
+  },
+];
+
+const flattenPickerDirectories = (nodes: PickerDirectoryNode[]): PickerDirectory[] => (
+  nodes.flatMap(node => [
+    { id: node.id, label: node.label, desc: node.desc || '', match: node.match },
+    ...(node.children ? flattenPickerDirectories(node.children) : [])
+  ])
+);
+
+const ASSET_PICKER_DIRECTORY_OPTIONS = [
+  ...ASSET_PICKER_DIRECTORIES,
+  ...flattenPickerDirectories(ASSET_PICKER_DIRECTORY_TREE)
 ];
 
 const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string): VersionDraft[] => {
@@ -92,6 +222,10 @@ const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string): Ver
 };
 
 const getSelectableOption = (id: string, options: SelectableOption[]) => options.find(option => option.id === id);
+const getReferenceOption = (id: string) => getSelectableOption(id, ASSET_OPTIONS) || getSelectableOption(id, FINISHED_OPTIONS);
+const getReferenceSource = (id: string): 'asset' | 'finished' => (
+  getSelectableOption(id, FINISHED_OPTIONS) ? 'finished' : 'asset'
+);
 const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
 const createDefaultMatrixColumns = () => ['A段', 'B段'];
 const getNextMatrixColumn = (columns: string[]) => (
@@ -136,12 +270,14 @@ const ReferenceThumb = ({
 }: {
   id: string;
   index: number;
-  source: 'asset' | 'attachment';
+  source: 'asset' | 'finished' | 'attachment';
   onRemove: () => void;
 }) => {
-  const asset = source === 'asset' ? getSelectableOption(id, ASSET_OPTIONS) : undefined;
-  const title = asset?.name || id;
-  const previewUrl = asset?.previewUrl || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=360&h=360&fit=crop';
+  const reference = source !== 'attachment' ? getReferenceOption(id) : undefined;
+  const title = reference?.name || id;
+  const previewUrl = reference?.previewUrl || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=360&h=360&fit=crop';
+  const sourceLabel = source === 'asset' ? '资产库' : source === 'finished' ? '成片' : '附件';
+  const sourceClassName = source === 'finished' ? 'text-emerald-600' : 'text-indigo-600';
 
   return (
     <div className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-3xs">
@@ -152,8 +288,8 @@ const ReferenceThumb = ({
       <span className="absolute bottom-1 right-1 rounded-md bg-rose-400 px-1.5 py-0.5 text-[8px] font-black text-white shadow-sm">
         参考{index}
       </span>
-      <span className="absolute left-1 top-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[8px] font-black text-indigo-600 shadow-sm">
-        {source === 'asset' ? '资产库' : '附件'}
+      <span className={`absolute left-1 top-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[8px] font-black shadow-sm ${sourceClassName}`}>
+        {sourceLabel}
       </span>
       <button type="button" onClick={onRemove} className="absolute right-1 top-1 rounded-full bg-white p-1 text-slate-300 opacity-0 shadow-sm transition-all hover:text-rose-500 group-hover:opacity-100">
         <X className="h-3 w-3" />
@@ -166,6 +302,7 @@ const ReferenceResourceBox = ({
   assetIds,
   attachments = [],
   onPickAssets,
+  onPickFinished,
   onUploadReference,
   onRemoveAsset,
   onToggleAttachment,
@@ -176,6 +313,7 @@ const ReferenceResourceBox = ({
   assetIds: string[];
   attachments?: string[];
   onPickAssets: () => void;
+  onPickFinished: () => void;
   onUploadReference?: () => void;
   onRemoveAsset: (id: string) => void;
   onToggleAttachment?: (name: string) => void;
@@ -185,7 +323,7 @@ const ReferenceResourceBox = ({
 }) => {
   const normalizedAssetIds = uniqueIds(assetIds);
   const references = [
-    ...normalizedAssetIds.map(id => ({ id, source: 'asset' as const })),
+    ...normalizedAssetIds.map(id => ({ id, source: getReferenceSource(id) })),
     ...attachments.map(id => ({ id, source: 'attachment' as const }))
   ];
   const visibleReferences = compact ? references.slice(0, 6) : references;
@@ -214,7 +352,7 @@ const ReferenceResourceBox = ({
                 id={item.id}
                 index={index + 1}
                 source={item.source}
-                onRemove={() => item.source === 'asset' ? onRemoveAsset(item.id) : onToggleAttachment?.(item.id)}
+                onRemove={() => item.source === 'attachment' ? onToggleAttachment?.(item.id) : onRemoveAsset(item.id)}
               />
             ))}
             {hiddenCount > 0 && (
@@ -230,12 +368,15 @@ const ReferenceResourceBox = ({
           </div>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50/80 p-3">
+      <div className="grid grid-cols-3 gap-2 border-t border-slate-100 bg-slate-50/80 p-3">
         <button type="button" onClick={onUploadReference} className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-500 hover:border-slate-300 hover:bg-slate-50">
           上传
         </button>
         <button type="button" onClick={onPickAssets} className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[10px] font-black text-indigo-600 hover:bg-indigo-100">
-          引用资产
+          引用资产库
+        </button>
+        <button type="button" onClick={onPickFinished} className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] font-black text-emerald-600 hover:bg-emerald-100">
+          引用成片
         </button>
       </div>
     </div>
@@ -314,7 +455,11 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     description: ''
   });
   const [showLegacyScript, setShowLegacyScript] = useState(false);
-  const [assetPickerTarget, setAssetPickerTarget] = useState<{ mode: 'asset' | 'landing'; type: 'simple' | 'shared' | 'version' | 'matrix'; version?: string; segmentId?: string; field?: 'reference' | 'insert' } | null>(null);
+  const [assetPickerTarget, setAssetPickerTarget] = useState<AssetPickerTarget | null>(null);
+  const [assetPickerSearch, setAssetPickerSearch] = useState('');
+  const [assetPickerFacetId, setAssetPickerFacetId] = useState('all');
+  const [assetPickerDirectoryId, setAssetPickerDirectoryId] = useState('all');
+  const [expandedPickerDirectoryIds, setExpandedPickerDirectoryIds] = useState<string[]>(['fragment', 'pre_hook', 'component']);
   const [landingByVersion, setLandingByVersion] = useState<Record<string, string>>(() => (
     Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, '9:16']))
   ));
@@ -325,6 +470,49 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, createDefaultMatrixColumns()]))
   ));
   const [matrixCells, setMatrixCells] = useState<Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }>>({});
+
+  const getDefaultPickerFacet = (target: AssetPickerTarget | null) => {
+    if (!target || target.mode !== 'asset') return 'all';
+    if (requirement.assetType === 'Image') return 'scene_component';
+    if (requirement.assetType === 'Playable') return 'segment_mid';
+
+    if (target.type === 'shared') {
+      return template === 'same_b' ? 'segment_b' : 'segment_a';
+    }
+
+    const segment = target.segmentId || '';
+    if (segment === 'A段' || segment.startsWith('A')) return 'segment_a';
+    if (segment === 'B段' || segment.startsWith('B') || segment.includes('大字报')) return 'segment_b';
+    if (segment.includes('玩法') || segment.includes('中间') || segment.startsWith('C') || segment.startsWith('D')) return 'segment_mid';
+    return 'all';
+  };
+
+  const getDefaultPickerDirectory = (target: AssetPickerTarget | null) => {
+    if (!target || target.mode !== 'asset') return 'all';
+    if (requirement.assetType === 'Image') return 'image';
+    if (requirement.assetType === 'Playable') return 'play_segment';
+
+    if (target.type === 'shared') {
+      return template === 'same_b' ? 'billboard_segment' : 'pre_hook';
+    }
+
+    const segment = target.segmentId || '';
+    if (segment === 'A段' || segment.startsWith('A')) return 'pre_hook';
+    if (segment === 'B段' || segment.startsWith('B') || segment.includes('大字报')) return 'billboard_segment';
+    if (segment.includes('玩法') || segment.includes('中间') || segment.startsWith('C') || segment.startsWith('D')) return 'play_segment';
+    return 'all';
+  };
+
+  useEffect(() => {
+    if (assetPickerTarget?.mode === 'asset') {
+      setAssetPickerSearch('');
+      setAssetPickerFacetId(getDefaultPickerFacet(assetPickerTarget));
+      setAssetPickerDirectoryId(getDefaultPickerDirectory(assetPickerTarget));
+    } else if (assetPickerTarget?.mode === 'finished') {
+      setAssetPickerSearch('');
+      setAssetPickerFacetId('all');
+    }
+  }, [assetPickerTarget, requirement.assetType, template]);
 
   const updateVersion = (version: string, patch: Partial<VersionDraft>) => {
     setVersionDrafts(prev => prev.map(item => item.version === version ? { ...item, ...patch } : item));
@@ -503,7 +691,37 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     }
   };
 
-  const getPickerOptions = () => assetPickerTarget?.mode === 'landing' ? LANDING_OPTIONS : ASSET_OPTIONS;
+  const getPickerOptions = () => {
+    if (assetPickerTarget?.mode === 'landing') return LANDING_OPTIONS;
+    const optionPool = assetPickerTarget?.mode === 'finished' ? FINISHED_OPTIONS : ASSET_OPTIONS;
+    const facetPool = assetPickerTarget?.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS;
+    const activeFacet = facetPool.find(item => item.id === assetPickerFacetId) || facetPool[0];
+    const activeDirectory = ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId) || ASSET_PICKER_DIRECTORY_OPTIONS[0];
+    const query = assetPickerSearch.trim().toLowerCase();
+    return optionPool.filter(asset => {
+      if (assetPickerTarget?.mode === 'asset' && !activeDirectory.match(asset)) return false;
+      const matchesFacet = activeFacet.match(asset);
+      if (!matchesFacet) return false;
+      if (!query) return true;
+      return [asset.id, asset.name, asset.type, asset.status].join(' ').toLowerCase().includes(query);
+    });
+  };
+
+  const getPickerFacetCounts = () => (
+    (assetPickerTarget?.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS).reduce<Record<string, number>>((acc, facet) => {
+      const activeDirectory = ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId) || ASSET_PICKER_DIRECTORY_OPTIONS[0];
+      const optionPool = assetPickerTarget?.mode === 'finished' ? FINISHED_OPTIONS : ASSET_OPTIONS;
+      acc[facet.id] = optionPool.filter(item => (assetPickerTarget?.mode !== 'asset' || activeDirectory.match(item)) && facet.match(item)).length;
+      return acc;
+    }, {})
+  );
+
+  const getPickerDirectoryCounts = () => (
+    ASSET_PICKER_DIRECTORY_OPTIONS.reduce<Record<string, number>>((acc, directory) => {
+      acc[directory.id] = ASSET_OPTIONS.filter(directory.match).length;
+      return acc;
+    }, {})
+  );
 
   const getPickerSelectedIds = () => {
     if (!assetPickerTarget) return [];
@@ -573,6 +791,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                   compact
                   onUploadReference={() => updateVersion(version.version, { attachments: appendMockAttachment(version.attachments) })}
                   onPickAssets={() => setAssetPickerTarget({ mode: 'asset', type: 'simple', version: version.version })}
+                  onPickFinished={() => setAssetPickerTarget({ mode: 'finished', type: 'simple', version: version.version })}
                   onRemoveAsset={(id) => updateVersion(version.version, { references: version.references.filter(ref => ref !== id) })}
                   onToggleAttachment={(item) => updateVersion(version.version, { attachments: version.attachments.filter(value => value !== item) })}
                 />
@@ -609,6 +828,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
           attachments={sharedSegment.attachments || []}
           onUploadReference={() => setSharedSegment(prev => ({ ...prev, attachments: appendMockAttachment(prev.attachments || []) }))}
           onPickAssets={() => setAssetPickerTarget({ mode: 'asset', type: 'shared' })}
+          onPickFinished={() => setAssetPickerTarget({ mode: 'finished', type: 'shared' })}
           onRemoveAsset={(id) => setSharedSegment(prev => ({ ...prev, references: prev.references.filter(ref => ref !== id) }))}
           onToggleAttachment={(item) => setSharedSegment(prev => ({ ...prev, attachments: (prev.attachments || []).filter(value => value !== item) }))}
         />
@@ -648,6 +868,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
             disabled={disabled}
             onUploadReference={() => updateVersion(version.version, { attachments: appendMockAttachment(version.attachments) })}
             onPickAssets={() => setAssetPickerTarget({ mode: 'asset', type: 'version', version: version.version })}
+            onPickFinished={() => setAssetPickerTarget({ mode: 'finished', type: 'version', version: version.version })}
             onRemoveAsset={(id) => updateVersion(version.version, { references: version.references.filter(ref => ref !== id) })}
             onToggleAttachment={(item) => updateVersion(version.version, { attachments: version.attachments.filter(value => value !== item) })}
           />
@@ -774,6 +995,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                         hideLabel
                         onUploadReference={() => updateMatrixCell(version.version, column, { attachments: appendMockAttachment(cell.attachments) })}
                         onPickAssets={() => setAssetPickerTarget({ mode: 'asset', type: 'matrix', version: version.version, segmentId: column, field: 'reference' })}
+                        onPickFinished={() => setAssetPickerTarget({ mode: 'finished', type: 'matrix', version: version.version, segmentId: column, field: 'reference' })}
                         onRemoveAsset={(id) => updateMatrixCell(version.version, column, {
                           references: cell.references.filter(ref => ref !== id),
                           inserts: cell.inserts.filter(ref => ref !== id)
@@ -830,6 +1052,62 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     </section>
   );
 
+  const togglePickerDirectoryExpanded = (id: string) => {
+    setExpandedPickerDirectoryIds(prev => (
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    ));
+  };
+
+  const renderPickerDirectoryNode = (node: PickerDirectoryNode, depth = 0): React.ReactNode => {
+    const hasChildren = Boolean(node.children?.length);
+    const isExpanded = expandedPickerDirectoryIds.includes(node.id);
+    const isActive = assetPickerDirectoryId === node.id;
+    const count = getPickerDirectoryCounts()[node.id] || 0;
+
+    return (
+      <div key={node.id} className="space-y-1">
+        <div className={`flex items-center gap-1 ${depth > 0 ? 'pl-4' : ''}`}>
+          <button
+            type="button"
+            onClick={() => hasChildren ? togglePickerDirectoryExpanded(node.id) : setAssetPickerDirectoryId(node.id)}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all ${
+              hasChildren ? 'text-slate-400 hover:bg-white hover:text-slate-700' : 'text-slate-250'
+            }`}
+            title={hasChildren ? (isExpanded ? '收起目录' : '展开目录') : '选择目录'}
+          >
+            {hasChildren ? (
+              isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-250" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setAssetPickerDirectoryId(node.id)}
+            className={`min-w-0 flex-1 rounded-xl px-2.5 py-2 text-left transition-all ${
+              isActive
+                ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100'
+                : 'text-slate-600 hover:bg-white hover:text-slate-900'
+            }`}
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs font-black">{node.label}</span>
+              <span className={`rounded-lg px-1.5 py-0.5 text-[9px] font-black ${isActive ? 'bg-indigo-50 text-indigo-500' : 'bg-white text-slate-300'}`}>
+                {count}
+              </span>
+            </span>
+            {node.desc && <span className="mt-0.5 block truncate text-[9px] font-bold text-slate-400">{node.desc}</span>}
+          </button>
+        </div>
+        {hasChildren && isExpanded && (
+          <div className="space-y-1">
+            {node.children!.map(child => renderPickerDirectoryNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-5">
       {requirement.assetType === 'Video' ? (
@@ -880,19 +1158,25 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
         </>
       ) : renderSimpleTemplate()}
       {assetPickerTarget && (
-        <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm">
-          <div className="flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-150 bg-white shadow-2xl">
+        <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/40 p-5 backdrop-blur-sm">
+          <div className={`flex h-[88vh] w-full flex-col overflow-hidden rounded-3xl border border-slate-150 bg-white shadow-2xl ${
+            assetPickerTarget.mode === 'landing' ? 'max-w-5xl' : 'max-w-[1440px]'
+          }`}>
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <div>
                 <h3 className="text-sm font-black text-slate-900">
                   {assetPickerTarget.mode === 'landing'
                     ? '选择 CTA / 落版'
-                    : '引用资产'}
+                    : assetPickerTarget.mode === 'finished'
+                      ? '引用成片'
+                      : '引用资产库'}
                 </h3>
                 <p className="mt-1 text-[10px] font-bold text-slate-400">
                   {assetPickerTarget.mode === 'landing'
                     ? 'CTA/落版为单选，选择新项会替换当前结果。'
-                    : '资产引用可多选，选择结果会统一显示在“需求参考”模块。'}
+                    : assetPickerTarget.mode === 'finished'
+                      ? '成片引用可多选，适合选择最近提交但还没有明确数据结论的成片。'
+                      : '资产库引用可多选，适合选择已经验证并沉淀的素材。'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -904,22 +1188,119 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                 </button>
               </div>
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)]">
+            <div className={`grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-hidden ${
+              assetPickerTarget.mode === 'landing'
+                ? 'lg:grid-cols-[280px_minmax(0,1fr)]'
+                : assetPickerTarget.mode === 'finished'
+                  ? 'lg:grid-cols-[280px_minmax(0,1fr)]'
+                  : 'lg:grid-cols-[220px_280px_minmax(0,1fr)]'
+            }`}>
+              {assetPickerTarget.mode === 'asset' && (
+                <aside className="border-r border-slate-100 bg-slate-50/80 p-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">资产目录</p>
+                    <button
+                      type="button"
+                      onClick={() => setAssetPickerDirectoryId('all')}
+                      className={`rounded-lg px-2 py-1 text-[9px] font-black ${
+                        assetPickerDirectoryId === 'all' ? 'bg-indigo-50 text-indigo-600' : 'bg-white text-slate-400 hover:text-slate-700'
+                      }`}
+                    >
+                      全部 {getPickerDirectoryCounts().all || 0}
+                    </button>
+                  </div>
+                  <div className="max-h-[66vh] space-y-1 overflow-y-auto pr-1 no-scrollbar">
+                    {ASSET_PICKER_DIRECTORY_TREE.map(node => renderPickerDirectoryNode(node))}
+                  </div>
+                </aside>
+              )}
               <aside className="border-r border-slate-100 bg-slate-50 p-5">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
-                  <input className="w-full rounded-2xl border border-slate-150 bg-white py-2.5 pl-9 pr-3 text-xs font-bold outline-none" placeholder="搜索资产名称 / 标签" />
+                  <input
+                    value={assetPickerSearch}
+                    onChange={(event) => setAssetPickerSearch(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-150 bg-white py-2.5 pl-9 pr-3 text-xs font-bold outline-none"
+                    placeholder="搜索资产名称 / 标签"
+                  />
                 </div>
-                <div className="mt-4 space-y-2">
-                  {(assetPickerTarget.mode === 'landing' ? ['全部落版', '视频落版'] : ['全部资产', 'A段', '中间段', 'B段', 'CTA', '图片']).map((item, index) => (
-                    <button key={item} type="button" className={`w-full rounded-xl px-3 py-2 text-left text-xs font-black ${index === 0 ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-white'}`}>
-                      {item}
-                    </button>
-                  ))}
-                </div>
+                {assetPickerTarget.mode === 'landing' ? (
+                  <div className="mt-4 space-y-2">
+                    {['全部落版', '视频落版'].map((item, index) => (
+                      <button key={item} type="button" className={`w-full rounded-xl px-3 py-2 text-left text-xs font-black ${index === 0 ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-white'}`}>
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 max-h-[58vh] space-y-4 overflow-y-auto pr-1 no-scrollbar">
+                    {Array.from(new Set((assetPickerTarget.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS).map(facet => facet.group))).map(group => (
+                      <div key={group}>
+                        <p className={`mb-2 text-[10px] font-black ${assetPickerTarget.mode === 'finished' ? 'text-emerald-600' : 'text-indigo-600'}`}>{group}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(assetPickerTarget.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS).filter(facet => facet.group === group).map(facet => {
+                            const isActive = assetPickerFacetId === facet.id;
+                            const count = getPickerFacetCounts()[facet.id] || 0;
+                            return (
+                              <button
+                                key={facet.id}
+                                type="button"
+                                onClick={() => setAssetPickerFacetId(facet.id)}
+                                className={`rounded-xl border px-2.5 py-1.5 text-[10px] font-black transition-all ${
+                                  isActive
+                                    ? assetPickerTarget.mode === 'finished'
+                                      ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                                      : 'border-indigo-500 bg-indigo-50 text-indigo-600'
+                                    : assetPickerTarget.mode === 'finished'
+                                      ? 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200 hover:text-emerald-600'
+                                      : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600'
+                                }`}
+                              >
+                                {facet.label}
+                                <span className={`ml-1 ${isActive ? (assetPickerTarget.mode === 'finished' ? 'text-emerald-400' : 'text-indigo-400') : 'text-slate-300'}`}>{count}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </aside>
               <div className="overflow-y-auto p-5 no-scrollbar">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {assetPickerTarget.mode !== 'landing' && (
+                  <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <span className="text-[10px] font-black text-slate-400">当前范围</span>
+                    {assetPickerTarget.mode === 'asset' && (
+                      <span className="rounded-lg bg-white px-2.5 py-1 text-[10px] font-black text-slate-700 ring-1 ring-slate-100">
+                        {ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId)?.label || '全部资产'}
+                      </span>
+                    )}
+                    <span className={`rounded-lg px-2.5 py-1 text-[10px] font-black ring-1 ${
+                      assetPickerTarget.mode === 'finished'
+                        ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                        : 'bg-indigo-50 text-indigo-600 ring-indigo-100'
+                    }`}>
+                      {(assetPickerTarget.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS).find(item => item.id === assetPickerFacetId)?.label || '全部资产'}
+                    </span>
+                    {assetPickerSearch.trim() && (
+                      <span className="rounded-lg bg-white px-2.5 py-1 text-[10px] font-black text-slate-500 ring-1 ring-slate-100">
+                        搜索 {assetPickerSearch.trim()}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {getPickerOptions().length === 0 ? (
+                  <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center">
+                    <p className="text-xs font-black text-slate-400">没有符合条件的资产</p>
+                    <p className="mt-1 text-[10px] font-bold text-slate-300">可以清除搜索词，或切换其它分类标签。</p>
+                  </div>
+                ) : (
+                <div className={`grid gap-4 ${
+                  assetPickerTarget.mode === 'landing'
+                    ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                    : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'
+                }`}>
                   {getPickerOptions().map(asset => {
                     const selected = getPickerSelectedIds().includes(asset.id);
                     return (
@@ -953,6 +1334,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                     </button>
                   );})}
                 </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
