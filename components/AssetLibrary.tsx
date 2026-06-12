@@ -345,6 +345,7 @@ const INITIAL_ITEMS: LibraryItem[] = [
      previewUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&h=400&fit=crop',
      sourceFileUrl: '/assets/hooks/fr-ai-01.mp4',
      duration: '00:05',
+     referencedAssetIds: ['comp-scene-ice', 'comp-fx-gold'],
      parentComponent: '剧情片段-02',
      relatedRequirements: ['REQ-20260512-01', 'REQ-20260514-05'],
      positionInTimeline: '00:00 - 00:05',
@@ -1374,6 +1375,29 @@ const AssetLibrary: React.FC = () => {
     setIsCreatingInMove(false);
   };
 
+  const handleCreateIterationAsset = (sourceItem: LibraryItem) => {
+    const now = new Date();
+    const newId = `${sourceItem.id}-iter-${now.getTime().toString().slice(-5)}`;
+    const newItem: LibraryItem = {
+      ...sourceItem,
+      id: newId,
+      name: `${sourceItem.name} 迭代版`,
+      citationCount: 0,
+      status: 'Insufficient Data',
+      createdAt: now.toISOString().slice(0, 16).replace('T', ' '),
+      parentAssetId: sourceItem.id,
+      referencedAssetIds: [...(sourceItem.referencedAssetIds || [])],
+      relatedAssets: [...(sourceItem.relatedAssets || [])],
+      relatedComponents: [...(sourceItem.relatedComponents || [])],
+      performance: [],
+    };
+
+    setLibraryItems(prev => [newItem, ...prev]);
+    setCurrentPath(getItemPath(sourceItem));
+    setSelectedDetailItem(newItem);
+    setSearchQuery('');
+  };
+
   // Recursively render left directory explorer trees
   const renderLeftSidebarNode = (node: FolderNode, parentPath: string[] = []): React.ReactNode => {
     const nodePath = [...parentPath, node.name];
@@ -2054,9 +2078,6 @@ const AssetLibrary: React.FC = () => {
                                     <h4 className="text-[10px] font-black text-slate-800 line-clamp-1 group-hover:text-slate-900 transition-colors leading-tight">
                                        {item.name}
                                     </h4>
-                                    <p className="text-[8px] font-bold text-slate-400 font-mono tracking-tight leading-none">
-                                       {item.id}
-                                    </p>
                                  </div>
 
                                  <div className="flex flex-wrap gap-1">
@@ -2081,7 +2102,18 @@ const AssetLibrary: React.FC = () => {
                                        <History className="w-2.5 h-2.5" />
                                        <span>引用 {item.citationCount}次</span>
                                     </div>
-                                    <p className="text-slate-350 font-bold">{item.createdAt.split(' ')[0]}</p>
+                                    <button
+                                       type="button"
+                                       onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCreateIterationAsset(item);
+                                       }}
+                                       className="inline-flex items-center gap-0.5 rounded-md border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 text-[7.5px] font-black text-indigo-650 opacity-0 transition-all hover:border-indigo-200 hover:bg-indigo-100 group-hover:opacity-100"
+                                       title="从该资产创建迭代资产"
+                                    >
+                                       <RefreshCw className="h-2.5 w-2.5" />
+                                       迭代
+                                    </button>
                                  </div>
                               </div>
                            </div>
@@ -2096,6 +2128,9 @@ const AssetLibrary: React.FC = () => {
       {selectedDetailItem && (
          <DetailModal
             selectedDetailItem={selectedDetailItem}
+            availableAssets={libraryItems}
+            getAssetPath={getItemPath}
+            onCreateIteration={handleCreateIterationAsset}
             onClose={() => setSelectedDetailItem(null)}
             onSave={(updated) => {
                setLibraryItems(prev => prev.map(item => item.id === selectedDetailItem.id ? updated : item));
@@ -2260,9 +2295,7 @@ const AssetLibrary: React.FC = () => {
                                          />
                                          <div className="min-w-0 col-span-2">
                                             <p className="text-[11px] font-black text-slate-800 line-clamp-1 leading-tight">{item.name}</p>
-                                            <div className="flex items-center gap-1.5 mt-0.5 text-[9px] font-mono text-slate-400 leading-none">
-                                               <span>ID: {item.id}</span>
-                                               <span>•</span>
+                                            <div className="flex items-center gap-1.5 mt-0.5 text-[9px] text-slate-400 leading-none">
                                                <span>当前归属: {item.subType}</span>
                                             </div>
                                          </div>

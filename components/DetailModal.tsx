@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Layout as LayoutIcon, Eye, Edit3, X, PlayCircle, 
   Monitor, Link as LinkIcon, Box, Tag, BarChart2, ClipboardList,
-  Check, ArrowUpRight, ExternalLink, FileText
+  Check, ArrowUpRight, ExternalLink, FileText, Search, Folder, ChevronDown,
+  ChevronRight, Plus, RefreshCw
 } from 'lucide-react';
 import { LibraryItem, PerformanceData } from '../types';
 
@@ -133,12 +134,49 @@ const getRequirementPerformanceSummary = (
 
 interface DetailModalProps {
   selectedDetailItem: LibraryItem;
+  availableAssets?: LibraryItem[];
+  getAssetPath?: (item: LibraryItem) => string[];
+  onCreateIteration?: (sourceItem: LibraryItem) => void;
   onClose: () => void;
   onSave: (updatedItem: LibraryItem) => void;
 }
 
+type RelationPickerMode = 'parent' | 'reference';
+
+interface RelationFolderNode {
+  name: string;
+  path: string[];
+  children: RelationFolderNode[];
+}
+
+const buildRelationFolderTree = (
+  assets: LibraryItem[],
+  getAssetPath: (item: LibraryItem) => string[]
+): RelationFolderNode[] => {
+  const roots: RelationFolderNode[] = [];
+
+  assets.forEach(asset => {
+    const path = getAssetPath(asset);
+    let level = roots;
+    path.forEach((segment, index) => {
+      const nextPath = path.slice(0, index + 1);
+      let node = level.find(item => item.name === segment);
+      if (!node) {
+        node = { name: segment, path: nextPath, children: [] };
+        level.push(node);
+      }
+      level = node.children;
+    });
+  });
+
+  return roots;
+};
+
 export const DetailModal: React.FC<DetailModalProps> = ({
   selectedDetailItem,
+  availableAssets = [],
+  getAssetPath,
+  onCreateIteration,
   onClose,
   onSave
 }) => {
@@ -162,15 +200,22 @@ export const DetailModal: React.FC<DetailModalProps> = ({
   const [editFormRelatedAssets, setEditFormRelatedAssets] = useState<string[]>([]);
   const [editFormRelatedRequirements, setEditFormRelatedRequirements] = useState<string[]>([]);
   const [editFormRelatedComponents, setEditFormRelatedComponents] = useState<string[]>([]);
+  const [editFormParentAssetId, setEditFormParentAssetId] = useState('');
+  const [editFormReferencedAssetIds, setEditFormReferencedAssetIds] = useState<string[]>([]);
   const [editFormPerformance, setEditFormPerformance] = useState<PerformanceData[]>([]);
   const [editCitationCount, setEditCitationCount] = useState<number>(0);
   const [editCreatedAt, setEditCreatedAt] = useState<string>('');
 
   // Custom interactive sub-states for adding tags or relations
   const [newTagInput, setNewTagInput] = useState('');
-  const [newAssetInput, setNewAssetInput] = useState('');
   const [newRequirementInput, setNewRequirementInput] = useState('');
-  const [newCompInput, setNewCompInput] = useState('');
+  const [relationPickerMode, setRelationPickerMode] = useState<RelationPickerMode | null>(null);
+  const [relationPickerPath, setRelationPickerPath] = useState<string[]>([]);
+  const [relationPickerSearch, setRelationPickerSearch] = useState('');
+  const [relationPickerExpanded, setRelationPickerExpanded] = useState<Record<string, boolean>>({
+    '片段': true,
+    '组件': true,
+  });
   const detailUsageSlots = getAssetUsageSlotsForDetail({
     ...selectedDetailItem,
     name: editFormName,
@@ -197,6 +242,8 @@ export const DetailModal: React.FC<DetailModalProps> = ({
       setEditFormRelatedAssets(selectedDetailItem.relatedAssets || ['material-ai-bg-01', 'material-voice-05']);
       setEditFormRelatedRequirements(selectedDetailItem.relatedRequirements || ['cp4116-10', 'cp4116-09', 'cp4116-08', 'cp4116-07']);
       setEditFormRelatedComponents(selectedDetailItem.relatedComponents || ['comp-login-panel', 'comp-particle-emitter']);
+      setEditFormParentAssetId(selectedDetailItem.parentAssetId || '');
+      setEditFormReferencedAssetIds(selectedDetailItem.referencedAssetIds || selectedDetailItem.relatedAssets || []);
       setEditFormPerformance(getEffectivePerformanceMock(selectedDetailItem));
       setEditCitationCount(selectedDetailItem.citationCount || 0);
       setEditCreatedAt(selectedDetailItem.createdAt || '2026-05-18 14:20');
@@ -221,12 +268,115 @@ export const DetailModal: React.FC<DetailModalProps> = ({
       relatedAssets: editFormRelatedAssets,
       relatedRequirements: editFormRelatedRequirements,
       relatedComponents: editFormRelatedComponents,
+      parentAssetId: editFormParentAssetId || undefined,
+      referencedAssetIds: editFormReferencedAssetIds,
       performance: editFormPerformance,
       citationCount: editCitationCount,
       createdAt: editCreatedAt
     };
     onSave(updated);
     setIsEditMode(false);
+  };
+
+  const resolveAssetPath = (asset: LibraryItem) => (
+    getAssetPath ? getAssetPath(asset) : [asset.type === 'Fragment' ? '片段' : '组件', asset.subType]
+  );
+
+  const selectableAssets = availableAssets.filter(asset => asset.id !== editFormId);
+  const relationTree = buildRelationFolderTree(selectableAssets, resolveAssetPath);
+  const selectedParentAsset = selectableAssets.find(asset => asset.id === editFormParentAssetId);
+  const selectedReferenceAssets = editFormReferencedAssetIds
+    .map(assetId => selectableAssets.find(asset => asset.id === assetId))
+    .filter((asset): asset is LibraryItem => Boolean(asset));
+
+  const isAssetInPickerPath = (asset: LibraryItem, targetPath: string[]) => {
+    if (targetPath.length === 0) return true;
+    const assetPath = resolveAssetPath(asset);
+    return targetPath.every((segment, index) => assetPath[index] === segment);
+  };
+
+  const relationPickerAssets = selectableAssets.filter(asset => {
+    const matchesPath = isAssetInPickerPath(asset, relationPickerPath);
+    if (!matchesPath) return false;
+    if (!relationPickerSearch.trim()) return true;
+    const query = relationPickerSearch.toLowerCase();
+    return [
+      asset.id,
+      asset.name,
+      asset.subType,
+      asset.type,
+      ...(asset.tags || []),
+      resolveAssetPath(asset).join('/')
+    ].join(' ').toLowerCase().includes(query);
+  });
+
+  const openRelationPicker = (mode: RelationPickerMode) => {
+    setRelationPickerMode(mode);
+    setRelationPickerSearch('');
+    setRelationPickerPath([]);
+  };
+
+  const selectRelationAsset = (asset: LibraryItem) => {
+    if (relationPickerMode === 'parent') {
+      setEditFormParentAssetId(asset.id);
+      setRelationPickerMode(null);
+      return;
+    }
+
+    setEditFormReferencedAssetIds(prev => (
+      prev.includes(asset.id)
+        ? prev.filter(assetId => assetId !== asset.id)
+        : [...prev, asset.id]
+    ));
+  };
+
+  const getRelationAssetTitle = (assetId: string) => {
+    const asset = selectableAssets.find(item => item.id === assetId);
+    return asset ? asset.name : assetId;
+  };
+
+  const renderRelationFolderNode = (node: RelationFolderNode, depth = 0): React.ReactNode => {
+    const pathKey = node.path.join('/');
+    const isExpanded = relationPickerExpanded[pathKey] || false;
+    const isSelected = relationPickerPath.join('/') === pathKey;
+    const total = selectableAssets.filter(asset => isAssetInPickerPath(asset, node.path)).length;
+
+    return (
+      <div key={pathKey}>
+        <div
+          className={`flex items-center gap-1 rounded-lg px-2 py-1.5 text-left transition-all ${
+            isSelected ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+          style={{ marginLeft: `${depth * 10}px` }}
+        >
+          <button
+            type="button"
+            onClick={() => setRelationPickerPath(node.path)}
+            className="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <Folder className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
+            <span className="truncate text-[11px] font-black">{node.name}</span>
+            <span className={`rounded px-1 font-mono text-[9px] font-black ${isSelected ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-400'}`}>
+              {total}
+            </span>
+          </button>
+          {node.children.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setRelationPickerExpanded(prev => ({ ...prev, [pathKey]: !isExpanded }))}
+              className={`rounded p-1 ${isSelected ? 'text-white/80 hover:bg-white/10' : 'text-slate-300 hover:bg-slate-200 hover:text-slate-600'}`}
+            >
+              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            </button>
+          )}
+        </div>
+        {isExpanded && node.children.length > 0 && (
+          <div className="mt-1 space-y-0.5">
+            {node.children.map(child => renderRelationFolderNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -265,29 +415,23 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                     `${editFormType === 'Fragment' ? '片段' : '组件'} • ${editFormSubType || '无'}`
                   )}
                 </span>
-                <span className="text-slate-355">|</span>
-                <span className="font-mono text-[10.5px] font-bold text-slate-450">
-                  {isEditMode ? (
-                    <span className="flex items-center gap-1">
-                      ID:
-                      <input
-                        type="text"
-                        placeholder="资产ID"
-                        value={editFormId}
-                        onChange={(e) => setEditFormId(e.target.value)}
-                        className="w-28 text-[10px] font-mono bg-white border border-slate-200 px-1 py-px focus:outline-none text-slate-800 rounded"
-                      />
-                    </span>
-                  ) : (
-                    `ID: ${editFormId}`
-                  )}
-                </span>
               </div>
             </div>
           </div>
 
           {/* Top Right Action Button Panel */}
           <div className="flex items-center gap-2">
+            {onCreateIteration && (
+              <button
+                type="button"
+                onClick={() => onCreateIteration(selectedDetailItem)}
+                className="mr-1 inline-flex items-center gap-1.5 rounded-xl border border-indigo-150 bg-indigo-50 px-3.5 py-2 text-xs font-black text-indigo-650 shadow-3xs transition-all hover:border-indigo-200 hover:bg-indigo-100"
+                title="从当前资产创建迭代资产，并自动关联父资产"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                迭代
+              </button>
+            )}
             
             {/* 物料状态放在右上角 */}
             <div className="mr-2">
@@ -325,7 +469,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
             </div>
 
             <div className={`flex rounded-xl p-1 border shadow-3xs ${
-              isEditMode ? 'bg-indigo-50 border-indigo-150' : 'bg-emerald-50 border-emerald-150'
+              isEditMode ? 'bg-indigo-50 border-indigo-200' : 'bg-emerald-50 border-emerald-200'
             }`}>
               <button
                 type="button"
@@ -344,11 +488,11 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                 onClick={() => setIsEditMode(true)}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
                   isEditMode
-                    ? 'bg-indigo-650 text-white shadow-sm ring-1 ring-indigo-500'
-                    : 'text-slate-500 hover:bg-white/70 hover:text-indigo-650'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-200'
+                    : 'text-slate-500 hover:bg-white/70 hover:text-indigo-700'
                 }`}
               >
-                <Edit3 className={`w-3.5 h-3.5 ${isEditMode ? 'text-white' : 'text-slate-400'}`} />
+                <Edit3 className={`w-3.5 h-3.5 ${isEditMode ? 'text-indigo-600' : 'text-slate-400'}`} />
                 编辑
               </button>
             </div>
@@ -460,29 +604,19 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
                <div>
                   <span className="text-[9.5px] text-slate-400 font-bold block mb-1">🔗 源文件地址</span>
-                  {isEditMode ? (
-                     <input 
-                        type="text" 
-                        placeholder="请输入 cdn 物理地址 URL..." 
-                        value={editFormSourceFileUrl}
-                        onChange={(e) => setEditFormSourceFileUrl(e.target.value)}
-                        className="w-full font-mono text-[10px] font-medium text-slate-600 bg-white px-2.5 py-1.5 rounded-lg border border-slate-205 focus:outline-none focus:ring-1 focus:ring-indigo-550"
-                     />
-                  ) : (
-                     <a 
-                        href={editFormSourceFileUrl || '#'} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        onClick={(e) => { if (!editFormSourceFileUrl) { e.preventDefault(); alert("暂未配置有效物理存储路径！"); } }}
-                        className="font-mono font-bold text-indigo-605 hover:text-indigo-850 hover:underline bg-slate-50 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-[10.5px] truncate flex items-center justify-between gap-1"
-                     >
-                        <span className="truncate flex items-center gap-1">
-                           <LinkIcon className="w-3 h-3 text-indigo-400 shrink-0" />
-                           {editFormSourceFileUrl || '未配置物理存储路径(物理隔离)'}
-                        </span>
-                        {editFormSourceFileUrl && <ExternalLink className="w-2.5 h-2.5 shrink-0" />}
-                     </a>
-                  )}
+                  <a
+                     href={editFormSourceFileUrl || '#'}
+                     target="_blank"
+                     rel="noopener noreferrer"
+                     onClick={(e) => { if (!editFormSourceFileUrl) { e.preventDefault(); alert("暂未配置有效物理存储路径！"); } }}
+                     className="flex items-center justify-between gap-1 truncate rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[10.5px] font-bold text-indigo-605 hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-850"
+                  >
+                     <span className="flex items-center gap-1 truncate">
+                        <LinkIcon className="h-3 w-3 shrink-0 text-indigo-400" />
+                        {editFormSourceFileUrl ? '打开源文件' : '未配置源文件'}
+                     </span>
+                     {editFormSourceFileUrl && <ExternalLink className="h-2.5 w-2.5 shrink-0" />}
+                  </a>
                </div>
             </div>
 
@@ -688,7 +822,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                                </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                               {editFormPerformance.map((p, pidx) => (
+                               {editFormPerformance.map((p) => (
                                   <tr key={p.channel} className="hover:bg-slate-50/20 transition-all">
                                      <td className="p-2.5 font-sans font-black uppercase text-slate-800 text-[10px] flex items-center gap-1">
                                         <span className={`w-1.5 h-1.5 rounded-full ${
@@ -698,113 +832,25 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                                         {p.channel}
                                      </td>
                                      <td className="p-2 text-right">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              value={p.spent}
-                                              onChange={(e) => {
-                                                 const val = parseInt(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, spent: val } : item));
-                                              }}
-                                              className="w-16 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span className="font-bold text-slate-905">${p.spent?.toLocaleString()}</span>
-                                        )}
+                                        <span className="font-bold text-slate-905">${p.spent?.toLocaleString()}</span>
                                      </td>
                                      <td className="p-2 text-right">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              value={p.installs}
-                                              onChange={(e) => {
-                                                 const val = parseInt(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, installs: val } : item));
-                                              }}
-                                              className="w-16 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span className="text-slate-700">{p.installs?.toLocaleString()}</span>
-                                        )}
+                                        <span className="text-slate-700">{p.installs?.toLocaleString()}</span>
                                      </td>
                                      <td className="p-2 text-right">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              value={p.paidUsers}
-                                              onChange={(e) => {
-                                                 const val = parseInt(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, paidUsers: val } : item));
-                                              }}
-                                              className="w-14 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span className="text-slate-550">{p.paidUsers?.toLocaleString()}</span>
-                                        )}
+                                        <span className="text-slate-550">{p.paidUsers?.toLocaleString()}</span>
                                      </td>
                                      <td className="p-2 text-right">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              step="0.01"
-                                              value={p.ir}
-                                              onChange={(e) => {
-                                                 const val = parseFloat(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, ir: val } : item));
-                                              }}
-                                              className="w-12 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span className="text-slate-800">{(p.ir * 100).toFixed(1)}%</span>
-                                        )}
+                                        <span className="text-slate-800">{(p.ir * 100).toFixed(1)}%</span>
                                      </td>
                                      <td className="p-1 px-2.5 text-right text-indigo-650 font-bold">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              step="0.1"
-                                              value={p.cpi}
-                                              onChange={(e) => {
-                                                 const val = parseFloat(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, cpi: val } : item));
-                                              }}
-                                              className="w-12 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span>${p.cpi}</span>
-                                        )}
+                                        <span>${p.cpi}</span>
                                      </td>
                                      <td className="p-1 px-2.5 text-right font-bold text-slate-500">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              step="0.1"
-                                              value={p.cpm}
-                                              onChange={(e) => {
-                                                 const val = parseFloat(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, cpm: val } : item));
-                                              }}
-                                              className="w-12 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span>${p.cpm}</span>
-                                        )}
+                                        <span>${p.cpm}</span>
                                      </td>
                                      <td className="p-1 px-2.5 text-right font-bold text-indigo-900 border-none">
-                                        {isEditMode ? (
-                                           <input 
-                                              type="number" 
-                                              step="0.1"
-                                              value={p.cpa}
-                                              onChange={(e) => {
-                                                 const val = parseFloat(e.target.value) || 0;
-                                                 setEditFormPerformance(prev => prev.map((item, idx) => idx === pidx ? { ...item, cpa: val } : item));
-                                              }}
-                                              className="w-12 text-right border border-slate-200 rounded px-1"
-                                           />
-                                        ) : (
-                                           <span>${p.cpa}</span>
-                                        )}
+                                        <span>${p.cpa}</span>
                                      </td>
                                   </tr>
                                ))}
@@ -816,104 +862,123 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
                 {/* D. 资产结构关系 */}
                 <div className={detailTab === 'overview' ? 'space-y-3' : 'hidden'}>
-                   <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider flex items-center gap-1.5 text-slate-450 border-b border-slate-100 pb-1.5">
-                      <ClipboardList className="w-4 h-4 text-indigo-550 shrink-0" />
-                      资产结构关系
-                   </h3>
+                   <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                      <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider flex items-center gap-1.5 text-slate-450">
+                         <ClipboardList className="w-4 h-4 text-indigo-550 shrink-0" />
+                         资产结构关系
+                      </h3>
+                      {isEditMode && (
+                         <div className="flex items-center gap-2">
+                            <button
+                               type="button"
+                               onClick={() => openRelationPicker('parent')}
+                               className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-[10.5px] font-black text-indigo-650 hover:border-indigo-200 hover:bg-indigo-100"
+                            >
+                               <Plus className="h-3.5 w-3.5" />
+                               选择父资产
+                            </button>
+                            <button
+                               type="button"
+                               onClick={() => openRelationPicker('reference')}
+                               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[10.5px] font-black text-emerald-650 hover:border-emerald-200 hover:bg-emerald-100"
+                            >
+                               <Plus className="h-3.5 w-3.5" />
+                               添加引用资产
+                            </button>
+                         </div>
+                      )}
+                   </div>
 
                    <div className="overflow-x-auto rounded-xl border border-slate-150 bg-white shadow-3xs">
-                      <table className="w-full min-w-[560px] border-collapse text-left text-xs">
+                      <table className="w-full min-w-[420px] border-collapse text-left text-xs">
                          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-450">
                             <tr>
                                <th className="px-4 py-3">关系类型</th>
                                <th className="px-4 py-3">关联对象</th>
-                               <th className="px-4 py-3">用途说明</th>
-                               <th className="px-4 py-3 text-right">操作</th>
+                               {isEditMode && <th className="px-4 py-3 text-right">操作</th>}
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-slate-100">
-                            {editFormRelatedAssets.map(asset => (
-                               <tr key={`overview-asset-${asset}`} className="hover:bg-slate-50/60">
-                                  <td className="px-4 py-3">
-                                     <span className="rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-650 ring-1 ring-blue-100">关联素材</span>
-                                  </td>
-                                  <td className="px-4 py-3 font-mono text-[11px] font-black text-slate-800">{asset}</td>
-                                  <td className="px-4 py-3 text-slate-500">当前资产的来源、引用或组合素材。</td>
-                                  <td className="px-4 py-3 text-right">
-                                     {isEditMode ? (
-                                        <button
-                                           type="button"
-                                           onClick={() => setEditFormRelatedAssets(prev => prev.filter(a => a !== asset))}
-                                           className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                           title="移除关联素材"
-                                        >
-                                           <X className="h-3.5 w-3.5" />
-                                        </button>
-                                     ) : (
-                                        <span className="text-[10px] font-bold text-slate-300">-</span>
-                                     )}
-                                  </td>
-                               </tr>
-                            ))}
                             <tr className="hover:bg-slate-50/60">
                                <td className="px-4 py-3">
-                                  <span className="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-650 ring-1 ring-indigo-100">父组件</span>
+                                  <span className="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-650 ring-1 ring-indigo-100">父资产</span>
                                </td>
                                <td className="px-4 py-3">
-                                  {isEditMode ? (
-                                     <input
-                                        type="text"
-                                        placeholder="请输入父组件名称..."
-                                        value={editFormParentComponent}
-                                        onChange={(e) => setEditFormParentComponent(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-205 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-750 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                     />
+                                  {selectedParentAsset ? (
+                                     <div className="flex items-center gap-2">
+                                        <img src={selectedParentAsset.previewUrl} alt="" className="h-8 w-8 rounded-lg object-cover ring-1 ring-slate-150" referrerPolicy="no-referrer" />
+                                        <div className="min-w-0">
+                                           <div className="truncate text-xs font-black text-slate-800">{selectedParentAsset.name}</div>
+                                        </div>
+                                     </div>
                                   ) : (
-                                     <span className="font-mono text-[11px] font-black text-slate-800">{editFormParentComponent || '暂无父组件'}</span>
+                                     <span className="text-[11px] font-black text-slate-400">{editFormParentAssetId ? '资产未匹配' : (editFormParentComponent || '暂无父资产')}</span>
                                   )}
                                </td>
-                               <td className="px-4 py-3 text-slate-500">当前资产所属的父级组件、片段组或迭代来源。</td>
-                               <td className="px-4 py-3 text-right">
-                                  {isEditMode && editFormParentComponent ? (
-                                     <button
-                                        type="button"
-                                        onClick={() => setEditFormParentComponent('')}
-                                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                        title="清空父组件"
-                                     >
-                                        <X className="h-3.5 w-3.5" />
-                                     </button>
-                                  ) : (
-                                     <span className="text-[10px] font-bold text-slate-300">-</span>
-                                  )}
-                               </td>
-                            </tr>
-                            {editFormRelatedComponents.map(comp => (
-                               <tr key={`overview-component-${comp}`} className="hover:bg-slate-50/60">
-                                  <td className="px-4 py-3">
-                                     <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-650 ring-1 ring-emerald-100">关联组件</span>
-                                  </td>
-                                  <td className="px-4 py-3 font-mono text-[11px] font-black text-slate-800">{comp}</td>
-                                  <td className="px-4 py-3 text-slate-500">与当前资产存在组合、嵌套或复用关系。</td>
+                               {isEditMode && (
                                   <td className="px-4 py-3 text-right">
-                                     {isEditMode ? (
+                                     <div className="inline-flex items-center gap-1">
                                         <button
                                            type="button"
-                                           onClick={() => setEditFormRelatedComponents(prev => prev.filter(c => c !== comp))}
+                                           onClick={() => openRelationPicker('parent')}
+                                           className="inline-flex h-7 items-center rounded-lg border border-slate-200 px-2 text-[10px] font-black text-slate-500 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-650"
+                                        >
+                                           选择
+                                        </button>
+                                        {(editFormParentAssetId || editFormParentComponent) && (
+                                           <button
+                                              type="button"
+                                              onClick={() => {
+                                                 setEditFormParentAssetId('');
+                                                 setEditFormParentComponent('');
+                                              }}
+                                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                              title="清空父资产"
+                                           >
+                                              <X className="h-3.5 w-3.5" />
+                                          </button>
+                                        )}
+                                     </div>
+                                  </td>
+                               )}
+                            </tr>
+                            {editFormReferencedAssetIds.map(assetId => {
+                               const asset = selectableAssets.find(item => item.id === assetId);
+                               return (
+                               <tr key={`overview-reference-${assetId}`} className="hover:bg-slate-50/60">
+                                  <td className="px-4 py-3">
+                                     <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-650 ring-1 ring-emerald-100">引用资产</span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                     {asset ? (
+                                        <div className="flex items-center gap-2">
+                                           <img src={asset.previewUrl} alt="" className="h-8 w-8 rounded-lg object-cover ring-1 ring-slate-150" referrerPolicy="no-referrer" />
+                                           <div className="min-w-0">
+                                              <div className="truncate text-xs font-black text-slate-800">{asset.name}</div>
+                                           </div>
+                                        </div>
+                                     ) : (
+                                        <span className="text-[11px] font-black text-slate-400">资产未匹配</span>
+                                     )}
+                                  </td>
+                                  {isEditMode && (
+                                     <td className="px-4 py-3 text-right">
+                                        <button
+                                           type="button"
+                                           onClick={() => setEditFormReferencedAssetIds(prev => prev.filter(id => id !== assetId))}
                                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                           title="移除关联组件"
+                                           title="移除引用资产"
                                         >
                                            <X className="h-3.5 w-3.5" />
                                         </button>
-                                     ) : (
-                                        <span className="text-[10px] font-bold text-slate-300">-</span>
-                                     )}
-                                  </td>
+                                     </td>
+                                  )}
                                </tr>
-                            ))}
-                            {editFormRelatedAssets.length === 0 && !editFormParentComponent && editFormRelatedComponents.length === 0 && (
+                               );
+                            })}
+                            {editFormParentAssetId === '' && editFormReferencedAssetIds.length === 0 && !editFormParentComponent && (
                                <tr>
-                                  <td colSpan={4} className="px-4 py-8 text-center text-xs font-bold text-slate-400">
+                                  <td colSpan={isEditMode ? 3 : 2} className="px-4 py-8 text-center text-xs font-bold text-slate-400">
                                      暂无资产结构关系
                                   </td>
                                </tr>
@@ -922,40 +987,6 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                       </table>
                    </div>
 
-                   {isEditMode && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/30 p-3">
-                         <input
-                            type="text"
-                            placeholder="新增关联素材 ID，回车添加"
-                            value={newAssetInput}
-                            onChange={(e) => setNewAssetInput(e.target.value)}
-                            onKeyDown={(e) => {
-                               if (e.key === 'Enter' && newAssetInput.trim()) {
-                                  e.preventDefault();
-                                  const v = newAssetInput.trim();
-                                  if (!editFormRelatedAssets.includes(v)) setEditFormRelatedAssets(prev => [...prev, v]);
-                                  setNewAssetInput('');
-                               }
-                            }}
-                            className="rounded-lg border border-slate-205 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                         />
-                         <input
-                            type="text"
-                            placeholder="新增关联组件 ID，回车添加"
-                            value={newCompInput}
-                            onChange={(e) => setNewCompInput(e.target.value)}
-                            onKeyDown={(e) => {
-                               if (e.key === 'Enter' && newCompInput.trim()) {
-                                  e.preventDefault();
-                                  const v = newCompInput.trim();
-                                  if (!editFormRelatedComponents.includes(v)) setEditFormRelatedComponents(prev => [...prev, v]);
-                                  setNewCompInput('');
-                               }
-                            }}
-                            className="rounded-lg border border-slate-205 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                         />
-                      </div>
-                   )}
                 </div>
 
                  {/* E. 关联需求 */}
@@ -1107,10 +1138,10 @@ export const DetailModal: React.FC<DetailModalProps> = ({
                    <button
                       type="button"
                       onClick={handleSaveModalForm}
-                      className="px-4.5 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black rounded-lg transition-all shadow-md flex items-center gap-1 cursor-pointer"
+                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer border border-indigo-600"
                    >
                       <Check className="w-3.5 h-3.5" />
-                      保存并应用更改
+                      保存更改
                    </button>
                 </div>
              )}
@@ -1120,6 +1151,166 @@ export const DetailModal: React.FC<DetailModalProps> = ({
         </div>
 
       </div>
+      {relationPickerMode && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-6 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="flex h-[78vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-150">
+            <aside className="w-64 shrink-0 border-r border-slate-100 bg-slate-50/80 p-4">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+                  <Folder className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <div className="text-xs font-black text-slate-800">选择资产关系</div>
+                  <div className="mt-0.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    {relationPickerMode === 'parent' ? 'Parent Asset' : 'Referenced Assets'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setRelationPickerPath([])}
+                className={`mb-3 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                  relationPickerPath.length === 0 ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>全部资产</span>
+                <span className={`rounded px-1.5 font-mono text-[9px] ${relationPickerPath.length === 0 ? 'bg-white/15 text-white' : 'bg-white text-slate-400'}`}>
+                  {selectableAssets.length}
+                </span>
+              </button>
+
+              <div className="max-h-[calc(78vh-120px)] space-y-1 overflow-y-auto pr-1 no-scrollbar">
+                {relationTree.map(node => renderRelationFolderNode(node))}
+              </div>
+            </aside>
+
+            <section className="flex min-w-0 flex-1 flex-col bg-white">
+              <div className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5">
+                <div className="min-w-0 text-left">
+                  <div className="text-sm font-black text-slate-900">
+                    {relationPickerMode === 'parent' ? '选择父资产' : '添加引用资产'}
+                  </div>
+                  <div className="mt-0.5 truncate text-[10px] font-bold text-slate-400">
+                    当前目录：{relationPickerPath.length ? relationPickerPath.join(' / ') : '全部资产'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRelationPickerMode(null)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600"
+                  title="关闭选择器"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="border-b border-slate-100 bg-slate-50/70 p-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={relationPickerSearch}
+                    onChange={(event) => setRelationPickerSearch(event.target.value)}
+                    placeholder="搜索资产名称、标签或目录..."
+                    className="w-full rounded-xl border border-slate-150 bg-white py-2 pl-9 pr-3 text-xs font-bold text-slate-700 shadow-3xs placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                    autoFocus
+                  />
+                </div>
+                {relationPickerMode === 'reference' && selectedReferenceAssets.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400">已选引用</span>
+                    {selectedReferenceAssets.map(asset => (
+                      <button
+                        key={`selected-reference-${asset.id}`}
+                        type="button"
+                        onClick={() => setEditFormReferencedAssetIds(prev => prev.filter(assetId => assetId !== asset.id))}
+                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-650 hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600"
+                      >
+                        {asset.name}
+                        <X className="h-3 w-3" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                  {relationPickerAssets.map(asset => {
+                    const isSelected = relationPickerMode === 'parent'
+                      ? editFormParentAssetId === asset.id
+                      : editFormReferencedAssetIds.includes(asset.id);
+                    return (
+                      <button
+                        key={`picker-${asset.id}`}
+                        type="button"
+                        onClick={() => selectRelationAsset(asset)}
+                        className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
+                          isSelected
+                            ? 'border-slate-900 bg-slate-50 shadow-md'
+                            : 'border-slate-150 bg-white hover:border-slate-300 hover:bg-slate-50/80 hover:shadow-sm'
+                        }`}
+                      >
+                        <img src={asset.previewUrl} alt="" className="h-14 w-14 shrink-0 rounded-xl object-cover ring-1 ring-slate-150" referrerPolicy="no-referrer" />
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex items-center gap-1.5">
+                            <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-[9px] font-black text-indigo-650 ring-1 ring-indigo-100">
+                              {asset.type === 'Fragment' ? '片段' : '组件'}
+                            </span>
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-500">
+                              {asset.subType}
+                            </span>
+                          </div>
+                          <div className="truncate text-xs font-black text-slate-850">{asset.name}</div>
+                          <div className="mt-1 truncate text-[10px] font-bold text-slate-400">
+                            {resolveAssetPath(asset).join(' / ')}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {asset.tags.slice(0, 3).map(tag => (
+                              <span key={`${asset.id}-${tag}`} className="rounded bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-500 ring-1 ring-slate-150">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border ${
+                          isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-300'
+                        }`}>
+                          <Check className="h-3.5 w-3.5" />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {relationPickerAssets.length === 0 && (
+                  <div className="flex h-64 flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-100 bg-slate-50/60 text-center">
+                    <Box className="mb-2 h-9 w-9 text-slate-300" />
+                    <div className="text-xs font-black text-slate-500">没有匹配的资产</div>
+                    <div className="mt-1 text-[10px] font-bold text-slate-400">可切换目录或清空搜索条件后继续选择。</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex h-14 shrink-0 items-center justify-between border-t border-slate-100 bg-slate-50/70 px-5">
+                <span className="text-[10px] font-bold text-slate-400">
+                  {relationPickerMode === 'parent'
+                    ? `当前父资产：${editFormParentAssetId ? getRelationAssetTitle(editFormParentAssetId) : '未选择'}`
+                    : `已选择 ${editFormReferencedAssetIds.length} 个引用资产`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRelationPickerMode(null)}
+                  className="rounded-xl bg-slate-900 px-5 py-2 text-xs font-black text-white shadow-md hover:bg-black"
+                >
+                  完成选择
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -361,6 +361,8 @@ export interface LibraryItem {
   performance: PerformanceData[];
   theme?: string;
   relatedAssets?: string[];
+  parentAssetId?: string;
+  referencedAssetIds?: string[];
 }
 
 export interface BenchmarkRule {
