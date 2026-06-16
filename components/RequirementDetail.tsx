@@ -11,8 +11,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Requirement, RequirementReqStatus, RequirementProdStatus, ScriptSection,
-  RequirementStageType, ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS,
-  FinishedCreativePerformance, RequirementFeedbackSummary
+  RequirementStageType, ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS
 } from '../types';
 import RequirementScriptWorkbench from './RequirementScriptWorkbench';
 
@@ -150,28 +149,6 @@ const generateFullName = (req: Requirement, versionOverride?: string, nameOverri
   ].filter(Boolean);
   
   return parts.join('-');
-};
-
-const formatCurrencyCompact = (value: number) => {
-  if (value >= 10000) return `$${(value / 10000).toFixed(1)}w`;
-  return `$${Math.round(value).toLocaleString()}`;
-};
-
-const formatFeedbackPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
-
-const getFeedbackStatusStyle = (status: string) => {
-  switch (status) {
-    case 'Winner':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-    case 'Failed':
-      return 'border-rose-200 bg-rose-50 text-rose-700';
-    case 'Flat':
-      return 'border-amber-200 bg-amber-50 text-amber-700';
-    case 'Paused':
-      return 'border-slate-200 bg-slate-100 text-slate-500';
-    default:
-      return 'border-indigo-200 bg-indigo-50 text-indigo-700';
-  }
 };
 
 const MATERIAL_STAGES = [
@@ -537,8 +514,6 @@ interface RequirementDetailProps {
   onDelete?: (requirementId: string) => void;
   productionScheduleContext?: ProductionScheduleContextItem[];
   scheduleDeadline?: string;
-  finishedCreativePerformance?: FinishedCreativePerformance[];
-  feedbackSummary?: RequirementFeedbackSummary;
 }
 
 const RequirementDetail: React.FC<RequirementDetailProps> = ({
@@ -548,8 +523,6 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   onDelete,
   productionScheduleContext = [],
   scheduleDeadline = '',
-  finishedCreativePerformance = [],
-  feedbackSummary,
 }) => {
   const [activeTab, setActiveTab] = useState<'script' | 'clip'>('script');
   const [rightTab, setRightTab] = useState<'iteration' | 'schedule'>('schedule');
@@ -574,7 +547,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
       bTags: initialReq.bTags || [],
       difficulty: initialReq.difficulty || 'C',
       tasks: initialReq.tasks || [],
-      subVersions: initialReq.subVersions && initialReq.subVersions.length >= 5 
+      subVersions: initialReq.subVersions && initialReq.subVersions.length > 0 
         ? initialReq.subVersions 
         : [
             { version: '01', name: '3683口播大字报换山下湖泊背景', testDirections: ['前贴'] },
@@ -634,7 +607,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   };
 
   const subVersions = useMemo(() => {
-    if (currentReq.subVersions && currentReq.subVersions.length >= 5) {
+    if (currentReq.subVersions && currentReq.subVersions.length > 0) {
       return currentReq.subVersions;
     }
     return [
@@ -1053,75 +1026,6 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const ganttTotalDays = Math.max(
     1,
     ((parseDateValue(scheduleHorizonEnd) || 0) - (parseDateValue(todayDateString) || 0)) / 86400000 + 1,
-  );
-
-  const renderFeedbackSection = () => (
-    <section className="rounded-[28px] border border-slate-150 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Data Feedback</p>
-          <h3 className="mt-1 text-sm font-black text-slate-900">数据回流复盘</h3>
-          <p className="mt-1 text-xs font-bold leading-relaxed text-slate-500">
-            成片表现只回流到需求和版本复盘，不自动进入资产库。
-          </p>
-        </div>
-        {feedbackSummary && (
-          <div className={`rounded-2xl border px-3 py-2 text-right ${getFeedbackStatusStyle(feedbackSummary.status)}`}>
-            <p className="text-[10px] font-black opacity-70">建议动作</p>
-            <p className="text-sm font-black">{feedbackSummary.nextAction}</p>
-          </div>
-        )}
-      </div>
-
-      {finishedCreativePerformance.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
-          <p className="text-sm font-black text-slate-700">暂无成片投放回流</p>
-          <p className="mt-1 text-xs font-bold text-slate-400">上传并上线成片后，这里展示版本表现与复盘建议。</p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-150 bg-white">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-400">
-              <tr>
-                <th className="px-3 py-3">版本</th>
-                <th className="px-3 py-3">渠道</th>
-                <th className="px-3 py-3 text-right">消耗</th>
-                <th className="px-3 py-3 text-right">CPI</th>
-                <th className="px-3 py-3 text-right">IR</th>
-                <th className="px-3 py-3 text-right">D7 ROAS</th>
-                <th className="px-3 py-3">结论</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {finishedCreativePerformance.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-3">
-                    <div className="font-black text-slate-800">{row.versionName}</div>
-                    <div className="mt-0.5 text-[10px] font-bold text-slate-400">{row.launchedAt} · {row.country}</div>
-                  </td>
-                  <td className="px-3 py-3 font-bold text-slate-500">{row.channel}</td>
-                  <td className="px-3 py-3 text-right font-bold text-slate-700">{formatCurrencyCompact(row.spent)}</td>
-                  <td className="px-3 py-3 text-right font-bold text-slate-700">${row.cpi.toFixed(2)}</td>
-                  <td className="px-3 py-3 text-right font-bold text-slate-700">{formatFeedbackPercent(row.ir)}</td>
-                  <td className="px-3 py-3 text-right font-bold text-slate-700">{formatFeedbackPercent(row.roasD7)}</td>
-                  <td className="px-3 py-3">
-                    <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${getFeedbackStatusStyle(row.status)}`}>
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {feedbackSummary && (
-        <div className="mt-3 rounded-2xl border border-slate-150 bg-slate-50 px-4 py-3">
-          <p className="text-xs font-bold leading-relaxed text-slate-600">{feedbackSummary.insight}</p>
-        </div>
-      )}
-    </section>
   );
 
   const fullName = generateFullName(currentReq);
@@ -1804,10 +1708,6 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
             )}
           </div>
         </div>
-      </div>
-
-      <div className="shrink-0 border-t border-slate-100 bg-slate-50/80 px-8 py-5">
-        {renderFeedbackSection()}
       </div>
 
       {/* Bottom Control Bar */}

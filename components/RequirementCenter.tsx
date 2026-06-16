@@ -14,6 +14,7 @@ import {
   FinishedCreativePerformance,
   RequirementFeedbackSummary,
   DirectionFeedbackSummary,
+  AssetVersionItem,
 } from "../types";
 import {
   generateRequirements,
@@ -62,7 +63,6 @@ import {
   Activity,
   Eye,
   Radio,
-  Link2,
   Users,
 } from "lucide-react";
 import RequirementDetail from "./RequirementDetail";
@@ -111,6 +111,19 @@ interface PipelineStage {
   name: string;
   status: "pending" | "inprogress" | "completed";
 }
+
+const LOCALIZATION_LANGUAGES = [
+  { code: "de", label: "德语" },
+  { code: "fr", label: "法语" },
+  { code: "es", label: "西语" },
+  { code: "pt", label: "葡语" },
+  { code: "it", label: "意语" },
+  { code: "jp", label: "日语" },
+  { code: "kr", label: "韩语" },
+  { code: "th", label: "泰语" },
+  { code: "id", label: "印尼语" },
+  { code: "tr", label: "土耳其语" },
+];
 
 function getRequirementPipeline(req: Requirement): PipelineStage[] {
   const is3D = req.has3DPlot || req.name?.toLowerCase().includes("3d") || (req.assetType as string) === "3D" || (req as any).is3DVideo;
@@ -384,6 +397,8 @@ const addDaysToDateString = (dateStr: string, days: number) => {
   return formatCalendarDate(base);
 };
 
+const formatDateCompact = (dateStr: string) => dateStr.replaceAll("-", "");
+
 const formatCurrencyCompact = (value: number) => {
   if (value >= 10000) return `$${(value / 10000).toFixed(1)}w`;
   return `$${Math.round(value).toLocaleString()}`;
@@ -436,6 +451,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   });
   const [schedules, setSchedules] =
     useState<CreativeSchedule[]>(generateSchedules());
+  const todayDateString = formatCalendarDate(new Date());
   const productionTasks = useMemo(
     () => requirements.flatMap(getScheduledTaskViews),
     [requirements],
@@ -460,19 +476,21 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     () => new Map(directionFeedbackSummaries.map((item) => [item.scheduleId, item])),
     [directionFeedbackSummaries],
   );
-  const feedbackOverview = useMemo(() => ({
-    launched: finishedCreativePerformance.length,
-    winners: finishedCreativePerformance.filter((item) => item.status === "Winner").length,
-    failed: finishedCreativePerformance.filter((item) => item.status === "Failed").length,
-    totalSpent: finishedCreativePerformance.reduce((sum, item) => sum + item.spent, 0),
-  }), [finishedCreativePerformance]);
-
+  const recentRequirementSpendMap = useMemo(() => {
+    const sinceDate = addDaysToDateString(todayDateString, -30);
+    return finishedCreativePerformance
+      .filter((item) => item.launchedAt >= sinceDate)
+      .reduce<Record<string, number>>((acc, item) => {
+        acc[item.requirementId] = (acc[item.requirementId] || 0) + item.spent;
+        return acc;
+      }, {});
+  }, [finishedCreativePerformance, todayDateString]);
   // States belonging to Production Scheduling Board
   const [selectedProducer, setSelectedProducer] = useState<string>("张欢");
   const [productionView, setProductionView] = useState<"capacity" | "calendar" | "gantt">(
-    "capacity",
+    "gantt",
   );
-  const [showProductionRiskList, setShowProductionRiskList] = useState(false);
+  const [showProductionRiskModal, setShowProductionRiskModal] = useState(false);
 
   // Calendar Year and Month states
   const [calendarYear, setCalendarYear] = useState<number>(2026);
@@ -533,6 +551,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   const [showScheduleSelector, setShowScheduleSelector] = useState(false);
   const [selectedCreateType, setSelectedCreateType] =
     useState<CreativeForm>("Video");
+  const [createDialogScheduleId, setCreateDialogScheduleId] = useState<string | null>(null);
+  const [selectedLocalizationLanguages, setSelectedLocalizationLanguages] = useState<string[]>(["de"]);
+  const [selectedLocalizationSourceIds, setSelectedLocalizationSourceIds] = useState<string[]>([]);
+  const [localizationSearchQuery, setLocalizationSearchQuery] = useState("");
   const [expandedGanttRelations, setExpandedGanttRelations] = useState<Record<string, boolean>>({});
   const [expandedPostReqs, setExpandedPostReqs] = useState<Record<string, boolean>>({});
   const ganttContainerRef = useRef<HTMLDivElement>(null);
@@ -628,8 +650,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     assetType: "全部",
     scheduleRisk: "全部",
   });
-
-  const todayDateString = formatCalendarDate(new Date());
 
   const visibleSchedules = useMemo(() => {
     const hasDateRange = Boolean(dateRangeStart || dateRangeEnd);
@@ -850,20 +870,222 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     };
   };
 
+  const getRequirementIdPrefix = (assetType: CreativeForm) => {
+    if (assetType === "Image") return "tp";
+    if (assetType === "Playable") return "sw";
+    return "cp";
+  };
+
+  const getAssetTypeLabel = (assetType: CreativeForm) => {
+    if (assetType === "Image") return "图片";
+    if (assetType === "Playable") return "试玩";
+    return "视频";
+  };
+
+  const getNextLocalizationAssetIndex = () => {
+    const usedIndexes = requirements
+      .map((req) => req.assetIndex)
+      .filter((index) => index >= 8000);
+    return usedIndexes.length > 0 ? Math.max(...usedIndexes) + 1 : 8000;
+  };
+
+  const getLocalizationDefaultName = (
+    sourceRequirements: Requirement[],
+    languageLabel: string,
+  ) => {
+    const firstId = sourceRequirements[0]?.id || "未选来源";
+    const sourceSummary =
+      sourceRequirements.length > 1
+        ? `${firstId}等${sourceRequirements.length}条`
+        : firstId;
+    return `${formatDateCompact(todayDateString)}${languageLabel}本地化${sourceSummary}`;
+  };
+
+  const getFinishedReferenceIdsForRequirement = (source: Requirement) => {
+    const rows = finishedCreativePerformance.filter(
+      (item) => item.requirementId === source.id,
+    );
+    if (rows.length > 0) return rows.map((item) => item.id);
+    return [`FIN-${source.assetIndex}-${source.assetVersion || "01"}`];
+  };
+
+  const buildLocalizationSubVersions = (
+    sources: Requirement[],
+  ): AssetVersionItem[] =>
+    sources.map((source, index) => ({
+      version: String(index + 1).padStart(2, "0"),
+      name: source.name,
+      testDirections: source.testDirections || [],
+      sourceRequirementId: source.id,
+      sourceRequirementName: source.name,
+      finishedReferenceIds: getFinishedReferenceIdsForRequirement(source),
+    }));
+
+  const closeCreateDialog = () => {
+    setCreateDialogScheduleId(null);
+    setLocalizationSearchQuery("");
+  };
+
+  const openCreateRequirementDialog = (scheduleId: string) => {
+    const schedule = schedules.find((item) => item.id === scheduleId);
+    if (!schedule) return;
+    setSelectedCreateType(schedule.form || "Video");
+    setCreateDialogScheduleId(scheduleId);
+    setSelectedLocalizationSourceIds([]);
+    setSelectedLocalizationLanguages((prev) => (prev.length ? prev : ["de"]));
+    setShowScheduleSelector(false);
+  };
+
+  const createStandardRequirementFromDialog = () => {
+    const schedule = createDialogSchedule;
+    if (!schedule) return;
+    const newReq = buildRequirementFromSchedule(
+      schedule,
+      requirements.length + 1,
+      {
+        name: `新创意需求 - ${schedule.directionName}`,
+        assetType: schedule.form || selectedCreateType || "Video",
+      },
+    );
+
+    setRequirements([newReq, ...requirements]);
+    setSelectedReq(null);
+    closeCreateDialog();
+    resetCoordinatedFilters();
+    setSearchQuery(newReq.id);
+    setCombinedSubView("list");
+  };
+
+  const createLocalizedRequirementFromDialog = () => {
+    const schedule = createDialogSchedule;
+    const sources = selectedLocalizationSources;
+    if (!schedule || sources.length === 0 || selectedLocalizationLanguages.length === 0 || hasMixedLocalizationAssetTypes) return;
+
+    const baseAssetIndex = getNextLocalizationAssetIndex();
+    const primarySource = sources[0];
+    const assetType = primarySource.assetType || schedule.form || selectedCreateType || "Video";
+    const broadDirection = schedule.broadDirection || primarySource.broadDirection;
+    const batchId = `loc-${Date.now()}`;
+    const subVersions = buildLocalizationSubVersions(sources);
+    const createdAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+    const newRequirements = selectedLocalizationLanguages.flatMap((languageCode, index) => {
+      const languageMeta =
+        LOCALIZATION_LANGUAGES.find((item) => item.code === languageCode) ||
+        LOCALIZATION_LANGUAGES[0];
+      const assetIndex = baseAssetIndex + index;
+      const requirementId = `${getRequirementIdPrefix(assetType)}${assetIndex}-01`;
+      const parentRequirement = {
+        ...primarySource,
+        id: requirementId,
+        parentId: undefined,
+        parentRequirementId: undefined,
+        sourceRequirementId: undefined,
+        sourceRequirementIds: sources.map((source) => source.id),
+        createMode: "LocalizedFromExisting",
+        localizationBatchId: batchId,
+        isLocalization: true,
+        scheduleId: schedule.id,
+        name: getLocalizationDefaultName(sources, languageMeta.label),
+        assetType,
+        assetIndex,
+        assetVersion: "01",
+        subVersions,
+        broadDirection,
+        materialStage: schedule.materialStage || primarySource.materialStage,
+        creativePersonnel: schedule.owner || primarySource.creativePersonnel,
+        productionPersonnel: ["张欢"],
+        language: languageCode,
+        localizationLanguage: languageCode,
+        localizationLanguageLabel: languageMeta.label,
+        channels: schedule.channels?.length ? schedule.channels : primarySource.channels,
+        testDirections: Array.from(new Set(sources.flatMap((source) => source.testDirections || []))),
+        dimensions: primarySource.dimensions || ["9:16"],
+        previews: sources.flatMap((source) => source.previews || []).slice(0, 4),
+        direction: schedule.directionName || primarySource.direction,
+        goal: schedule.validationGoal || primarySource.goal,
+        owner: schedule.owner || primarySource.owner,
+        priority: schedule.priority || primarySource.priority,
+        reqStatus: "Draft",
+        prodStatus: "Scheduled",
+        deliveryStatus: "Paused",
+        status: "Draft",
+        rating: 0,
+        createdAt,
+        completedAt: "",
+        template: assetType === "Video" ? "自由模板" : primarySource.template,
+        script: primarySource.script || "",
+        difficulty: "C",
+        tasks: createDefaultProductionTasks(requirementId, assetType, broadDirection),
+      } satisfies Requirement;
+      const childRequirements = subVersions.map((subVersion) => {
+        const source =
+          sources.find((item) => item.id === subVersion.sourceRequirementId) ||
+          primarySource;
+        return {
+          ...source,
+          id: `${requirementId}-v${subVersion.version}`,
+          parentId: requirementId,
+          parentRequirementId: requirementId,
+          sourceRequirementId: source.id,
+          sourceRequirementIds: [source.id],
+          createMode: "LocalizedFromExisting",
+          localizationBatchId: batchId,
+          isLocalization: true,
+          scheduleId: schedule.id,
+          name: `${formatDateCompact(todayDateString)}${languageMeta.label}本地化-${source.id}`,
+          assetType,
+          assetIndex,
+          assetVersion: subVersion.version,
+          subVersions: [subVersion],
+          broadDirection,
+          materialStage: schedule.materialStage || source.materialStage,
+          creativePersonnel: schedule.owner || source.creativePersonnel,
+          productionPersonnel: ["张欢"],
+          language: languageCode,
+          localizationLanguage: languageCode,
+          localizationLanguageLabel: languageMeta.label,
+          channels: schedule.channels?.length ? schedule.channels : source.channels,
+          testDirections: subVersion.testDirections || source.testDirections || [],
+          dimensions: source.dimensions || ["9:16"],
+          previews: source.previews || [],
+          direction: schedule.directionName || source.direction,
+          goal: schedule.validationGoal || source.goal,
+          owner: schedule.owner || source.owner,
+          priority: schedule.priority || source.priority,
+          reqStatus: "Draft",
+          prodStatus: "Scheduled",
+          deliveryStatus: "Paused",
+          status: "Draft",
+          rating: 0,
+          createdAt,
+          completedAt: "",
+          template: assetType === "Video" ? "自由模板" : source.template,
+          script: source.script || "",
+          difficulty: "C",
+          tasks: [],
+        } satisfies Requirement;
+      });
+      return [parentRequirement, ...childRequirements];
+    });
+
+    setRequirements([...newRequirements, ...requirements]);
+    setSelectedReq(null);
+    closeCreateDialog();
+    resetCoordinatedFilters();
+    setSearchQuery(formatDateCompact(todayDateString));
+    setCombinedSubView("list");
+  };
+
   const handleAddRequirementForDirection = (
     scheduleId: string,
     assetTypeOverride?: CreativeForm,
   ) => {
+    if (editingScheduleId === scheduleId) return;
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
-
-    const newReqIdx = requirements.length + 1;
-    const newReq = buildRequirementFromSchedule(schedule, newReqIdx, {
-      name: `新创意需求 - ${schedule.directionName}`,
-      assetType: assetTypeOverride || schedule.form || "Video",
-    });
-    setRequirements([newReq, ...requirements]);
-    setSelectedReq(newReq);
+    setSelectedCreateType(assetTypeOverride || schedule.form || "Video");
+    openCreateRequirementDialog(scheduleId);
   };
 
   const filterConfigs = [
@@ -1018,10 +1240,107 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     };
   }, [productionTasks, requirements, schedules, todayDateString]);
 
+  const delayedProductionRiskItems = useMemo(
+    () =>
+      productionInsights.highRiskRequirements
+        .map((item) => {
+          const dueTime = parseDateValue(item.dueDate);
+          const todayTime = parseDateValue(todayDateString);
+          const lastTaskEndTime = parseDateValue(item.lastTaskEnd);
+          const deadlineDelayDays =
+            dueTime !== null && todayTime !== null && dueTime < todayTime
+              ? Math.ceil((todayTime - dueTime) / 86400000)
+              : 0;
+          const scheduleDelayDays =
+            dueTime !== null &&
+            lastTaskEndTime !== null &&
+            lastTaskEndTime > dueTime
+              ? Math.ceil((lastTaskEndTime - dueTime) / 86400000)
+              : 0;
+          return {
+            req: item.req,
+            delayedDays: Math.max(deadlineDelayDays, scheduleDelayDays),
+          };
+        })
+        .filter((item) => item.delayedDays > 0)
+        .sort((a, b) => b.delayedDays - a.delayedDays),
+    [productionInsights.highRiskRequirements, todayDateString],
+  );
+
   const activeProducers = useMemo(
     () => PRODUCERS.filter((producer) => producer.status === "在职"),
     [],
   );
+
+  const createDialogSchedule = useMemo(
+    () => schedules.find((schedule) => schedule.id === createDialogScheduleId) || null,
+    [createDialogScheduleId, schedules],
+  );
+
+  const localizationCandidateRequirements = useMemo(() => {
+    const query = localizationSearchQuery.trim().toLowerCase();
+    const targetAssetType = createDialogSchedule?.form || selectedCreateType;
+    return requirements
+      .filter((req) => !req.isLocalization && !req.sourceRequirementId)
+      .filter((req) => !targetAssetType || req.assetType === targetAssetType)
+      .filter((req) => {
+        if (!query) return true;
+        return (
+          req.id.toLowerCase().includes(query) ||
+          req.name.toLowerCase().includes(query) ||
+          req.direction.toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => {
+        const spendDiff =
+          (recentRequirementSpendMap[b.id] || 0) -
+          (recentRequirementSpendMap[a.id] || 0);
+        if (spendDiff !== 0) return spendDiff;
+        return b.assetIndex - a.assetIndex;
+      });
+  }, [createDialogSchedule?.form, localizationSearchQuery, recentRequirementSpendMap, requirements, selectedCreateType]);
+
+  const selectedLocalizationSources = useMemo(
+    () =>
+      selectedLocalizationSourceIds
+        .map((id) => requirements.find((req) => req.id === id))
+        .filter((req): req is Requirement => Boolean(req)),
+    [
+      localizationCandidateRequirements,
+      selectedLocalizationSourceIds,
+      requirements,
+    ],
+  );
+
+  const selectedLocalizationLanguageMetas = useMemo(
+    () =>
+      selectedLocalizationLanguages
+        .map((code) => LOCALIZATION_LANGUAGES.find((item) => item.code === code))
+        .filter((item): item is (typeof LOCALIZATION_LANGUAGES)[number] => Boolean(item)),
+    [selectedLocalizationLanguages],
+  );
+
+  const selectedLocalizationAssetTypes = useMemo(
+    () => Array.from(new Set(selectedLocalizationSources.map((source) => source.assetType))),
+    [selectedLocalizationSources],
+  );
+
+  const hasMixedLocalizationAssetTypes = selectedLocalizationAssetTypes.length > 1;
+  const toggleLocalizationSource = (requirementId: string) => {
+    setSelectedLocalizationSourceIds((prev) =>
+      prev.includes(requirementId)
+        ? prev.filter((id) => id !== requirementId)
+        : [...prev, requirementId],
+    );
+  };
+
+  const toggleLocalizationLanguage = (languageCode: string) => {
+    setSelectedLocalizationLanguages((prev) =>
+      prev.includes(languageCode)
+        ? prev.filter((code) => code !== languageCode)
+        : [...prev, languageCode],
+    );
+  };
 
   const personnelCapacityGroups = useMemo(() => {
     const weekStart = todayDateString;
@@ -1154,7 +1473,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       const matchSearch =
         !searchQuery ||
         r.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.name.toLowerCase().includes(searchQuery.toLowerCase());
+        r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.localizationBatchId?.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchStage =
         filters.materialStage === "全部" ||
@@ -1429,22 +1749,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   };
 
   const handleAddRequirementFromSchedule = (scheduleId: string) => {
+    if (editingScheduleId === scheduleId) return;
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
-
-    const newReq = buildRequirementFromSchedule(
-      schedule,
-      requirements.length + 1,
-      {
-        name: `新创意需求 - ${schedule.directionName}`,
-        assetType: schedule.form || "Video",
-      },
-    );
-
-    setRequirements([newReq, ...requirements]);
-    setSelectedReq(newReq);
-    setShowScheduleSelector(false);
-    setCombinedSubView("list");
+    openCreateRequirementDialog(scheduleId);
   };
 
   const getStatusStyle = (status: RequirementReqStatus) => {
@@ -1524,6 +1832,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     } else {
       setSchedules([...schedules, newSchedule]);
     }
+    setEditingScheduleId(newSchedule.id);
   };
 
   const updateSchedule = (id: string, updates: Partial<CreativeSchedule>) => {
@@ -1840,6 +2149,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         return type;
     }
   };
+
+  const localizationCreateDisabledReason =
+    selectedLocalizationSources.length === 0
+      ? "请至少选择 1 条来源需求"
+      : selectedLocalizationLanguages.length === 0
+        ? "请至少选择 1 个本地化语言"
+        : hasMixedLocalizationAssetTypes
+          ? "同一批本地化不能混选视频、图片和试玩"
+          : "";
+  const isCreateSubmitDisabled = Boolean(localizationCreateDisabledReason);
 
   return (
     <div className="w-full flex bg-slate-50/50 min-h-screen">
@@ -3123,11 +3442,18 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                                 <button
                                   type="button"
+                                  disabled={isEditing}
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    if (isEditing) return;
                                     handleAddRequirementForDirection(s.id);
                                   }}
-                                  className="relative z-20 inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-[11px] font-black shadow-lg shadow-indigo-600/20 ring-1 ring-indigo-500 hover:bg-slate-950 hover:ring-slate-950 hover:-translate-y-0.5 transition-all duration-200 shrink-0 whitespace-nowrap"
+                                  className={`relative z-20 inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black transition-all duration-200 shrink-0 whitespace-nowrap ${
+                                    isEditing
+                                      ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200 shadow-none"
+                                      : "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 ring-1 ring-indigo-500 hover:bg-slate-950 hover:ring-slate-950 hover:-translate-y-0.5"
+                                  }`}
+                                  title={isEditing ? "保存方向后再新建需求" : "新建需求"}
                                 >
                                   <Plus className="w-3.5 h-3.5" />
                                   新建需求
@@ -3327,30 +3653,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">上线成片</p>
-                    <p className="mt-1 text-xl font-black text-slate-900">{feedbackOverview.launched}</p>
-                  </div>
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 shadow-3xs">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500">放量信号</p>
-                    <p className="mt-1 text-xl font-black text-emerald-700">{feedbackOverview.winners}</p>
-                  </div>
-                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 shadow-3xs">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">需复盘</p>
-                    <p className="mt-1 text-xl font-black text-rose-700">{feedbackOverview.failed}</p>
-                  </div>
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 shadow-3xs">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">累计消耗</p>
-                    <p className="mt-1 text-xl font-black text-indigo-700">{formatCurrencyCompact(feedbackOverview.totalSpent)}</p>
-                  </div>
-                </div>
-
                 {/* 主视图 */}
                 <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
                   {!hasActiveRequirementQuery ? (
                     <div className="h-full min-h-[520px] flex items-center justify-center p-8 bg-gradient-to-b from-white to-slate-50/70">
-                      <div className="w-full max-w-xl text-center flex flex-col items-center">
+                      <div className="w-full max-w-4xl text-center flex flex-col items-center">
                         <div className="w-16 h-16 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shadow-sm mb-5">
                           <PlusCircle className="w-8 h-8 text-indigo-600" />
                         </div>
@@ -3361,41 +3668,42 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           先创建新的创意需求；需要查历史需求时，再使用上方搜索或筛选条件展开对应列表。
                         </p>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCreateType("Video");
-                            setShowScheduleSelector(true);
-                          }}
-                          className="mt-8 inline-flex items-center justify-center gap-3 rounded-3xl bg-indigo-600 px-10 py-5 text-base font-black text-white shadow-xl shadow-indigo-600/20 ring-1 ring-indigo-500 transition-all hover:-translate-y-0.5 hover:bg-slate-950 hover:ring-slate-950 active:translate-y-0"
-                        >
-                          <Plus className="w-5 h-5" />
-                          创建新需求
-                        </button>
-
-                        <div className="mt-8 grid grid-cols-3 gap-3 w-full max-w-lg text-left">
+                        <div className="mt-8 grid w-full max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           {[
-                            ["Video", "视频", "进入视频需求脚本模板"],
-                            ["Image", "图片", "进入图片需求模板"],
-                            ["Playable", "试玩", "进入试玩需求模板"],
-                          ].map(([type, label, desc]) => (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => {
-                                setSelectedCreateType(type as CreativeForm);
-                                setShowScheduleSelector(true);
-                              }}
-                              className="rounded-2xl border border-slate-150 bg-white px-4 py-3 text-left shadow-3xs transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-md"
-                            >
-                              <div className="text-xs font-black text-slate-800">
-                                {label}
-                              </div>
-                              <div className="mt-1 text-[10px] font-semibold text-slate-400">
-                                {desc}
-                              </div>
-                            </button>
-                          ))}
+                            {
+                              type: "Video" as CreativeForm,
+                              label: "创建视频需求",
+                              className:
+                                "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/25",
+                            },
+                            {
+                              type: "Image" as CreativeForm,
+                              label: "创建图片需求",
+                              className:
+                                "bg-slate-900 hover:bg-slate-805 shadow-slate-900/25",
+                            },
+                            {
+                              type: "Playable" as CreativeForm,
+                              label: "创建试玩需求",
+                              className:
+                                "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25",
+                            },
+                          ].map((item) => {
+                            return (
+                              <button
+                                key={item.type}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCreateType(item.type);
+                                  setShowScheduleSelector(true);
+                                }}
+                                className={`inline-flex h-16 w-full cursor-pointer items-center justify-center gap-4 rounded-[2rem] px-8 text-base font-black text-white shadow-xl transition-all hover:-translate-y-0.5 active:translate-y-0 active:shadow-lg ${item.className}`}
+                              >
+                                <Plus className="h-7 w-7 shrink-0 stroke-[2.2]" />
+                                {item.label}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -3478,6 +3786,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       Sub
                                     </span>
                                   )}
+                                  {req.isLocalization && (
+                                    <span className="shrink-0 rounded-full border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black text-indigo-600">
+                                      本地化
+                                    </span>
+                                  )}
                                   <span className="truncate">{req.name}</span>
                                   {requirementRisk && (
                                     <span
@@ -3503,6 +3816,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 {requirementRisk && (
                                   <div className="mt-1 truncate text-[9px] font-bold text-rose-400">
                                     {requirementRisk.action}
+                                  </div>
+                                )}
+                                {req.isLocalization && (
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] font-black text-slate-400">
+                                    <span className="rounded-lg bg-slate-50 px-1.5 py-0.5 text-indigo-600">
+                                      {req.localizationLanguageLabel || req.language}
+                                    </span>
+                                    <span>
+                                      {getAssetTypeLabel(req.assetType)} · 来源 {req.sourceRequirementIds?.length || req.subVersions?.length || 1} 条
+                                    </span>
                                   </div>
                                 )}
                               </td>
@@ -3772,9 +4095,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                   <div className="flex items-center gap-2 rounded-2xl bg-slate-100 p-1">
                     {[
-                      { id: "capacity", label: "岗位产能", icon: Users },
-                      { id: "calendar", label: "日历视图", icon: Calendar },
                       { id: "gantt", label: "甘特视图", icon: Layers },
+                      { id: "calendar", label: "日历视图", icon: Calendar },
+                      { id: "capacity", label: "岗位产能", icon: Users },
                     ].map((tab) => {
                       const Icon = tab.icon;
                       return (
@@ -3796,54 +4119,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 shrink-0">
-                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
-                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">未来7天任务</div>
-                    <div className="mt-1 flex items-end justify-between gap-2">
-                      <span className="text-2xl font-black text-slate-900">{productionInsights.upcomingTaskCount}</span>
-                      <span className="pb-1 text-[10px] font-bold text-slate-400">
-                        {productionInsights.weekStart} ~ {productionInsights.weekEnd}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
-                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">团队产能占用</div>
-                    <div className="mt-1 flex items-end justify-between gap-2">
-                      <span className={`text-2xl font-black ${productionInsights.loadRate > 100 ? "text-rose-600" : productionInsights.loadRate > 80 ? "text-amber-600" : "text-emerald-600"}`}>
-                        {productionInsights.loadRate}%
-                      </span>
-                      <span className="pb-1 text-[10px] font-bold text-slate-400">
-                        {productionInsights.scheduledWorkDays.toFixed(1)} / {productionInsights.weeklyCapacity}天
-                      </span>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-150 bg-white px-4 py-3 shadow-3xs">
-                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">排期人员数</div>
-                    <div className="mt-1 flex items-end justify-between gap-2">
-                      <span className="text-2xl font-black text-indigo-600">{productionInsights.scheduledProducerCount}</span>
-                      <span className="pb-1 text-[10px] font-bold text-slate-400">未来7天有任务</span>
-                    </div>
-                  </div>
-                  <div className={`rounded-2xl border px-4 py-3 shadow-3xs ${productionInsights.highRiskRequirements.length > 0 ? "border-rose-200 bg-rose-50" : "border-slate-150 bg-white"}`}>
-                    <div className={`text-[9px] font-black uppercase tracking-widest ${productionInsights.highRiskRequirements.length > 0 ? "text-rose-500" : "text-slate-400"}`}>
-                      最高/高优风险
-                    </div>
-                    <div className="mt-1 flex items-end justify-between gap-2">
-                      <span className={`text-2xl font-black ${productionInsights.highRiskRequirements.length > 0 ? "text-rose-600" : "text-slate-900"}`}>
-                        {productionInsights.highRiskRequirements.length}
-                      </span>
-                      <span className="pb-1 text-[10px] font-bold text-slate-400">
-                        {productionInsights.highRiskRequirements.length > 0 ? "需优先处理" : "暂无风险"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
                 {productionInsights.highRiskRequirements.length > 0 && (
                   <div className="shrink-0 rounded-2xl border border-rose-100 bg-rose-50/70 px-3 py-2 text-[10px] font-bold text-rose-700 shadow-3xs">
                     <button
                       type="button"
-                      onClick={() => setShowProductionRiskList((value) => !value)}
+                      onClick={() => setShowProductionRiskModal(true)}
                       className="flex w-full items-center justify-between gap-3 text-left"
                     >
                       <span className="flex min-w-0 items-center gap-2">
@@ -3853,78 +4133,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           {productionInsights.highRiskRequirements.length} 个最高/高优风险
                         </span>
                         <span className="hidden truncate text-slate-400 lg:inline">
-                          {productionInsights.highRiskRequirements[0]?.reason} · {productionInsights.highRiskRequirements[0]?.action}
+                          点击查看延期需求
                         </span>
                       </span>
                       <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[9px] font-black text-rose-500">
-                        {showProductionRiskList ? "收起" : "展开"}
-                        <ChevronDown className={`h-3 w-3 transition-transform ${showProductionRiskList ? "rotate-180" : ""}`} />
+                        查看
+                        <ExternalLink className="h-3 w-3" />
                       </span>
                     </button>
-
-                    {showProductionRiskList && (
-                      <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-2">
-                        {productionInsights.highRiskRequirements.slice(0, 4).map(({ req, schedule, dueDate, lastTaskEnd, taskCount, daysUntilDue, severity, reason, action }) => (
-                          <button
-                            key={req.id}
-                            type="button"
-                            onClick={() => setSelectedReq(req)}
-                            className={`rounded-xl border bg-white px-3 py-2 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm ${
-                              severity === "danger"
-                                ? "border-rose-200 hover:border-rose-300"
-                                : "border-amber-200 hover:border-amber-300"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[9px] font-black text-white ${
-                                  req.priority === "Highest" ? "bg-rose-600" : "bg-orange-500"
-                                }`}>
-                                  {req.priority === "Highest" ? "最高" : "高"}
-                                </span>
-                                <span className="truncate text-[10px] font-black text-slate-800">
-                                  {req.id}
-                                </span>
-                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black ${
-                                  severity === "danger"
-                                    ? "bg-rose-50 text-rose-600"
-                                    : "bg-amber-50 text-amber-700"
-                                }`}>
-                                  {reason}
-                                </span>
-                              </div>
-                              {daysUntilDue !== null && (
-                                <span className={`shrink-0 text-[9px] font-black ${
-                                  daysUntilDue < 0 ? "text-rose-600" : daysUntilDue <= 3 ? "text-amber-600" : "text-slate-400"
-                                }`}>
-                                  {daysUntilDue < 0 ? `逾期 ${Math.abs(daysUntilDue)} 天` : `${daysUntilDue} 天后截止`}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 truncate text-[9px] font-bold text-slate-400">
-                              {schedule?.directionName || req.direction || req.name}
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-black">
-                              <span className="rounded-lg bg-slate-50 px-2 py-1 text-slate-500">截止 {dueDate || "--"}</span>
-                              <span className="rounded-lg bg-slate-50 px-2 py-1 text-slate-500">排期 {lastTaskEnd || "未定"}</span>
-                              <span className="rounded-lg bg-slate-50 px-2 py-1 text-slate-500">任务 {taskCount}</span>
-                            </div>
-                            <div className={`mt-2 rounded-lg px-2 py-1 text-[9px] font-black ${
-                              severity === "danger"
-                                ? "bg-rose-50 text-rose-600"
-                                : "bg-amber-50 text-amber-700"
-                            }`}>
-                              建议：{action}
-                            </div>
-                          </button>
-                        ))}
-                        {productionInsights.highRiskRequirements.length > 4 && (
-                          <span className="rounded-xl bg-rose-100 px-3 py-2 text-[10px] font-black text-rose-500">
-                            +{productionInsights.highRiskRequirements.length - 4} 个
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -5159,6 +5375,267 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         </div>
       )}
 
+      {showProductionRiskModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 p-6 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] border border-slate-150 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">排期延期需求</h3>
+                <p className="mt-0.5 text-[10px] font-bold text-slate-400">
+                  仅显示延期需求编号、制作人员和已延期天数。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProductionRiskModal(false)}
+                className="rounded-full p-1.5 text-slate-400 transition-all hover:bg-slate-50 hover:text-slate-700"
+                title="关闭"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50/70 p-4 no-scrollbar">
+              {delayedProductionRiskItems.length > 0 ? (
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  {delayedProductionRiskItems.map(({ req, delayedDays }) => (
+                    <div
+                      key={req.id}
+                      className="rounded-xl border border-rose-100 bg-white px-3 py-2.5 shadow-3xs"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[8.5px] font-black uppercase tracking-widest text-slate-400">
+                            延期需求编号
+                          </div>
+                          <div className="mt-0.5 truncate font-mono text-[13px] font-black text-slate-900">
+                            {req.id}
+                          </div>
+                          <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1">
+                            <span className="shrink-0 text-[8.5px] font-black uppercase tracking-widest text-slate-400">
+                              制作
+                            </span>
+                            <span className="truncate text-[11px] font-black text-slate-700">
+                              {(req.productionPersonnel || []).length > 0
+                                ? req.productionPersonnel.join("、")
+                                : "-"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex h-14 w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-rose-50 text-center">
+                          <div className="text-[8.5px] font-black text-rose-400">
+                            已延期
+                          </div>
+                          <div className="mt-0.5 text-base font-black leading-none text-rose-600">
+                            {delayedDays}天
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white text-center">
+                  <AlertCircle className="h-8 w-8 text-slate-300" />
+                  <p className="mt-3 text-xs font-black text-slate-500">
+                    当前没有已延期需求
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createDialogSchedule && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200 p-6">
+          <div className="bg-white rounded-[28px] shadow-2xl w-full max-w-5xl max-h-[88vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="px-7 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-xl bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-700">
+                    {createDialogSchedule.scenario === "Localized" ? "本地化方向" : "常规方向"}
+                  </span>
+                  <span className="rounded-xl bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">
+                    {createDialogSchedule.form === "Image" ? "图片" : createDialogSchedule.form === "Playable" ? "试玩" : "视频"}
+                  </span>
+                </div>
+                <h3 className="mt-2 truncate text-xl font-black text-slate-900">
+                  创建需求：{createDialogSchedule.directionName}
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-slate-400">
+                  先选择本地化语言，再选择来源需求；确认后按语言生成本地化大版本。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCreateDialog}
+                className="p-2 rounded-full text-slate-400 transition-all hover:bg-slate-50 hover:text-slate-700"
+              >
+                <XCircle className="h-8 w-8" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50/60 p-6 no-scrollbar">
+              <div className="space-y-4">
+                <section className="rounded-3xl border border-slate-150 bg-white p-5 shadow-3xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">选择语言</h4>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                        同一批中，每个语言生成 1 条本地化大版本需求。
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">
+                      已选 {selectedLocalizationLanguageMetas.length} 个
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {LOCALIZATION_LANGUAGES.map((item) => {
+                      const selected = selectedLocalizationLanguages.includes(item.code);
+                      return (
+                        <button
+                          key={item.code}
+                          type="button"
+                          onClick={() => toggleLocalizationLanguage(item.code)}
+                          className={`rounded-xl border px-4 py-2 text-xs font-black transition-all ${
+                            selected
+                              ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/15"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="flex min-h-[420px] flex-col rounded-3xl border border-slate-150 bg-white shadow-3xs">
+                  <div className="border-b border-slate-100 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900">选择需求</h4>
+                        <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                          可多选，默认按最近 30 天花费倒序；支持搜索编号、名称和方向。
+                        </p>
+                      </div>
+                      <div className="relative w-full sm:w-80">
+                        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <input
+                          value={localizationSearchQuery}
+                          onChange={(e) => setLocalizationSearchQuery(e.target.value)}
+                          placeholder="搜索来源需求..."
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-xs font-bold text-slate-800 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
+                    {localizationCandidateRequirements.length === 0 ? (
+                      <div className="flex h-full min-h-[240px] items-center justify-center text-center text-xs font-bold text-slate-400">
+                        暂无可作为本地化来源的需求
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+                        {localizationCandidateRequirements.map((req) => {
+                          const selected = selectedLocalizationSourceIds.includes(req.id);
+                          const recentSpend = recentRequirementSpendMap[req.id] || 0;
+                          const typeLabel = getAssetTypeLabel(req.assetType);
+                          return (
+                            <button
+                              key={req.id}
+                              type="button"
+                              onClick={() => toggleLocalizationSource(req.id)}
+                              className={`w-full rounded-2xl border p-3 text-left transition-all ${
+                                selected
+                                  ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                                  : "border-slate-150 bg-white hover:border-indigo-200 hover:bg-slate-50"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-mono text-xs font-black text-slate-900">
+                                      {req.id}
+                                    </span>
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-500">
+                                      {req.language.toUpperCase()}
+                                    </span>
+                                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
+                                      req.assetType === "Image"
+                                        ? "bg-amber-50 text-amber-700"
+                                        : req.assetType === "Playable"
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-indigo-50 text-indigo-700"
+                                    }`}>
+                                      {typeLabel}
+                                    </span>
+                                    {selected && (
+                                      <CheckCircle className="h-4 w-4 text-indigo-600" />
+                                    )}
+                                  </div>
+                                  <div className="mt-1 truncate text-xs font-black text-slate-700">
+                                    {req.name}
+                                  </div>
+                                  <div className="mt-1 truncate text-[10px] font-bold text-slate-400">
+                                    {req.direction}
+                                  </div>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <div className="text-[9px] font-black text-slate-400">近 30 天花费</div>
+                                  <div className="mt-1 font-mono text-xs font-black text-emerald-600">
+                                    {formatCurrencyCompact(recentSpend)}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {localizationCreateDisabledReason && (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs font-black text-rose-600">
+                    {localizationCreateDisabledReason}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 bg-slate-50/80 px-7 py-4 flex items-center justify-between gap-4">
+              <p className="text-[10px] font-bold text-slate-400">
+                命名规则：创建日期 + 语言本地化 + 原始需求编号；本地化需求编号从 8000 开始。
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={createStandardRequirementFromDialog}
+                  className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-black text-slate-600 transition-all hover:border-indigo-200 hover:text-indigo-600"
+                >
+                  创建全新需求
+                </button>
+                <button
+                  type="button"
+                  disabled={isCreateSubmitDisabled}
+                  onClick={createLocalizedRequirementFromDialog}
+                  className={`rounded-xl px-6 py-2.5 text-xs font-black text-white shadow-lg transition-all ${
+                    isCreateSubmitDisabled
+                      ? "bg-slate-300 shadow-none"
+                      : "bg-indigo-600 shadow-indigo-600/20 hover:bg-slate-950"
+                  }`}
+                >
+                  确认创建
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 创建周周期弹窗 */}
       {showAddWeekPopup && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-6">
@@ -5359,8 +5836,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     {/* 顶栏操作区域 */}
                     <div className="flex items-center gap-3 shrink-0 self-end md:self-start">
                       <button
+                        disabled={editingScheduleId === s.id}
                         onClick={() => handleAddRequirementForDirection(s.id)}
-                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-550 active:scale-95 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow-md shadow-indigo-600/10 transition-all cursor-pointer"
+                        className={`px-4 py-2.5 text-xs font-black rounded-xl flex items-center gap-1.5 transition-all ${
+                          editingScheduleId === s.id
+                            ? "cursor-not-allowed bg-slate-100 text-slate-400 shadow-none"
+                            : "cursor-pointer bg-indigo-600 hover:bg-indigo-550 active:scale-95 text-white shadow-md shadow-indigo-600/10"
+                        }`}
+                        title={editingScheduleId === s.id ? "保存方向后再新建需求" : "关联增加新创意需求"}
                       >
                         <Plus className="w-4 h-4" /> 关联增加新创意需求
                       </button>
@@ -5402,8 +5885,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       </div>
 
                       <button
+                        disabled={editingScheduleId === s.id}
                         onClick={() => handleAddRequirementForDirection(s.id)}
-                        className="px-3.5 py-1.8 bg-white hover:bg-slate-50 text-indigo-650 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-3xs active:scale-95 cursor-pointer"
+                        className={`px-3.5 py-1.8 border rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                          editingScheduleId === s.id
+                            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 shadow-none"
+                            : "cursor-pointer bg-white hover:bg-slate-50 text-indigo-650 border-slate-200 hover:border-indigo-300 shadow-3xs active:scale-95"
+                        }`}
+                        title={editingScheduleId === s.id ? "保存方向后再新建需求" : "新建需求"}
                       >
 	                        <Plus className="w-3.5 h-3.5" /> 新建需求
 	                      </button>
@@ -5416,8 +5905,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           该方向中目前尚未创建任何需求合约
                         </p>
                         <button
+                          disabled={editingScheduleId === s.id}
                           onClick={() => handleAddRequirementForDirection(s.id)}
-                          className="px-5 py-2.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100/85 border border-indigo-200 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all"
+                          className={`px-5 py-2.5 border rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                            editingScheduleId === s.id
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                              : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100/85 border-indigo-200"
+                          }`}
+                          title={editingScheduleId === s.id ? "保存方向后再新建需求" : "马上新建并关联该方向"}
                         >
                           <Plus className="w-4 h-4" /> 马上新建并关联该方向
                         </button>
@@ -5507,6 +6002,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           Sub
                                         </span>
                                       )}
+                                      {req.isLocalization && (
+                                        <span className="shrink-0 rounded-full border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black text-indigo-600">
+                                          本地化
+                                        </span>
+                                      )}
                                       <span className="truncate">{req.name}</span>
                                       {requirementRisk && (
                                         <span
@@ -5525,6 +6025,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       {req.projectName} · {req.assetType} (
                                       {req.dimensions?.[0] || "16:9"})
                                     </span>
+                                    {req.isLocalization && (
+                                      <span className="flex flex-wrap items-center gap-1.5 text-[9px] font-black text-slate-400">
+                                        <span className="rounded-lg bg-indigo-50 px-1.5 py-0.5 text-indigo-600">
+                                          {req.localizationLanguageLabel || req.language}
+                                        </span>
+                                        <span>
+                                          {getAssetTypeLabel(req.assetType)} · 来源 {req.sourceRequirementIds?.length || req.subVersions?.length || 1} 条
+                                        </span>
+                                      </span>
+                                    )}
                                     {requirementRisk && (
                                       <span className="truncate text-[9px] font-black text-rose-400">
                                         建议：{requirementRisk.action}
@@ -5734,10 +6244,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
               onClose={() => setSelectedReq(null)}
               onChange={handleRequirementDetailChange}
               onDelete={handleRequirementDetailDelete}
-              finishedCreativePerformance={finishedCreativePerformance.filter(
-                (item) => item.requirementId === selectedReq.id,
-              )}
-              feedbackSummary={requirementFeedbackMap.get(selectedReq.id)}
               scheduleDeadline={
                 (() => {
                   const selectedSchedule = schedules.find(

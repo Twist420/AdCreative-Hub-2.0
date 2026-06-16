@@ -110,6 +110,17 @@ const FINISHED_OPTIONS: SelectableOption[] = [
   { id: 'FIN-3366-03', name: '3D剧情-冰原Boss压迫感成片', type: '成片 / 已初投', duration: '00:26', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=480&h=640&fit=crop' },
 ];
 
+const buildFinishedOptionFromVersion = (version: AssetVersionItem, index: number): SelectableOption[] => (
+  (version.finishedReferenceIds || []).map((id, referenceIndex) => ({
+    id,
+    name: `${version.sourceRequirementName || version.name || version.sourceRequirementId || '原始需求'} 成片${referenceIndex + 1}`,
+    type: '成片 / 原始需求',
+    duration: '-',
+    status: 'Pending Data',
+    previewUrl: `https://picsum.photos/seed/${encodeURIComponent(id)}-${index}-${referenceIndex}/480/640`,
+  }))
+);
+
 const ATTACHMENT_OPTIONS = ['参考录屏', '口播音频', '竞品截图', '玩法录屏', 'UI线框', '翻译表'];
 const LANDING_OPTIONS: SelectableOption[] = [
   { id: '9:16', name: '9:16 竖版视频', type: '视频落版', duration: '主规格', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=480&h=640&fit=crop' },
@@ -214,20 +225,45 @@ const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string): Ver
     version: item.version,
     name: item.name || `版本 ${item.version}`,
     goal: goal || `${item.testDirections?.join(' / ') || '核心卖点'} 验证`,
-    references: index % 2 === 0 ? ['PLAY-CORE-08'] : ['FR-LIVE-02'],
+    references: item.finishedReferenceIds?.length
+      ? item.finishedReferenceIds
+      : index % 2 === 0 ? ['PLAY-CORE-08'] : ['FR-LIVE-02'],
     attachments: index === 0 ? ['参考录屏'] : [],
     description: '',
     copywriting: ''
   }));
 };
 
+const isFinishedReferenceId = (id: string) => id.startsWith('FIN-') || id.startsWith('fc-');
 const getSelectableOption = (id: string, options: SelectableOption[]) => options.find(option => option.id === id);
 const getReferenceOption = (id: string) => getSelectableOption(id, ASSET_OPTIONS) || getSelectableOption(id, FINISHED_OPTIONS);
 const getReferenceSource = (id: string): 'asset' | 'finished' => (
-  getSelectableOption(id, FINISHED_OPTIONS) ? 'finished' : 'asset'
+  isFinishedReferenceId(id) ? 'finished' : 'asset'
 );
 const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
+const uniqueOptionsById = (items: SelectableOption[]) => (
+  Array.from(new Map(items.map(item => [item.id, item])).values())
+);
 const createDefaultMatrixColumns = () => ['A段', 'B段'];
+const createInitialMatrixCells = (
+  subVersions: AssetVersionItem[],
+): Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }> => (
+  Object.fromEntries(
+    subVersions
+      .filter(item => item.finishedReferenceIds?.length)
+      .map(item => [
+        `${item.version}-A段`,
+        {
+          references: item.finishedReferenceIds || [],
+          inserts: [],
+          attachments: [],
+          description: item.sourceRequirementId
+            ? `自动引用原始需求 ${item.sourceRequirementId} 的成片作为本地化参考。`
+            : '自动引用原始成片作为本地化参考。',
+        },
+      ]),
+  )
+);
 const getNextMatrixColumn = (columns: string[]) => (
   Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(65 + index)}段`)
     .find(column => !columns.includes(column)) || `新增段${columns.length + 1}`
@@ -469,7 +505,16 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
   const [matrixColumnsByVersion, setMatrixColumnsByVersion] = useState<Record<string, string[]>>(() => (
     Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, createDefaultMatrixColumns()]))
   ));
-  const [matrixCells, setMatrixCells] = useState<Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }>>({});
+  const [matrixCells, setMatrixCells] = useState<Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }>>(() =>
+    createInitialMatrixCells(subVersions)
+  );
+  const finishedOptions = React.useMemo(
+    () => uniqueOptionsById([
+      ...FINISHED_OPTIONS,
+      ...subVersions.flatMap(buildFinishedOptionFromVersion),
+    ]),
+    [subVersions],
+  );
 
   const getDefaultPickerFacet = (target: AssetPickerTarget | null) => {
     if (!target || target.mode !== 'asset') return 'all';
@@ -693,7 +738,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
 
   const getPickerOptions = () => {
     if (assetPickerTarget?.mode === 'landing') return LANDING_OPTIONS;
-    const optionPool = assetPickerTarget?.mode === 'finished' ? FINISHED_OPTIONS : ASSET_OPTIONS;
+    const optionPool = assetPickerTarget?.mode === 'finished' ? finishedOptions : ASSET_OPTIONS;
     const facetPool = assetPickerTarget?.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS;
     const activeFacet = facetPool.find(item => item.id === assetPickerFacetId) || facetPool[0];
     const activeDirectory = ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId) || ASSET_PICKER_DIRECTORY_OPTIONS[0];
@@ -710,7 +755,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
   const getPickerFacetCounts = () => (
     (assetPickerTarget?.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS).reduce<Record<string, number>>((acc, facet) => {
       const activeDirectory = ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId) || ASSET_PICKER_DIRECTORY_OPTIONS[0];
-      const optionPool = assetPickerTarget?.mode === 'finished' ? FINISHED_OPTIONS : ASSET_OPTIONS;
+      const optionPool = assetPickerTarget?.mode === 'finished' ? finishedOptions : ASSET_OPTIONS;
       acc[facet.id] = optionPool.filter(item => (assetPickerTarget?.mode !== 'asset' || activeDirectory.match(item)) && facet.match(item)).length;
       return acc;
     }, {})

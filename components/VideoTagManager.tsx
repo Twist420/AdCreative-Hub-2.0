@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TagNode } from '../types';
 import { 
   Plus, Search, Edit2, Trash2, ChevronRight, 
-  LayoutGrid, Share2, HelpCircle, X, Check,
+  X, Check,
   GripVertical, MousePointer2, Settings2,
   ChevronDown, Layers, FileText, UserCircle2, Tag as TagIcon
 } from 'lucide-react';
@@ -98,6 +98,27 @@ const initialData: TagNode[] = [
   }
 ];
 
+const TAG_TONES = [
+  { bg: 'bg-rose-50', border: 'border-rose-100', text: 'text-rose-600', icon: 'text-rose-400', hover: 'hover:bg-rose-100/70' },
+  { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-700', icon: 'text-amber-500', hover: 'hover:bg-amber-100/70' },
+  { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700', icon: 'text-emerald-500', hover: 'hover:bg-emerald-100/70' },
+  { bg: 'bg-sky-50', border: 'border-sky-100', text: 'text-sky-700', icon: 'text-sky-500', hover: 'hover:bg-sky-100/70' },
+  { bg: 'bg-indigo-50', border: 'border-indigo-100', text: 'text-indigo-700', icon: 'text-indigo-500', hover: 'hover:bg-indigo-100/70' },
+  { bg: 'bg-violet-50', border: 'border-violet-100', text: 'text-violet-700', icon: 'text-violet-500', hover: 'hover:bg-violet-100/70' },
+  { bg: 'bg-fuchsia-50', border: 'border-fuchsia-100', text: 'text-fuchsia-700', icon: 'text-fuchsia-500', hover: 'hover:bg-fuchsia-100/70' },
+  { bg: 'bg-slate-100', border: 'border-slate-200', text: 'text-slate-600', icon: 'text-slate-400', hover: 'hover:bg-slate-200/70' },
+];
+
+const getToneForNode = (id: string) => {
+  const sum = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return TAG_TONES[sum % TAG_TONES.length];
+};
+
+const countLeafTags = (node: TagNode): number => {
+  if (!node.children || node.children.length === 0) return node.level >= 4 ? 1 : 0;
+  return node.children.reduce((sum, child) => sum + countLeafTags(child), 0);
+};
+
 interface InlineEditorProps {
   node: TagNode;
   editingId: string | null;
@@ -136,10 +157,10 @@ const InlineEditor = ({ node, editingId, tempName, setTempName, handleSaveEdit, 
   }
   
   const fontStyle = isRoot ? 'text-[14px] font-black text-slate-900' :
-                    isL2 ? 'text-[12px] font-bold text-slate-800' :
-                    isL3 ? 'text-[11px] font-bold text-slate-400 uppercase tracking-wider' : 
-                    isSub ? 'text-[9.5px] font-medium text-slate-500 whitespace-nowrap' :
-                    'text-[10.5px] font-bold text-slate-700 whitespace-nowrap';
+                    isL2 ? 'text-[12px] font-black text-slate-800' :
+                    isL3 ? 'text-[11px] font-black text-slate-700' : 
+                    isSub ? 'text-[10px] font-black whitespace-nowrap' :
+                    'text-[10.5px] font-black whitespace-nowrap';
 
   return (
     <div className="flex items-center gap-1 group/text">
@@ -160,48 +181,69 @@ interface AdaptiveTagPillProps {
   toggleExpand: (id: string) => void;
   handleAddChild: (id: string) => void;
   handleDelete: (id: string) => void;
+  draggingTagId: string | null;
+  handleTagDragStart: (node: TagNode) => void;
+  handleTagDragEnd: () => void;
   viewMode: 'card' | 'mindmap';
   inlineEditorProps: Omit<InlineEditorProps, 'node'>;
 }
 
 const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({ 
-  node, theme, expandedIds, toggleExpand, handleAddChild, handleDelete, viewMode, inlineEditorProps 
+  node, theme, expandedIds, toggleExpand, handleAddChild, handleDelete,
+  draggingTagId, handleTagDragStart, handleTagDragEnd, viewMode, inlineEditorProps
 }) => {
   const isExpanded = expandedIds.has(node.id);
   const hasChildren = node.children && node.children.length > 0;
   const isLevel5Plus = node.level >= 5;
+  const canDragTag = viewMode === 'card' && node.level >= 4;
+  const tone = getToneForNode(node.id);
   
-  const pillClasses = isLevel5Plus 
-    ? `bg-white border-dashed ${theme.subBorder} hover:border-slate-300 hover:bg-slate-50` 
-    : isExpanded 
-      ? `${theme.pillActiveBg} ${theme.pillActiveBorder} ring-1 ${theme.ring}` 
-      : `${theme.pillBg} ${theme.pillBorder} hover:${theme.pillHoverBg} hover:${theme.pillHoverBorder}`;
+  const pillClasses = viewMode === 'card'
+    ? `${tone.bg} ${tone.border} ${tone.text} ${tone.hover}`
+    : isLevel5Plus
+      ? `bg-white border-dashed ${theme.subBorder} hover:border-slate-300 hover:bg-slate-50`
+      : isExpanded
+        ? `${theme.pillActiveBg} ${theme.pillActiveBorder} ring-1 ${theme.ring}`
+        : `${theme.pillBg} ${theme.pillBorder} hover:${theme.pillHoverBg} hover:${theme.pillHoverBorder}`;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 group/hier">
+    <div className="flex flex-wrap items-center gap-1 group/hier">
       <div 
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all shadow-sm cursor-pointer group/pill ${pillClasses}`}
+        draggable={canDragTag}
+        onDragStart={(event) => {
+          if (!canDragTag) return;
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', node.id);
+          handleTagDragStart(node);
+        }}
+        onDragEnd={handleTagDragEnd}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 transition-all shadow-3xs cursor-pointer group/pill ${
+          draggingTagId === node.id ? 'opacity-45 ring-2 ring-slate-300' : ''
+        } ${canDragTag ? 'active:cursor-grabbing' : ''} ${pillClasses}`}
         onClick={(e) => {
           if (hasChildren) toggleExpand(node.id);
           else e.stopPropagation();
         }}
       >
+        {canDragTag && (
+          <GripVertical className={`h-3 w-3 shrink-0 opacity-45 ${tone.icon}`} />
+        )}
         <div onClick={(e) => e.stopPropagation()}>
           <InlineEditor node={node} {...inlineEditorProps} />
         </div>
         
         {hasChildren && (
-          <ChevronRight className={`w-3 h-3 transition-transform ${theme.icon} group-hover/pill:${theme.iconActive} ${isExpanded ? 'rotate-90' : ''}`} />
+          <ChevronRight className={`w-3 h-3 transition-transform ${viewMode === 'card' ? tone.icon : theme.icon} group-hover/pill:${theme.iconActive} ${isExpanded ? 'rotate-90' : ''}`} />
         )}
 
-        <div className="flex items-center opacity-0 group-hover/pill:opacity-100 transition-opacity gap-0.5 ml-0.5" onClick={(e) => e.stopPropagation()}>
-           <button onClick={() => handleAddChild(node.id)} className={`p-0.5 ${theme.icon} hover:text-emerald-500`}><Plus className="w-3 h-3"/></button>
-           <button onClick={() => handleDelete(node.id)} className={`p-0.5 ${theme.icon} hover:text-rose-500`}><X className="w-3 h-3"/></button>
+        <div className="flex items-center opacity-0 group-hover/pill:opacity-100 transition-opacity gap-0.5" onClick={(e) => e.stopPropagation()}>
+           <button onClick={() => handleAddChild(node.id)} className={`p-0.5 ${viewMode === 'card' ? tone.icon : theme.icon} hover:text-emerald-500`} title="添加子标签"><Plus className="w-3 h-3"/></button>
+           <button onClick={() => handleDelete(node.id)} className={`p-0.5 ${viewMode === 'card' ? tone.icon : theme.icon} hover:text-rose-500`} title="删除标签"><X className="w-3 h-3"/></button>
         </div>
       </div>
       
       {isExpanded && hasChildren && viewMode === 'card' && (
-        <div className={`flex flex-wrap items-center gap-2 border-l-2 ${theme.guideLine} pl-2 animate-in slide-in-from-left-2 duration-300`}>
+        <div className={`flex flex-wrap items-center gap-1 border-l ${theme.guideLine} pl-1.5 animate-in slide-in-from-left-2 duration-300`}>
            {node.children!.map(child => (
              <AdaptiveTagPill 
                key={child.id} 
@@ -211,6 +253,9 @@ const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({
                toggleExpand={toggleExpand}
                handleAddChild={handleAddChild}
                handleDelete={handleDelete}
+               draggingTagId={draggingTagId}
+               handleTagDragStart={handleTagDragStart}
+               handleTagDragEnd={handleTagDragEnd}
                viewMode={viewMode}
                inlineEditorProps={inlineEditorProps}
              />
@@ -218,7 +263,7 @@ const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({
            
            <button 
               onClick={() => handleAddChild(node.id)} 
-              className="w-8 h-8 flex items-center justify-center border border-dashed border-slate-200 rounded-full text-slate-300 hover:text-primary hover:border-primary/50 transition-all bg-slate-50/30 shrink-0"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white text-slate-300 transition-all hover:border-primary/50 hover:text-primary"
               title="新增子项"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -236,10 +281,16 @@ interface MindmapNodeProps {
   toggleExpand: (id: string) => void;
   handleAddChild: (id: string) => void;
   handleDelete: (id: string) => void;
+  draggingTagId: string | null;
+  handleTagDragStart: (node: TagNode) => void;
+  handleTagDragEnd: () => void;
   inlineEditorProps: Omit<InlineEditorProps, 'node'>;
 }
 
-const MindmapNode: React.FC<MindmapNodeProps> = ({ node, theme, expandedIds, toggleExpand, handleAddChild, handleDelete, inlineEditorProps }) => {
+const MindmapNode: React.FC<MindmapNodeProps> = ({
+  node, theme, expandedIds, toggleExpand, handleAddChild, handleDelete,
+  draggingTagId, handleTagDragStart, handleTagDragEnd, inlineEditorProps
+}) => {
   const isExpanded = expandedIds.has(node.id);
   const hasChildren = node.children && node.children.length > 0;
 
@@ -254,6 +305,9 @@ const MindmapNode: React.FC<MindmapNodeProps> = ({ node, theme, expandedIds, tog
           toggleExpand={toggleExpand}
           handleAddChild={handleAddChild}
           handleDelete={handleDelete}
+          draggingTagId={draggingTagId}
+          handleTagDragStart={handleTagDragStart}
+          handleTagDragEnd={handleTagDragEnd}
           viewMode="mindmap"
           inlineEditorProps={inlineEditorProps}
         />
@@ -273,6 +327,9 @@ const MindmapNode: React.FC<MindmapNodeProps> = ({ node, theme, expandedIds, tog
                 toggleExpand={toggleExpand}
                 handleAddChild={handleAddChild}
                 handleDelete={handleDelete}
+                draggingTagId={draggingTagId}
+                handleTagDragStart={handleTagDragStart}
+                handleTagDragEnd={handleTagDragEnd}
                 inlineEditorProps={inlineEditorProps}
               />
             </div>
@@ -284,15 +341,18 @@ const MindmapNode: React.FC<MindmapNodeProps> = ({ node, theme, expandedIds, tog
 };
 
 const VideoTagManager: React.FC = () => {
-  const [viewMode, setViewMode] = useState<'card' | 'mindmap'>('card');
   const [tags, setTags] = useState<TagNode[]>(initialData);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
   const [tempType, setTempType] = useState<'single' | 'multi' | 'none'>('none');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['u1-1', 'u1-1-1', 'u2-1']));
+  const [draggingTagId, setDraggingTagId] = useState<string | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollDeltaRef = useRef(0);
 
   const inlineEditorProps: Omit<InlineEditorProps, 'node'> = {
     editingId,
@@ -311,6 +371,54 @@ const VideoTagManager: React.FC = () => {
     }
   }, [editingId]);
 
+  const stopDragAutoScroll = () => {
+    autoScrollDeltaRef.current = 0;
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+  };
+
+  const runDragAutoScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container || !draggingTagId || autoScrollDeltaRef.current === 0) {
+      stopDragAutoScroll();
+      return;
+    }
+
+    container.scrollBy({ top: autoScrollDeltaRef.current, behavior: 'auto' });
+    autoScrollFrameRef.current = requestAnimationFrame(runDragAutoScroll);
+  };
+
+  const handleDragAutoScroll = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggingTagId) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const edgeSize = 96;
+    const maxSpeed = 18;
+    const distanceToTop = event.clientY - rect.top;
+    const distanceToBottom = rect.bottom - event.clientY;
+    let nextDelta = 0;
+
+    if (distanceToTop < edgeSize) {
+      nextDelta = -Math.ceil((1 - Math.max(distanceToTop, 0) / edgeSize) * maxSpeed);
+    } else if (distanceToBottom < edgeSize) {
+      nextDelta = Math.ceil((1 - Math.max(distanceToBottom, 0) / edgeSize) * maxSpeed);
+    }
+
+    autoScrollDeltaRef.current = nextDelta;
+    if (nextDelta !== 0 && autoScrollFrameRef.current === null) {
+      autoScrollFrameRef.current = requestAnimationFrame(runDragAutoScroll);
+    } else if (nextDelta === 0) {
+      stopDragAutoScroll();
+    }
+  };
+
+  useEffect(() => () => stopDragAutoScroll(), []);
+
   const findNodeAndParent = (nodes: TagNode[], id: string): { node: TagNode, parentList: TagNode[], index: number } | null => {
     for (let i = 0; i < nodes.length; i++) {
       if (nodes[i].id === id) return { node: nodes[i], parentList: nodes, index: i };
@@ -320,6 +428,48 @@ const VideoTagManager: React.FC = () => {
       }
     }
     return null;
+  };
+
+  const normalizeNodeLevel = (node: TagNode, level: number): TagNode => ({
+    ...node,
+    level,
+    children: node.children?.map(child => normalizeNodeLevel(child, level + 1)),
+  });
+
+  const handleTagDragStart = (node: TagNode) => {
+    if (node.level < 4) return;
+    setDraggingTagId(node.id);
+  };
+
+  const handleTagDragEnd = () => {
+    stopDragAutoScroll();
+    setDraggingTagId(null);
+  };
+
+  const handleDropTagToGroup = (targetGroupId: string) => {
+    stopDragAutoScroll();
+    if (!draggingTagId || draggingTagId === targetGroupId) return;
+
+    const newTags = [...tags];
+    const dragged = findNodeAndParent(newTags, draggingTagId);
+    const target = findNodeAndParent(newTags, targetGroupId);
+
+    if (!dragged || !target || dragged.node.level < 4 || target.node.level !== 3) {
+      setDraggingTagId(null);
+      return;
+    }
+
+    if (dragged.parentList === target.node.children) {
+      setDraggingTagId(null);
+      return;
+    }
+
+    const [movedNode] = dragged.parentList.splice(dragged.index, 1);
+    const normalizedNode = normalizeNodeLevel(movedNode, target.node.level + 1);
+    target.node.children = [...(target.node.children || []), normalizedNode];
+    setTags(newTags);
+    setExpandedIds(prev => new Set(prev).add(targetGroupId));
+    setDraggingTagId(null);
   };
 
   const toggleExpand = (id: string) => {
@@ -429,75 +579,126 @@ const VideoTagManager: React.FC = () => {
   return (
     <div className="h-full flex flex-col gap-3">
       {/* 顶部工具栏 */}
-      <div className="bg-white px-5 py-2.5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between gap-4 shrink-0 transition-all">
-        <div className="flex items-center gap-4">
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-             <button onClick={() => setViewMode('card')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${viewMode === 'card' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}><LayoutGrid className="w-3.5 h-3.5" /> 卡片模式</button>
-             <button onClick={() => setViewMode('mindmap')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${viewMode === 'mindmap' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}><Share2 className="w-3.5 h-3.5" /> 导图模式</button>
-          </div>
+      <div className="bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between gap-4 shrink-0 transition-all">
+        <div className="flex min-w-0 items-center gap-4">
           <div className="relative group">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input type="text" placeholder="快速定位标签..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] focus:outline-none w-48 md:w-64 transition-all" />
+            <input type="text" placeholder="快速定位标签..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] focus:outline-none w-64 md:w-80 transition-all" />
           </div>
         </div>
         <button onClick={() => handleAddChild(tags[0].id)} className="px-4 py-2 bg-slate-900 text-white text-[11px] font-bold rounded-xl shadow-lg hover:bg-black transition-all flex items-center gap-1.5"><Plus className="w-3.5 h-3.5"/> 新增顶层分类</button>
       </div>
 
       {/* 标签管理内容区 */}
-      <div className="flex-1 overflow-auto no-scrollbar pb-10">
-        {viewMode === 'card' ? (
-          <div className="space-y-12">
+      <div
+        ref={scrollContainerRef}
+        onDragOver={handleDragAutoScroll}
+        onDragLeave={stopDragAutoScroll}
+        onDrop={stopDragAutoScroll}
+        className="flex-1 overflow-auto no-scrollbar pb-10"
+      >
+          <div className="space-y-5">
             {tags.map(root => {
               const style = getModuleStyle(root.name);
               return (
-                <div key={root.id} className="space-y-6">
-                  <div className="flex items-center gap-3 px-1">
-                    <div className={`w-2 h-6 ${style.bg} rounded-full shadow-sm`}></div>
+                <div key={root.id} className={`rounded-2xl border ${style.card} bg-white p-3 shadow-sm`}>
+                  <div className="mb-3 flex items-center gap-2 px-1">
+                    <div className={`h-5 w-1.5 ${style.bg} rounded-full shadow-sm`}></div>
                     <InlineEditor node={root} {...inlineEditorProps} />
-                    <div className="flex-1 h-px bg-slate-100/80 ml-2"></div>
+                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-black text-slate-400">
+                      {countLeafTags(root)} 个标签
+                    </span>
+                    <button
+                      onClick={() => handleAddChild(root.id)}
+                      className="ml-auto inline-flex h-7 items-center gap-1 rounded-lg border border-slate-150 bg-slate-50 px-2 text-[10px] font-black text-slate-500 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600"
+                    >
+                      <Plus className="h-3 w-3" /> 子分组
+                    </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-stretch">
+                  <div className="space-y-3">
                     {root.children?.map(l2 => (
-                      <div key={l2.id} className={`bg-white rounded-[1.5rem] border ${style.card} flex flex-col shadow-xs hover:shadow-xl transition-all duration-300 overflow-hidden h-[520px]`}>
-                        <div className="flex items-center justify-between px-4 py-3 bg-slate-50/30 border-b border-slate-50/50 shrink-0">
-                            <div className="flex items-center gap-2">
-                               <div className={`w-2 h-2 rounded-full ${style.dot} opacity-80 ring-4 ring-slate-100/50`}></div>
-                               <InlineEditor node={l2} {...inlineEditorProps} />
-                            </div>
-                            <button onClick={() => handleAddChild(l2.id)} className="p-1.5 hover:bg-white rounded-lg text-slate-300 hover:text-emerald-500 transition-all"><Plus className="w-4 h-4" /></button>
+                      <div key={l2.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
+                        <div className="mb-2 flex items-center gap-2">
+                          <div className={`h-2 w-2 rounded-full ${style.dot} opacity-80`}></div>
+                          <InlineEditor node={l2} {...inlineEditorProps} />
+                          <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-black text-slate-400 ring-1 ring-slate-100">
+                            {countLeafTags(l2)}
+                          </span>
+                          <button
+                            onClick={() => handleAddChild(l2.id)}
+                            className="ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[9px] font-black text-slate-400 hover:bg-white hover:text-emerald-600"
+                          >
+                            <Plus className="h-3 w-3" /> 内容组
+                          </button>
                         </div>
                         
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 flex flex-col gap-8">
-                            {l2.children?.map(l3 => (
-                              <div key={l3.id} className="flex flex-col gap-4">
-                                <div className="flex items-center justify-between px-1 border-l-2 border-slate-100 pl-3">
-                                    <InlineEditor node={l3} {...inlineEditorProps} />
-                                    <button onClick={() => handleAddChild(l3.id)} className="p-1 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-primary transition-opacity"><Plus className="w-3.5 h-3.5"/></button>
-                                </div>
-                                
-                                <div className="flex flex-wrap gap-4 ml-1 items-start">
-                                    {l3.children?.map(child => (
-                                      <AdaptiveTagPill 
-                                        key={child.id} 
-                                        node={child} 
-                                        theme={style} 
-                                        expandedIds={expandedIds}
-                                        toggleExpand={toggleExpand}
-                                        handleAddChild={handleAddChild}
-                                        handleDelete={handleDelete}
-                                        viewMode={viewMode}
-                                        inlineEditorProps={inlineEditorProps}
-                                      />
-                                    ))}
-                                    <button onClick={() => handleAddChild(l3.id)} className="px-3 py-1.5 border border-dashed border-slate-200 rounded-full text-[10px] font-bold text-slate-400 hover:text-primary hover:border-primary/50 transition-all self-start flex items-center gap-1 bg-slate-50/20">
-                                      <Plus className="w-2.5 h-2.5" /> 快速添加
-                                    </button>
-                                </div>
+                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+                          {l2.children?.map(l3 => (
+                            <div
+                              key={l3.id}
+                              onDragOver={(event) => {
+                                if (!draggingTagId) return;
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = 'move';
+                              }}
+                              onDrop={(event) => {
+                                event.preventDefault();
+                                handleDropTagToGroup(l3.id);
+                              }}
+                              className={`group rounded-xl border bg-white p-2.5 shadow-3xs transition-all ${
+                                draggingTagId ? 'border-dashed border-primary/40 bg-indigo-50/40 ring-1 ring-primary/10' : 'border-slate-100'
+                              }`}
+                            >
+                              <div className="mb-2 flex items-center gap-1.5">
+                                <InlineEditor node={l3} {...inlineEditorProps} />
+                                {l3.type && l3.type !== 'none' && (
+                                  <span className={`rounded px-1 py-0.5 text-[8px] font-black ${l3.type === 'single' ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                    {l3.type === 'single' ? '单选' : '多选'}
+                                  </span>
+                                )}
+                                <span className="rounded bg-slate-50 px-1.5 py-0.5 text-[8px] font-black text-slate-400">
+                                  {countLeafTags(l3)}
+                                </span>
+                                <button
+                                  onClick={() => handleAddChild(l3.id)}
+                                  className="ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[9px] font-black text-slate-400 opacity-0 transition-all hover:bg-slate-50 hover:text-primary group-hover:opacity-100"
+                                >
+                                  <Plus className="h-3 w-3" /> 标签
+                                </button>
                               </div>
-                            ))}
-                            <button onClick={() => handleAddChild(l2.id)} className="w-full py-3 mt-auto border border-dashed border-slate-100 rounded-2xl text-[11px] font-bold text-slate-400 hover:text-slate-600 hover:border-slate-200 transition-all bg-slate-50/30 shrink-0">
-                              + 新增内容组 (L3)
+                              
+                              <div className="flex flex-wrap items-start gap-1.5">
+                                {l3.children?.map(child => (
+                                  <AdaptiveTagPill 
+                                    key={child.id} 
+                                    node={child} 
+                                    theme={style} 
+                                    expandedIds={expandedIds}
+                                    toggleExpand={toggleExpand}
+                                    handleAddChild={handleAddChild}
+                                    handleDelete={handleDelete}
+                                    draggingTagId={draggingTagId}
+                                    handleTagDragStart={handleTagDragStart}
+                                    handleTagDragEnd={handleTagDragEnd}
+                                    viewMode="card"
+                                    inlineEditorProps={inlineEditorProps}
+                                  />
+                                ))}
+                                <button
+                                  onClick={() => handleAddChild(l3.id)}
+                                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-dashed border-slate-200 bg-white px-2 text-[10px] font-black text-slate-400 transition-all hover:border-primary/50 hover:text-primary"
+                                >
+                                  <Plus className="h-3 w-3" /> 添加
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => handleAddChild(l2.id)}
+                            className="flex min-h-[76px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 text-[10px] font-black text-slate-400 transition-all hover:border-primary/50 hover:text-primary"
+                          >
+                            <Plus className="mr-1 h-3 w-3" /> 新增内容组
                             </button>
                         </div>
                       </div>
@@ -507,39 +708,6 @@ const VideoTagManager: React.FC = () => {
               );
             })}
           </div>
-        ) : (
-          /* 导图模式：横向树状结构 */
-          <div className="bg-white p-10 rounded-[2rem] border border-slate-100 shadow-sm min-w-max">
-            <div className="space-y-20">
-              {tags.map(root => {
-                const style = getModuleStyle(root.name);
-                return (
-                  <div key={root.id} className="flex flex-col gap-4">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`w-2 h-6 ${style.bg} rounded-full shadow-sm`}></div>
-                      <InlineEditor node={root} {...inlineEditorProps} />
-                    </div>
-                    
-                    <div className="pl-6 border-l-2 border-slate-50 space-y-8">
-                      {root.children?.map(l2 => (
-                        <MindmapNode 
-                          key={l2.id} 
-                          node={l2} 
-                          theme={style} 
-                          expandedIds={expandedIds}
-                          toggleExpand={toggleExpand}
-                          handleAddChild={handleAddChild}
-                          handleDelete={handleDelete}
-                          inlineEditorProps={inlineEditorProps}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       <style>{`

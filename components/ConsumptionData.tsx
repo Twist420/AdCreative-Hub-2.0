@@ -1,13 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  BarChart3, PieChart, FileText, Search, Play, Eye, 
-  ExternalLink, Layers, ArrowUpDown, Calendar, HelpCircle, 
-  Filter, Check, X, ShieldAlert, FileVideo, Plus 
-} from 'lucide-react';
-import { 
-  ResponsiveContainer, LineChart, Line, BarChart, Bar,
-  XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area 
-} from 'recharts';
+import { Search, Play, ArrowUpDown, X } from 'lucide-react';
 import DateRangePicker from './DateRangePicker';
 
 interface MaterialSpend {
@@ -178,51 +170,7 @@ const INITIAL_SPENDS: MaterialSpend[] = [
   }
 ];
 
-// Recharts Top 20 Spends Mock Stacked / Area Data
-const TOP20_MOCK_ALL_LANG = [
-  { day: '05/20', m_04: 600, m_05: 450, m_01: 300, m_06: 210, m_02: 120, others: 50 },
-  { day: '05/22', m_04: 800, m_05: 500, m_01: 350, m_06: 280, m_02: 150, others: 80 },
-  { day: '05/24', m_04: 1100, m_05: 680, m_01: 420, m_06: 310, m_02: 180, others: 120 },
-  { day: '05/26', m_04: 1500, m_05: 890, m_01: 480, m_06: 320, m_02: 210, others: 150 },
-  { day: '05/28', m_04: 1900, m_05: 1100, m_01: 520, m_06: 350, m_02: 250, others: 190 },
-  { day: '05/30', m_04: 1500, m_05: 1300, m_01: 610, m_06: 390, m_02: 240, others: 140 },
-  { day: '06/01', m_04: 1200, m_05: 1450, m_01: 720, m_06: 290, m_02: 280, others: 110 },
-  { day: '06/03', m_04: 1300, m_05: 1130, m_01: 1100, m_06: 250, m_02: 320, others: 130 },
-];
-
-const TOP20_MOCK_EN_LANG = [
-  { day: '05/20', m_04: 600, m_05: 450, m_01: 300, m_02: 120, others: 20 },
-  { day: '05/22', m_04: 800, m_05: 500, m_01: 350, m_02: 150, others: 30 },
-  { day: '05/24', m_04: 1100, m_05: 680, m_01: 420, m_02: 180, others: 40 },
-  { day: '05/26', m_04: 1500, m_05: 890, m_01: 480, m_02: 210, others: 50 },
-  { day: '05/28', m_04: 1900, m_05: 1100, m_01: 520, m_02: 250, others: 80 },
-  { day: '05/30', m_04: 1500, m_05: 1300, m_01: 610, m_02: 240, others: 60 },
-  { day: '06/01', m_04: 1200, m_05: 1450, m_01: 720, m_02: 280, others: 50 },
-  { day: '06/03', m_04: 1300, m_05: 1130, m_01: 1100, m_02: 320, others: 70 },
-];
-
-const MOCK_APPLOVIN_SPENDS = [
-  { assetId: 'm_01 (Android)', spend: 3200 },
-  { assetId: 'm_01 (iOS)', spend: 1300 },
-  { assetId: 'm_02 (Android)', spend: 2100 },
-  { assetId: 'm_02 (iOS)', spend: 1200 },
-  { assetId: 'm_03 (iOS)', spend: 1800 },
-  { assetId: 'm_06 (Android)', spend: 2800 },
-  { assetId: 'm_06 (iOS)', spend: 1000 },
-];
-
-const MOCK_GOOGLE_SPENDS = [
-  { assetId: 'm_01', spend: 2800 },
-  { assetId: 'm_03', spend: 1600 },
-  { assetId: 'm_04', spend: 5200 },
-  { assetId: 'm_05', spend: 4300 },
-  { assetId: 'm_06', spend: 2900 },
-];
-
 export const ConsumptionDataPage: React.FC = () => {
-  // Dash Sub-views: Graphs / Tables
-  const [activeSubTab, setActiveSubTab] = useState<'graphs' | 'tables'>('graphs');
-
   // Filter conditions
   const [launchStart, setLaunchStart] = useState('2026-05-10');
   const [launchEnd, setLaunchEnd] = useState('2026-06-03');
@@ -249,9 +197,6 @@ export const ConsumptionDataPage: React.FC = () => {
 
   // Popup state for showing material set uses
   const [modalMaterialUses, setModalMaterialUses] = useState<MaterialSpend | null>(null);
-
-  // Selected series value for floating video preview in stacked chart
-  const [chartVideoPopup, setChartVideoPopup] = useState<string | null>(null);
 
   // Table Sorting
   const [sortKey, setSortKey] = useState<string>('spend');
@@ -372,9 +317,6 @@ export const ConsumptionDataPage: React.FC = () => {
     };
   }, [filteredMaterials]);
 
-  // Color saturation specifications: "整体配色清淡一些，不要饱和度太高" (Low saturated pastel colors)
-  const PASTEL_COLORS = ['#cbd5e1', '#94a3b8', '#a5f3fc', '#bae6fd', '#c7d2fe', '#fbcfe8', '#fed7aa', '#fef08a'];
-
   return (
     <div className="space-y-6 pb-20">
       {/* 👑 Section Header */}
@@ -385,26 +327,8 @@ export const ConsumptionDataPage: React.FC = () => {
             消耗数据看板
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            监控投放创意素材消耗情况，以多维度堆叠图表深度直观追踪。
+            监控投放创意素材消耗明细，支持筛选、聚合、排序与关联创意组查看。
           </p>
-        </div>
-
-        {/* Level 2 Sub Page Switch */}
-        <div className="flex bg-slate-200/60 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveSubTab('graphs')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeSubTab === 'graphs' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 text-pink-500" />
-            图表分析 (Graphs)
-          </button>
-          <button
-            onClick={() => setActiveSubTab('tables')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeSubTab === 'tables' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            <Layers className="w-3.5 h-3.5 text-indigo-500" />
-            数据表格 (Tables)
-          </button>
         </div>
       </div>
 
@@ -483,173 +407,7 @@ export const ConsumptionDataPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ======================= CHART ANALYSIS SUB PAGE ======================= */}
-      {activeSubTab === 'graphs' && (
-        <div className="space-y-10">
-          
-          {/* 1. 花费 Top 20 素材 */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-            <div>
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center">
-                <span className="w-1.5 h-5 bg-pink-500 rounded-full mr-2.5"></span>
-                模块一：花费 Top20 视频素材分析 (Spend Top 20 Materials)
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">显示Top20视频的花费比例趋势折线图以及按语种堆叠比例分析。</p>
-            </div>
-
-            {/* Side-by-side: Left Line Chart, Right Stacked Area */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Line Chart: Top 20 Video sum / total spend percentage */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col h-80">
-                <span className="text-xs font-bold text-slate-700 mb-2">Top20 视频花费总计占比 (%)</span>
-                <div className="flex-1 min-h-0 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={[
-                      { day: '05/20', pct: 62 },
-                      { day: '05/22', pct: 65 },
-                      { day: '05/24', pct: 70 },
-                      { day: '05/26', pct: 72 },
-                      { day: '05/28', pct: 78 },
-                      { day: '05/30', pct: 74 },
-                      { day: '06/01', pct: 81 },
-                      { day: '06/03', pct: 84 },
-                    ]} margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                      <XAxis dataKey="day" tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(v: any) => [`${v}%`, 'Top20 视频占比']} />
-                      {/* Straight lines as step or linear - 不平滑过渡 */}
-                      <Line type="linear" dataKey="pct" stroke="#ec4899" strokeWidth={3} dot={{ r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Side by side stacked areas: Left All Lang, Right EN only */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col h-80">
-                <span className="text-xs font-bold text-slate-700 mb-2">Top20 视频素材个案累计堆叠分析</span>
-                <div className="flex-1 min-h-0 w-full grid grid-cols-2 gap-4">
-                  
-                  {/* Left: All Languages Area */}
-                  <div className="flex flex-col h-full">
-                    <span className="text-[10px] text-slate-400 font-bold text-center pb-1">所有语言 (All)</span>
-                    <div className="flex-1 min-h-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={TOP20_MOCK_ALL_LANG} margin={{ left: -30 }}>
-                          <XAxis dataKey="day" tick={{ fontSize: 8 }} />
-                          <YAxis tick={{ fontSize: 8 }} />
-                          <Tooltip 
-                            content={({ payload }) => (
-                              <div className="bg-white/95 p-2 rounded border shadow-md text-[10px] space-y-1">
-                                <span className="font-bold block border-b pb-0.5 text-slate-500">悬停详情 (7天花费排序)</span>
-                                {payload?.map((p, i) => (
-                                  <div key={i} className="flex justify-between gap-3 font-semibold text-slate-700 hover:bg-slate-100">
-                                    <span>{p.name}:</span>
-                                    <span>${p.value}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          />
-                          <Area type="monotone" dataKey="m_04" stackId="1" stroke="#a5f3fc" fill="#a5f3fc" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="m_05" stackId="1" stroke="#bae6fd" fill="#bae6fd" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="m_01" stackId="1" stroke="#c7d2fe" fill="#c7d2fe" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="m_02" stackId="1" stroke="#fbcfe8" fill="#fbcfe8" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="others" stackId="1" stroke="#cbd5e1" fill="#cbd5e1" fillOpacity={0.6} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Right: English materials stacked */}
-                  <div className="flex flex-col h-full">
-                    <span className="text-[10px] text-slate-400 font-bold text-center pb-1">英语素材 (EN)</span>
-                    <div className="flex-1 min-h-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={TOP20_MOCK_EN_LANG} margin={{ left: -30 }}>
-                          <XAxis dataKey="day" tick={{ fontSize: 8 }} />
-                          <YAxis tick={{ fontSize: 8 }} />
-                          <Area type="monotone" dataKey="m_04" stackId="1" stroke="#bae6fd" fill="#bae6fd" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="m_05" stackId="1" stroke="#bae6fd" fill="#bae6fd" fillOpacity={0.3} />
-                          <Area type="monotone" dataKey="m_01" stackId="1" stroke="#c7d2fe" fill="#c7d2fe" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="m_02" stackId="1" stroke="#fed7aa" fill="#fed7aa" fillOpacity={0.6} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-between text-xs text-slate-650">
-              <span className="font-bold text-indigo-800">💡 提示:</span>
-              <span>点击堆叠面或列表可在下方检索该具体素材消耗走势、属性与播放支持！</span>
-              <button 
-                onClick={() => setChartVideoPopup('mat_04')}
-                className="px-3 py-1 bg-white hover:bg-slate-100 rounded-lg text-[11px] font-bold text-indigo-600 border border-indigo-200 transition-colors shrink-0"
-              >
-                弹出首要Top1视频
-              </button>
-            </div>
-          </div>
-
-          {/* 2. Applovin / Google 信息 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            
-            {/* Applovin Stacked Top20 */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col h-96">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">
-                  Applovin 渠道 Top20 堆叠明细
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">分 Android / iOS 系统及素材 ID 的累积堆叠树图表。</p>
-              </div>
-
-              <div className="flex-1 min-h-0 w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={MOCK_APPLOVIN_SPENDS} barSize={24}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="assetId" tick={{ fontSize: 8 }} />
-                    <YAxis tick={{ fontSize: 9 }} />
-                    <Tooltip />
-                    <Bar dataKey="spend" fill="#a5f3fc" stroke="#06b6d4" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Google Stacked Top20 */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col h-96">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">
-                  Google 渠道 Top20 堆叠明细
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">分素材 ID 的 Google Ads 视频、试玩累积堆叠花费图表。</p>
-              </div>
-
-              <div className="flex-1 min-h-0 w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={MOCK_GOOGLE_SPENDS} barSize={24}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="assetId" tick={{ fontSize: 8 }} />
-                    <YAxis tick={{ fontSize: 9 }} />
-                    <Tooltip />
-                    <Bar dataKey="spend" fill="#bae6fd" stroke="#0ea5e9" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* ======================= DATA TABLE SUB PAGE ======================= */}
-      {activeSubTab === 'tables' && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
-          
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
           {/* Upper Table Filters (set name, material id, material name) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="relative">
@@ -863,30 +621,7 @@ export const ConsumptionDataPage: React.FC = () => {
               </div>
             </div>
           )}
-
         </div>
-      )}
-
-      {/* 📹 Video Series Popup Simulator */}
-      {chartVideoPopup && (
-        <div className="fixed inset-0 bg-slate-950/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-5 relative shadow-2xl space-y-4">
-            <button onClick={() => setChartVideoPopup(null)} className="absolute right-4 top-4 p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600">
-              <X className="w-5 h-5" />
-            </button>
-            <span className="text-xs font-extrabold uppercase text-pink-600 bg-pink-50 px-2.5 py-1 rounded inline-block">Stacked Area Graph Target video player</span>
-            <h3 className="text-sm font-bold text-slate-800 mt-2">素材趋势个例详情: US_Hook_Rescue_V01</h3>
-            <div className="aspect-video bg-black rounded-lg overflow-hidden border border-slate-200">
-              <video 
-                src="https://assets.mixkit.co/videos/preview/mixkit-playing-mobile-game-in-vertical-mode-40118-large.mp4" 
-                controls 
-                autoPlay 
-                className="w-full h-full object-cover" 
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 👑 Display material's associated sets Popup Modal */}
       {modalMaterialUses && (

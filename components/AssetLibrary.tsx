@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { LibraryItem } from '../types';
 import { DetailModal } from './DetailModal';
+import ResizableSidebar from './ResizableSidebar';
 
 const FolderIcon = Folder;
 
@@ -1429,10 +1430,10 @@ const AssetLibrary: React.FC = () => {
             className="flex items-center gap-2 text-left flex-1 py-0.5"
           >
             <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
-            <span className={`text-[11px] font-bold line-clamp-1 truncate ${isSelected ? 'text-white' : 'text-slate-707 font-medium'}`}>
+            <span className={`truncate text-xs line-clamp-1 ${isSelected ? 'font-black text-white' : 'font-bold text-slate-700'}`}>
               {node.name}
             </span>
-            <span className={`text-[9px] font-mono px-1 rounded-sm ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>
+            <span className={`rounded-sm px-1 font-mono text-[9.5px] font-bold ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>
               {totalCount}
             </span>
           </button>
@@ -1522,79 +1523,99 @@ const AssetLibrary: React.FC = () => {
     );
   };
 
-  // Check total usage
-  const totalUsageData = useMemo(() => {
-    const fragmentCount = libraryItems.filter(item => item.type === 'Fragment').length;
-    const componentCount = libraryItems.filter(item => item.type === 'Component').length;
-    return { fragmentCount, componentCount };
-  }, [libraryItems]);
-
   return (
-    <div className="flex bg-white rounded-3xl border border-slate-100 h-full overflow-hidden shadow-sm relative">
+    <div className="relative flex h-full overflow-hidden bg-white">
       {/* Left Sidebar Layout */}
-      <aside className="w-60 border-r border-slate-100 flex flex-col shrink-0 bg-slate-50/50 p-4 overflow-y-auto no-scrollbar py-5">
-        <div 
-          onClick={() => {
-             setCurrentPath([]);
-             setSearchQuery('');
-          }}
-          className="flex items-center gap-3 mb-6 px-2 py-1.5 -mx-1 rounded-xl cursor-pointer group hover:bg-slate-200/50 active:scale-98 transition-all select-none"
-          title="点击返回最上层级"
-        >
-           <div className="w-8 h-8 bg-slate-900 group-hover:bg-indigo-605 text-white rounded-lg flex items-center justify-center shadow-md transition-colors">
-              <FolderIcon className="w-4.5 h-4.5" />
-           </div>
-           <div>
-              <h2 className="text-xs font-black text-slate-800 leading-none font-sans group-hover:text-indigo-600 transition-colors">资产库目录</h2>
-              <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-widest leading-none group-hover:text-indigo-400 transition-colors">Library Explorer</p>
-           </div>
-        </div>
+      <ResizableSidebar
+        title="资产库目录"
+        subtitle="Library Explorer"
+        icon={FolderIcon}
+        storageKey="asset-library:sidebar"
+        defaultWidth={240}
+        minWidth={196}
+        maxWidth={360}
+      >
+        {(collapsed) => (
+          collapsed ? (
+            <nav className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentPath([]);
+                  setSearchQuery('');
+                }}
+                className={`group relative flex h-10 w-full items-center justify-center rounded-xl transition-all ${
+                  currentPath.length === 0 ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+                title="全部资产"
+              >
+                <FolderIcon className="h-4 w-4" />
+                <span className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 -translate-y-1/2 translate-x-0 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-black text-white opacity-0 shadow-xl ring-1 ring-black/5 transition-all group-hover:translate-x-1 group-hover:opacity-100">
+                  全部资产
+                </span>
+              </button>
+              {folderTree.map(rootNode => {
+                const Icon = rootNode.name === '片段' ? LayoutIcon : Box;
+                const isSelected = currentPath[0] === rootNode.name;
+                return (
+                  <button
+                    key={rootNode.name}
+                    type="button"
+                    onClick={() => setCurrentPath([rootNode.name])}
+                    className={`group relative flex h-10 w-full items-center justify-center rounded-xl transition-all ${
+                      isSelected ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                    }`}
+                    title={rootNode.name}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 -translate-y-1/2 translate-x-0 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-black text-white opacity-0 shadow-xl ring-1 ring-black/5 transition-all group-hover:translate-x-1 group-hover:opacity-100">
+                      {rootNode.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          ) : (
+            <div className="space-y-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentPath([]);
+                  setSearchQuery('');
+                }}
+                className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-black transition-all ${
+                  currentPath.length === 0 ? 'bg-slate-900 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+                title="点击返回最上层级"
+              >
+                <FolderIcon className={`h-4 w-4 shrink-0 ${currentPath.length === 0 ? 'text-white' : 'text-slate-400'}`} />
+                全部资产
+              </button>
 
-        {/* Directory trees */}
-        <nav className="space-y-5">
-           {folderTree.map(rootNode => (
-             <div key={rootNode.name} className="space-y-1.5">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1 font-sans">{rootNode.name}体系</p>
-                {renderLeftSidebarNode(rootNode)}
-             </div>
-           ))}
-        </nav>
-
-        {/* Local Storage Indicator */}
-        <div className="mt-auto pt-4 border-t border-slate-100 px-1 space-y-3">
-           <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-sm">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">系统配额</p>
-              <div className="space-y-2">
-                 <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-bold text-slate-500">片段总量</span>
-                    <span className="text-[9px] font-black text-slate-800">{totalUsageData.fragmentCount} / 5,000</span>
-                 </div>
-                 <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-slate-900" style={{ width: `${(totalUsageData.fragmentCount / 5000) * 100}%` }}></div>
-                 </div>
-                 <div className="flex items-center justify-between mt-1">
-                    <span className="text-[9px] font-bold text-slate-500">组件总量</span>
-                    <span className="text-[9px] font-black text-slate-800">{totalUsageData.componentCount} / 5,000</span>
-                 </div>
-                 <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-slate-900" style={{ width: `${(totalUsageData.componentCount / 5000) * 100}%` }}></div>
-                 </div>
-              </div>
-           </div>
-        </div>
-      </aside>
+              <nav className="space-y-5">
+                {folderTree.map(rootNode => (
+                  <div key={rootNode.name} className="space-y-1.5">
+                    <p className="mb-1 px-1 text-[9.5px] font-bold uppercase tracking-widest text-slate-400 font-sans">{rootNode.name}体系</p>
+                    {renderLeftSidebarNode(rootNode)}
+                  </div>
+                ))}
+              </nav>
+            </div>
+          )
+        )}
+      </ResizableSidebar>
 
       {/* Main Content Explorer Area */}
-      <main className="flex-1 flex flex-col bg-white overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 p-6 gap-5">
          {/* Top toolbar */}
-         <div className="h-16 border-b border-slate-100 px-6 flex items-center justify-between shrink-0 bg-white z-10 gap-4">
+         <div className="h-16 rounded-3xl border border-slate-100 px-6 flex items-center justify-between shrink-0 bg-white z-10 gap-4 shadow-sm">
             <div className="flex items-center gap-3 flex-1 min-w-0">
                <div className="relative w-56 shrink-0">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                   <input 
                     type="text" 
                     placeholder="在当前目录下模糊定位..."
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-4 py-1.5 text-[10.5px] font-bold font-sans focus:outline-none focus:ring-2 focus:ring-slate-900/10 transition-all font-medium text-slate-800 placeholder-slate-400"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-4 py-1.5 text-xs font-medium font-sans focus:outline-none focus:ring-2 focus:ring-slate-900/10 transition-all text-slate-800 placeholder-slate-400"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
@@ -1603,7 +1624,7 @@ const AssetLibrary: React.FC = () => {
                {searchQuery && (
                  <button 
                     onClick={() => setSearchQuery('')}
-                    className="text-[9px] font-black text-slate-400 hover:text-slate-800 bg-slate-100 px-2 py-1 rounded"
+                    className="rounded bg-slate-100 px-2 py-1 text-[9.5px] font-bold text-slate-400 hover:text-slate-800"
                  >
                     清除
                  </button>
@@ -1613,7 +1634,7 @@ const AssetLibrary: React.FC = () => {
 
                {/* Advanced Multi-Sort selection block (Flat field pills with toggles) */}
                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-slate-400 shrink-0 font-sans tracking-tight">排序方式:</span>
+                  <span className="shrink-0 text-[9.5px] font-bold text-slate-400 font-sans tracking-tight">排序方式:</span>
                   <div className="flex flex-wrap gap-1">
                      {[
                         { field: 'citationCount', label: '引用' },
@@ -1636,7 +1657,7 @@ const AssetLibrary: React.FC = () => {
                                     setSortDirection('desc');
                                  }
                               }}
-                              className={`px-2.5 py-1 text-[10px] font-black rounded-lg border transition-all duration-150 flex items-center gap-1 cursor-pointer font-sans select-none ${
+                              className={`px-2.5 py-1 text-xs font-black rounded-lg border transition-all duration-150 flex items-center gap-1 cursor-pointer font-sans select-none ${
                                  isCurrent
                                     ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
                                     : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600'
@@ -1682,7 +1703,7 @@ const AssetLibrary: React.FC = () => {
                      }
                      setIsUploadModalOpen(true);
                   }}
-                  className="px-6 py-2.5 bg-slate-900 border border-slate-900 text-white rounded-xl text-[11px] font-black hover:bg-black hover:scale-101 shadow-md hover:shadow-lg transition-all h-11 flex items-center justify-center gap-1.5 font-sans cursor-pointer"
+                  className="px-6 py-2.5 bg-slate-900 border border-slate-900 text-white rounded-xl text-xs font-black hover:bg-black hover:scale-101 shadow-md hover:shadow-lg transition-all h-11 flex items-center justify-center gap-1.5 font-sans cursor-pointer"
                >
                   <Plus className="w-4 h-4 shrink-0" />
                   上传素材
@@ -1690,18 +1711,18 @@ const AssetLibrary: React.FC = () => {
             </div>
          </div>
 
-         <div className="border-b border-slate-100 bg-slate-50/80">
+         <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
             <div className="max-h-64 overflow-y-auto px-6 py-4 no-scrollbar">
                <div className="space-y-3">
                   {ASSET_FACET_CATEGORIES.map(category => (
                      <div key={category.id} className="grid grid-cols-[112px_minmax(0,1fr)] gap-6 border-b border-slate-100 py-3 first:pt-0 last:border-b-0 last:pb-0">
                         <div className="pt-1">
-                           <p className="text-[12px] font-black text-indigo-600">{category.label}</p>
+                           <p className="text-xs font-black text-indigo-600">{category.label}</p>
                         </div>
                         <div className="space-y-2.5">
                            {category.groups.map(group => (
                               <div key={`${category.id}-${group.title}`} className="grid grid-cols-[104px_minmax(0,1fr)] gap-5">
-                                 <p className="pt-0.5 text-[10px] font-black leading-6 text-slate-400">{group.title}</p>
+                                 <p className="pt-0.5 text-[9.5px] font-bold leading-6 text-slate-400">{group.title}</p>
                                  <div className="flex flex-wrap items-center gap-x-7 gap-y-2">
                                     {group.facets.map(facet => {
                                        const isActive = facet.id === 'all' ? activeFacetIds.length === 0 : activeFacetIds.includes(facet.id);
@@ -1711,7 +1732,7 @@ const AssetLibrary: React.FC = () => {
                                              key={facet.id}
                                              type="button"
                                              onClick={() => toggleAssetFacet(facet.id)}
-                                             className={`group inline-flex h-6 items-center gap-1 whitespace-nowrap text-[11px] font-black leading-6 transition-all ${
+                                             className={`group inline-flex h-6 items-center gap-1 whitespace-nowrap text-xs font-black leading-6 transition-all ${
                                                 isActive
                                                    ? 'text-indigo-600'
                                                    : 'text-slate-700 hover:text-indigo-600'
@@ -1720,7 +1741,7 @@ const AssetLibrary: React.FC = () => {
                                              <span className={isActive ? 'border-b-2 border-indigo-500 pb-0.5' : 'pb-0.5'}>
                                                 {facet.label}
                                              </span>
-                                             <span className={`text-[9px] font-black ${isActive ? 'text-indigo-400' : 'text-slate-300 group-hover:text-indigo-300'}`}>
+                                             <span className={`text-[9.5px] font-bold ${isActive ? 'text-indigo-400' : 'text-slate-300 group-hover:text-indigo-300'}`}>
                                                 {count}
                                              </span>
                                           </button>
@@ -1736,16 +1757,16 @@ const AssetLibrary: React.FC = () => {
             </div>
             <div className="border-t border-slate-100 bg-white/80 px-6 py-3">
                <div className="flex min-h-7 flex-wrap items-center gap-2">
-                  <span className="mr-1 text-[10px] font-black text-slate-400">已选标签</span>
+                  <span className="mr-1 text-[9.5px] font-bold text-slate-400">已选标签</span>
                   {activeFacetLabels.length === 0 ? (
-                     <span className="rounded-xl bg-slate-50 px-3 py-1.5 text-[10px] font-black text-slate-300">全部资产</span>
+                     <span className="rounded-xl bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-300">全部资产</span>
                   ) : (
                      activeFacetLabels.map(facet => (
                         <button
                            key={facet.id}
                            type="button"
                            onClick={() => removeAssetFacet(facet.id)}
-                           className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-[10px] font-black text-indigo-600 transition-all hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500"
+                           className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-600 transition-all hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500"
                            title="移除此筛选标签"
                         >
                            {facet.label}
@@ -1760,7 +1781,7 @@ const AssetLibrary: React.FC = () => {
                            setActiveFacetIds([]);
                            setSearchQuery('');
                         }}
-                        className="ml-auto rounded-xl px-3 py-1.5 text-[10px] font-black text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                        className="ml-auto rounded-xl px-3 py-1.5 text-xs font-black text-slate-400 hover:bg-slate-50 hover:text-slate-700"
                      >
                         清除全部
                      </button>
@@ -1770,7 +1791,7 @@ const AssetLibrary: React.FC = () => {
          </div>
 
          {/* Navigation, Breadcrumbs and folder grid content */}
-         <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+         <div className="flex-1 overflow-y-auto no-scrollbar">
             
             {/* Multi-select Batch Actions Bar */}
             {selectedAssetIds.length > 0 && (
@@ -1880,7 +1901,7 @@ const AssetLibrary: React.FC = () => {
                                // Open sub-folder and trigger Left highlight synchronicity 
                                setCurrentPath(folderPath);
                              }}
-                             className="group bg-slate-50/50 hover:bg-white rounded-3xl border border-slate-100 p-4 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/50 transition-all cursor-pointer flex flex-col justify-between hover:-translate-y-1 duration-300"
+                             className="group flex cursor-pointer flex-col justify-between rounded-2xl border border-slate-150/60 bg-white p-4 shadow-3xs transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-250 hover:shadow-xs"
                           >
                              <div>
                                 <div className="flex items-center justify-between mb-4">
@@ -1888,7 +1909,7 @@ const AssetLibrary: React.FC = () => {
                                       <Folder className="w-4.5 h-4.5 fill-white/10" />
                                    </div>
                                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                      <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-2.5 py-0.5 rounded-full">
+                                      <span className="rounded-full border border-slate-100 bg-white px-2.5 py-0.5 text-[9.5px] font-bold text-slate-500">
                                          {totalCount} 个资产
                                       </span>
                                       <button
@@ -1909,8 +1930,8 @@ const AssetLibrary: React.FC = () => {
                                       </button>
                                    </div>
                                 </div>
-                                <h4 className="text-sm font-black text-slate-800 group-hover:text-primary transition-colors">{subNode.name}</h4>
-                                <span className="text-[8px] font-black text-slate-400 font-mono tracking-widest uppercase">
+                                <h4 className="text-xs font-black tracking-tight text-slate-800 transition-colors group-hover:text-primary">{subNode.name}</h4>
+                                <span className="font-mono text-[9.5px] font-bold uppercase tracking-widest text-slate-400">
                                    {folderPath.join(' / ')}
                                 </span>
                              </div>
@@ -1921,7 +1942,7 @@ const AssetLibrary: React.FC = () => {
                                    <div key={item.id} className="relative aspect-square rounded-lg overflow-hidden bg-slate-50 border border-slate-100">
                                       <img src={item.previewUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                       <div className="absolute inset-x-0 bottom-0 bg-black/50 px-1 py-0.5 text-center">
-                                         <p className="text-[7px] text-white font-black truncate leading-none">{item.name}</p>
+                                         <p className="truncate text-[9.5px] font-bold leading-none text-white">{item.name}</p>
                                       </div>
                                    </div>
                                 ))}
@@ -1941,7 +1962,7 @@ const AssetLibrary: React.FC = () => {
               <div>
                 {(activeFacetIds.length > 0 || searchQuery.trim()) && (
                   <div className="mb-4 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                    <p className="text-[11px] font-bold text-slate-500">
+                    <p className="text-xs font-medium text-slate-500">
                       当前查看：<span className="font-black text-slate-800">{activeFacetLabel}</span>
                       {searchQuery.trim() ? <span> / 搜索 “{searchQuery.trim()}”</span> : null}
                     </p>
@@ -2821,9 +2842,9 @@ const DetailRow = ({ label, value, icon: Icon, mono, badge }: any) => (
         <Icon className="w-3.5 h-3.5" />
      </div>
      <div className="flex-1 min-w-0">
-        <p className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest leading-none">{label}</p>
+        <p className="text-[9.5px] font-bold text-slate-400 uppercase tracking-widest leading-none">{label}</p>
         {badge ? (
-           <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-black border ${
+           <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[9.5px] font-bold border ${
               badge === 'Recommended' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
               badge === 'Not Recommended' ? 'bg-rose-50 text-rose-600 border-rose-100' :
               badge === 'Disabled' ? 'bg-slate-50 text-slate-400 border-slate-100' :
@@ -2832,7 +2853,7 @@ const DetailRow = ({ label, value, icon: Icon, mono, badge }: any) => (
              {value}
            </span>
         ) : (
-           <p className={`text-xs font-bold text-slate-700 mt-1 truncate ${mono ? 'font-mono tracking-tight text-[10.5px]' : ''}`}>{value}</p>
+           <p className={`mt-1 truncate text-xs font-medium text-slate-700 ${mono ? 'font-mono tracking-tight' : ''}`}>{value}</p>
         )}
      </div>
   </div>
@@ -2842,7 +2863,7 @@ const MetricBox = ({ label, value, icon: Icon }: any) => (
   <div className="bg-white p-3 flex flex-col gap-1.5 hover:bg-slate-50 transition-colors font-sans">
      <div className="flex items-center gap-1.5 min-w-0">
         <Icon className="w-3 h-3 text-slate-400 shrink-0" />
-        <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest line-clamp-1 truncate">{label}</span>
+        <span className="truncate text-[9.5px] font-bold uppercase tracking-widest text-slate-400 line-clamp-1">{label}</span>
      </div>
      <p className="text-xs font-black text-slate-900 tracking-tight">{value}</p>
   </div>

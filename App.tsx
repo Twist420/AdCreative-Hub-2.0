@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import Layout from './components/Layout';
 import Overview from './components/Overview';
-import CreativeAnalysis from './components/CreativeAnalysis';
 import PersonnelDataPage from './components/PersonnelData';
 import RecoveryDataPage from './components/RecoveryData';
 import ConsumptionDataPage from './components/ConsumptionData';
@@ -17,7 +16,6 @@ import { MainModule, Page } from './types';
 const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<MainModule>(MainModule.REQUIREMENT_CENTER);
   const [currentPage, setCurrentPage] = useState<Page>(Page.OVERVIEW);
-  const [creativeSubTab, setCreativeSubTab] = useState<'multi' | 'full' | 'segment_a' | 'segment_b'>('full');
   const [requirementSubView, setRequirementSubView] = useState<'coordinated' | 'list' | 'production' | 'upload'>('coordinated');
 
   return (
@@ -26,8 +24,6 @@ const App: React.FC = () => {
       onModuleNavigate={setActiveModule}
       currentPage={currentPage} 
       onPageNavigate={setCurrentPage}
-      creativeSubTab={creativeSubTab}
-      onCreativeSubTabChange={setCreativeSubTab}
       requirementSubView={requirementSubView}
       onRequirementSubViewChange={setRequirementSubView}
     >
@@ -50,7 +46,6 @@ const App: React.FC = () => {
             case Page.OVERVIEW: return <Overview />;
             case Page.RECOVERY_DATA: return <RecoveryDataPage />;
             case Page.CONSUMPTION_DATA: return <ConsumptionDataPage />;
-            case Page.CREATIVE_ANALYSIS: return <CreativeAnalysis activeSubTab={creativeSubTab} />;
             case Page.PERSONNEL: return <PersonnelDataPage />;
             case Page.BENCHMARK: return <Benchmark />;
             default: return <Overview />;

@@ -13,7 +13,6 @@ export enum Page {
   OVERVIEW = 'overview',
   RECOVERY_DATA = 'recovery_data',
   CONSUMPTION_DATA = 'consumption_data',
-  CREATIVE_ANALYSIS = 'creative_analysis',
   PERSONNEL = 'personnel',
   BENCHMARK = 'benchmark'
 }
@@ -218,12 +217,22 @@ export interface AssetVersionItem {
   version: string;
   name: string;
   testDirections: string[];
+  sourceRequirementId?: string;
+  sourceRequirementName?: string;
+  finishedReferenceIds?: string[];
 }
 
 export interface Requirement {
   id: string;
   parentId?: string; 
   scheduleId?: string; 
+  sourceRequirementId?: string;
+  sourceRequirementIds?: string[];
+  createMode?: 'New' | 'LocalizedFromExisting';
+  localizationBatchId?: string;
+  localizationLanguage?: string;
+  localizationLanguageLabel?: string;
+  isLocalization?: boolean;
   name: string; // This is the Creative Name / custom input
   assetType: CreativeForm;
   assetIndex: number;
