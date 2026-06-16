@@ -3215,40 +3215,36 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                             1. 需求提交进度
                                           </span>
                                           {isEditing ? (
-                                            <div className="flex items-center gap-1 text-[9px] shrink-0 select-none">
+                                            <div className="flex items-center gap-1 text-[9px] shrink-0">
                                               <div className="flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
                                                 <span className="text-slate-400 font-bold">
                                                   有效:
                                                 </span>
-                                                <button
-                                                  onClick={() =>
-                                                    updateSchedule(s.id, {
-                                                      validCount: Math.max(
-                                                        0,
-                                                        s.validCount - 1,
-                                                      ),
-                                                    })
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={s.validCount}
+                                                  onFocus={(e) =>
+                                                    e.currentTarget.select()
                                                   }
-                                                  className="w-3.5 h-3.5 flex items-center justify-center text-slate-400 hover:text-indigo-650 font-black border border-slate-200 rounded-sm bg-white hover:bg-slate-50"
-                                                  title="减少已提交个数"
-                                                >
-                                                  -
-                                                </button>
-                                                <span className="font-mono font-bold text-slate-700 min-w-[8px] text-center">
-                                                  {s.validCount}
-                                                </span>
-                                                <button
-                                                  onClick={() =>
+                                                  onChange={(e) =>
                                                     updateSchedule(s.id, {
                                                       validCount:
-                                                        s.validCount + 1,
+                                                        Number.isNaN(
+                                                          e.currentTarget
+                                                            .valueAsNumber,
+                                                        )
+                                                          ? 0
+                                                          : Math.max(
+                                                              0,
+                                                              e.currentTarget
+                                                                .valueAsNumber,
+                                                            ),
                                                     })
                                                   }
-                                                  className="w-3.5 h-3.5 flex items-center justify-center text-slate-400 hover:text-indigo-650 font-black border border-slate-200 rounded-sm bg-white hover:bg-slate-50"
-                                                  title="增加已提交个数"
-                                                >
-                                                  +
-                                                </button>
+                                                  className="no-number-stepper h-4 w-8 rounded border border-slate-200 bg-white px-1 text-center font-mono text-[10px] font-bold text-slate-700 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                                  title="输入有效个数"
+                                                />
                                               </div>
                                               <span className="text-slate-300 font-bold">
                                                 /
@@ -3257,38 +3253,31 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                                 <span className="text-slate-400 font-bold">
                                                   总:
                                                 </span>
-                                                <button
-                                                  onClick={() =>
+                                                <input
+                                                  type="number"
+                                                  min={1}
+                                                  value={s.totalRequiredCount}
+                                                  onFocus={(e) =>
+                                                    e.currentTarget.select()
+                                                  }
+                                                  onChange={(e) =>
                                                     updateSchedule(s.id, {
                                                       totalRequiredCount:
-                                                        Math.max(
-                                                          1,
-                                                          s.totalRequiredCount -
-                                                            1,
-                                                        ),
+                                                        Number.isNaN(
+                                                          e.currentTarget
+                                                            .valueAsNumber,
+                                                        )
+                                                          ? 1
+                                                          : Math.max(
+                                                              1,
+                                                              e.currentTarget
+                                                                .valueAsNumber,
+                                                            ),
                                                     })
                                                   }
-                                                  className="w-3.5 h-3.5 flex items-center justify-center text-slate-400 hover:text-indigo-650 font-black border border-slate-200 rounded-sm bg-white hover:bg-slate-50"
-                                                  title="减少总计划数"
-                                                >
-                                                  -
-                                                </button>
-                                                <span className="font-mono font-bold text-slate-700 min-w-[8px] text-center">
-                                                  {s.totalRequiredCount}
-                                                </span>
-                                                <button
-                                                  onClick={() =>
-                                                    updateSchedule(s.id, {
-                                                      totalRequiredCount:
-                                                        s.totalRequiredCount +
-                                                        1,
-                                                    })
-                                                  }
-                                                  className="w-3.5 h-3.5 flex items-center justify-center text-slate-400 hover:text-indigo-650 font-black border border-slate-200 rounded-sm bg-white hover:bg-slate-50"
-                                                  title="增加总计划数"
-                                                >
-                                                  +
-                                                </button>
+                                                  className="no-number-stepper h-4 w-8 rounded border border-slate-200 bg-white px-1 text-center font-mono text-[10px] font-bold text-slate-700 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                                  title="输入总计划数"
+                                                />
                                               </div>
                                             </div>
                                           ) : (
