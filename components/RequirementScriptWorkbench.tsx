@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ArrowRight,
   ChevronDown,
   ChevronRight,
   Check,
@@ -9,7 +8,6 @@ import {
   Layers,
   Play,
   Plus,
-  RefreshCw,
   Search,
   X
 } from 'lucide-react';
@@ -490,7 +488,6 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     attachments: [],
     description: ''
   });
-  const [showLegacyScript, setShowLegacyScript] = useState(false);
   const [assetPickerTarget, setAssetPickerTarget] = useState<AssetPickerTarget | null>(null);
   const [assetPickerSearch, setAssetPickerSearch] = useState('');
   const [assetPickerFacetId, setAssetPickerFacetId] = useState('all');
@@ -1181,23 +1178,6 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
           {(template === 'same_a' || template === 'same_b') ? renderSameSegmentTemplate() : (
             <section className="space-y-5">
               {renderFreeTemplate()}
-              <div className="border-t border-slate-200 pt-4">
-                <button type="button" onClick={() => setShowLegacyScript(!showLegacyScript)} className="flex w-full items-center justify-between text-left">
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="h-4 w-4 text-slate-400" />
-                    <span className="text-xs font-black text-slate-800">补充说明 / 原脚本文本</span>
-                  </div>
-                  <ArrowRight className={`h-4 w-4 text-slate-400 transition-transform ${showLegacyScript ? 'rotate-90' : ''}`} />
-                </button>
-                {showLegacyScript && (
-                  <textarea
-                    className="mt-4 h-40 w-full resize-none rounded-2xl border border-slate-150 bg-slate-50 px-4 py-3 text-xs font-bold leading-relaxed text-slate-700 outline-none focus:border-indigo-300 focus:bg-white"
-                    value={requirement.script || ''}
-                    onChange={(event) => onRequirementChange({ ...requirement, script: event.target.value })}
-                    placeholder="可在这里保留无法结构化表达的补充脚本说明..."
-                  />
-                )}
-              </div>
             </section>
           )}
         </>

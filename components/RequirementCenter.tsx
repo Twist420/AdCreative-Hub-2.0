@@ -13,7 +13,6 @@ import {
   CreativeDirectionType,
   FinishedCreativePerformance,
   RequirementFeedbackSummary,
-  DirectionFeedbackSummary,
   AssetVersionItem,
 } from "../types";
 import {
@@ -21,7 +20,6 @@ import {
   generateSchedules,
   generateFinishedCreativePerformance,
   summarizeRequirementFeedback,
-  summarizeDirectionFeedback,
 } from "../services/mockData";
 import {
   Plus,
@@ -219,9 +217,10 @@ const summarizeProductionStatus = (
   requirement: Requirement,
 ): RequirementProdStatus => {
   const tasks = requirement.tasks || [];
-  if (tasks.length === 0) return requirement.prodStatus || "Scheduled";
+  if (tasks.length === 0) return requirement.prodStatus || "Unscheduled";
   if (tasks.every((task) => task.status === "已完成")) return "Completed";
   if (tasks.some((task) => task.status === "制作中")) return "InProgress";
+  if (requirement.prodStatus === "Unscheduled") return "Unscheduled";
   return "Scheduled";
 };
 
@@ -397,7 +396,48 @@ const addDaysToDateString = (dateStr: string, days: number) => {
   return formatCalendarDate(base);
 };
 
+const DEFAULT_WEEK_RANGE_COUNT = 20;
+
+const getDefaultWeekRanges = (
+  ranges: string[],
+  count: number = DEFAULT_WEEK_RANGE_COUNT,
+) => {
+  const sortedRanges = [...ranges].sort((a, b) => {
+    const aRange = parseWeekRangeDates(a);
+    const bRange = parseWeekRangeDates(b);
+    return bRange.endTime - aRange.endTime || bRange.startTime - aRange.startTime;
+  });
+  const latestRange =
+    sortedRanges[0] ||
+    `${formatCalendarDate(new Date())} ~ ${addDaysToDateString(formatCalendarDate(new Date()), 7)}`;
+  let { start, end } = parseWeekRangeDates(latestRange);
+  const generatedRanges: string[] = [];
+
+  while (generatedRanges.length < count) {
+    generatedRanges.push(`${start} ~ ${end}`);
+    end = start;
+    start = addDaysToDateString(start, -7);
+  }
+
+  return Array.from(new Set([...sortedRanges, ...generatedRanges]))
+    .sort((a, b) => {
+      const aRange = parseWeekRangeDates(a);
+      const bRange = parseWeekRangeDates(b);
+      return bRange.endTime - aRange.endTime || bRange.startTime - aRange.startTime;
+    })
+    .slice(0, Math.max(count, sortedRanges.length));
+};
+
 const formatDateCompact = (dateStr: string) => dateStr.replaceAll("-", "");
+
+const parseRequirementVersionId = (id: string) => {
+  const match = id.match(/^([a-z]+\d+)-(\d{2})(?:$|-)/i);
+  if (!match) return null;
+  return {
+    majorId: match[1],
+    version: Number.parseInt(match[2], 10),
+  };
+};
 
 const formatCurrencyCompact = (value: number) => {
   if (value >= 10000) return `$${(value / 10000).toFixed(1)}w`;
@@ -410,6 +450,17 @@ interface RequirementCenterProps {
     view: "coordinated" | "list" | "production" | "upload",
   ) => void;
 }
+
+const INITIAL_REQUIREMENT_FILTERS = {
+  materialStage: "全部",
+  broadDirection: "全部",
+  creativePersonnel: "全部",
+  priority: "全部",
+  reqStatus: "全部",
+  prodStatus: "全部",
+  assetType: "全部",
+  scheduleRisk: "全部",
+};
 
 const RequirementCenter: React.FC<RequirementCenterProps> = ({
   subView,
@@ -464,17 +515,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     () => summarizeRequirementFeedback(finishedCreativePerformance),
     [finishedCreativePerformance],
   );
-  const directionFeedbackSummaries = useMemo<DirectionFeedbackSummary[]>(
-    () => summarizeDirectionFeedback(finishedCreativePerformance),
-    [finishedCreativePerformance],
-  );
   const requirementFeedbackMap = useMemo(
     () => new Map(requirementFeedbackSummaries.map((item) => [item.requirementId, item])),
     [requirementFeedbackSummaries],
-  );
-  const directionFeedbackMap = useMemo(
-    () => new Map(directionFeedbackSummaries.map((item) => [item.scheduleId, item])),
-    [directionFeedbackSummaries],
   );
   const recentRequirementSpendMap = useMemo(() => {
     const sinceDate = addDaysToDateString(todayDateString, -30);
@@ -504,6 +547,23 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     "美宣-3D": false,
     "程序": false,
   });
+  const previousSubViewRef = useRef(combinedSubView);
+
+  useEffect(() => {
+    if (
+      previousSubViewRef.current !== "coordinated" &&
+      combinedSubView === "coordinated"
+    ) {
+      setSearchQuery("");
+      setFilters({ ...INITIAL_REQUIREMENT_FILTERS });
+      setCreatedRangeStart("");
+      setCreatedRangeEnd("");
+      setCompletedRangeStart("");
+      setCompletedRangeEnd("");
+      setCurrentSort("none");
+    }
+    previousSubViewRef.current = combinedSubView;
+  }, [combinedSubView]);
 
   const handlePrevMonth = () => {
     if (calendarMonth === 1) {
@@ -574,11 +634,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     const ranges = Array.from(
       new Set(schedules.map((s) => s.weekRange)),
     ).filter(Boolean);
-    return ranges.sort((a, b) => {
-      const aRange = parseWeekRangeDates(a);
-      const bRange = parseWeekRangeDates(b);
-      return bRange.endTime - aRange.endTime || bRange.startTime - aRange.startTime;
-    });
+    return getDefaultWeekRanges(ranges);
   }, [schedules]);
 
   const pinnedWeekRanges = useMemo(() => weekRanges.slice(0, 4), [weekRanges]);
@@ -640,16 +696,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   >({});
 
   // Filter states
-  const [filters, setFilters] = useState({
-    materialStage: "全部",
-    broadDirection: "全部",
-    creativePersonnel: "全部",
-    priority: "全部",
-    reqStatus: "全部",
-    prodStatus: "全部",
-    assetType: "全部",
-    scheduleRisk: "全部",
-  });
+  const [filters, setFilters] = useState({ ...INITIAL_REQUIREMENT_FILTERS });
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2600);
+  }, []);
 
   const visibleSchedules = useMemo(() => {
     const hasDateRange = Boolean(dateRangeStart || dateRangeEnd);
@@ -853,10 +913,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       direction: schedule.directionName,
       owner: schedule.owner,
       priority: schedule.priority || "Mid",
-      reqStatus: "Draft",
-      prodStatus: "Scheduled",
-      deliveryStatus: "Paused",
-      status: "Draft",
+      reqStatus: "Pending",
+      prodStatus: "Unscheduled",
+      deliveryStatus: "NotLaunched",
+      status: "Pending",
       rating: 0,
       createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       completedAt: "",
@@ -887,18 +947,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       .map((req) => req.assetIndex)
       .filter((index) => index >= 8000);
     return usedIndexes.length > 0 ? Math.max(...usedIndexes) + 1 : 8000;
-  };
-
-  const getLocalizationDefaultName = (
-    sourceRequirements: Requirement[],
-    languageLabel: string,
-  ) => {
-    const firstId = sourceRequirements[0]?.id || "未选来源";
-    const sourceSummary =
-      sourceRequirements.length > 1
-        ? `${firstId}等${sourceRequirements.length}条`
-        : firstId;
-    return `${formatDateCompact(todayDateString)}${languageLabel}本地化${sourceSummary}`;
   };
 
   const getFinishedReferenceIdsForRequirement = (source: Requirement) => {
@@ -974,59 +1022,21 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         LOCALIZATION_LANGUAGES.find((item) => item.code === languageCode) ||
         LOCALIZATION_LANGUAGES[0];
       const assetIndex = baseAssetIndex + index;
-      const requirementId = `${getRequirementIdPrefix(assetType)}${assetIndex}-01`;
-      const parentRequirement = {
-        ...primarySource,
-        id: requirementId,
-        parentId: undefined,
-        parentRequirementId: undefined,
-        sourceRequirementId: undefined,
-        sourceRequirementIds: sources.map((source) => source.id),
-        createMode: "LocalizedFromExisting",
-        localizationBatchId: batchId,
-        isLocalization: true,
-        scheduleId: schedule.id,
-        name: getLocalizationDefaultName(sources, languageMeta.label),
-        assetType,
-        assetIndex,
-        assetVersion: "01",
-        subVersions,
-        broadDirection,
-        materialStage: schedule.materialStage || primarySource.materialStage,
-        creativePersonnel: schedule.owner || primarySource.creativePersonnel,
-        productionPersonnel: ["张欢"],
-        language: languageCode,
-        localizationLanguage: languageCode,
-        localizationLanguageLabel: languageMeta.label,
-        channels: schedule.channels?.length ? schedule.channels : primarySource.channels,
-        testDirections: Array.from(new Set(sources.flatMap((source) => source.testDirections || []))),
-        dimensions: primarySource.dimensions || ["9:16"],
-        previews: sources.flatMap((source) => source.previews || []).slice(0, 4),
-        direction: schedule.directionName || primarySource.direction,
-        goal: schedule.validationGoal || primarySource.goal,
-        owner: schedule.owner || primarySource.owner,
-        priority: schedule.priority || primarySource.priority,
-        reqStatus: "Draft",
-        prodStatus: "Scheduled",
-        deliveryStatus: "Paused",
-        status: "Draft",
-        rating: 0,
-        createdAt,
-        completedAt: "",
-        template: assetType === "Video" ? "自由模板" : primarySource.template,
-        script: primarySource.script || "",
-        difficulty: "C",
-        tasks: createDefaultProductionTasks(requirementId, assetType, broadDirection),
-      } satisfies Requirement;
-      const childRequirements = subVersions.map((subVersion) => {
+      return subVersions.map((subVersion, subVersionIndex) => {
         const source =
           sources.find((item) => item.id === subVersion.sourceRequirementId) ||
           primarySource;
+        const assetVersion = String(subVersionIndex + 1).padStart(2, "0");
+        const requirementId = `${getRequirementIdPrefix(assetType)}${assetIndex}-${assetVersion}`;
+        const localizedSubVersion = {
+          ...subVersion,
+          version: assetVersion,
+        };
         return {
           ...source,
-          id: `${requirementId}-v${subVersion.version}`,
-          parentId: requirementId,
-          parentRequirementId: requirementId,
+          id: requirementId,
+          parentId: undefined,
+          parentRequirementId: undefined,
           sourceRequirementId: source.id,
           sourceRequirementIds: [source.id],
           createMode: "LocalizedFromExisting",
@@ -1036,8 +1046,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           name: `${formatDateCompact(todayDateString)}${languageMeta.label}本地化-${source.id}`,
           assetType,
           assetIndex,
-          assetVersion: subVersion.version,
-          subVersions: [subVersion],
+          assetVersion,
+          subVersions: [localizedSubVersion],
           broadDirection,
           materialStage: schedule.materialStage || source.materialStage,
           creativePersonnel: schedule.owner || source.creativePersonnel,
@@ -1053,10 +1063,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           goal: schedule.validationGoal || source.goal,
           owner: schedule.owner || source.owner,
           priority: schedule.priority || source.priority,
-          reqStatus: "Draft",
-          prodStatus: "Scheduled",
-          deliveryStatus: "Paused",
-          status: "Draft",
+          reqStatus: "Pending",
+          prodStatus: "Unscheduled",
+          deliveryStatus: "NotLaunched",
+          status: "Pending",
           rating: 0,
           createdAt,
           completedAt: "",
@@ -1066,7 +1076,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           tasks: [],
         } satisfies Requirement;
       });
-      return [parentRequirement, ...childRequirements];
     });
 
     setRequirements([...newRequirements, ...requirements]);
@@ -1084,8 +1093,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     if (editingScheduleId === scheduleId) return;
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
-    setSelectedCreateType(assetTypeOverride || schedule.form || "Video");
-    openCreateRequirementDialog(scheduleId);
+
+    if (schedule.scenario === "Localized") {
+      setSelectedCreateType(assetTypeOverride || schedule.form || "Video");
+      openCreateRequirementDialog(scheduleId);
+      return;
+    }
+
+    const newReqIdx = requirements.length + 1;
+    const newReq = buildRequirementFromSchedule(schedule, newReqIdx, {
+      name: `新创意需求 - ${schedule.directionName}`,
+      assetType: assetTypeOverride || schedule.form || "Video",
+    });
+    setRequirements([newReq, ...requirements]);
+    setSelectedReq(newReq);
   };
 
   const filterConfigs = [
@@ -1122,7 +1143,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     {
       key: "prodStatus",
       label: "制作状态",
-      options: ["全部", "Scheduled", "InProgress", "Completed"],
+      options: ["全部", "Unscheduled", "Scheduled", "InProgress", "Completed"],
     },
   ];
 
@@ -1140,8 +1161,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     null,
   );
 
-  const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(false);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(true);
   const weekFilterRef = useRef<HTMLDivElement>(null);
   const productionInsights = useMemo(() => {
     const weekStart = todayDateString;
@@ -1455,6 +1475,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setSelectedScheduleForModal(null);
@@ -1493,7 +1521,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         filters.prodStatus === "全部" || r.prodStatus === filters.prodStatus;
       const matchAssetType =
         filters.assetType === "全部" || r.assetType === filters.assetType;
-      const requirementRisk = riskMap.get(r.id);
+      const requirementRisk = r.isLocalization ? undefined : riskMap.get(r.id);
       const matchScheduleRisk =
         filters.scheduleRisk === "全部" ||
         (filters.scheduleRisk === "有风险" && Boolean(requirementRisk)) ||
@@ -1555,7 +1583,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       } else if (currentSort === "form") {
         comparison = (a.assetType || "").localeCompare(b.assetType || "");
       } else if (currentSort === "progress") {
-        const progressOrder = { Scheduled: 1, InProgress: 2, Completed: 3 };
+        const progressOrder = { Unscheduled: 0, Scheduled: 1, InProgress: 2, Completed: 3 };
         comparison =
           (progressOrder[a.prodStatus as keyof typeof progressOrder] || 0) -
           (progressOrder[b.prodStatus as keyof typeof progressOrder] || 0);
@@ -1569,13 +1597,37 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     };
     const sortedList = [...list].sort(compareRequirements);
 
-    // Handle hierarchy for display
-    const roots = sortedList.filter((r) => !r.parentId);
+    // Handle hierarchy for display. Existing explicit parentId wins; otherwise
+    // requirements sharing a major version use *-01 as the visual parent.
+    const visibleIds = new Set(sortedList.map((r) => r.id));
+    const parentByMajorId = new Map<string, string>();
+    sortedList.forEach((req) => {
+      const parsed = parseRequirementVersionId(req.id);
+      if (parsed?.version === 1) {
+        parentByMajorId.set(parsed.majorId, req.id);
+      }
+    });
+
+    const getDisplayParentId = (req: Requirement) => {
+      if (req.parentId) return req.parentId;
+      const parsed = parseRequirementVersionId(req.id);
+      if (!parsed || parsed.version === 1) return undefined;
+      const parentId = parentByMajorId.get(parsed.majorId);
+      return parentId && parentId !== req.id ? parentId : undefined;
+    };
+
+    const roots = sortedList.filter((r) => {
+      const displayParentId = getDisplayParentId(r);
+      return !displayParentId || !visibleIds.has(displayParentId);
+    });
     const result: (Requirement & { level: number })[] = [];
+    const visited = new Set<string>();
 
     const flatten = (req: Requirement, level: number) => {
+      if (visited.has(req.id)) return;
+      visited.add(req.id);
       result.push({ ...req, level });
-      const children = sortedList.filter((c) => c.parentId === req.id);
+      const children = sortedList.filter((c) => getDisplayParentId(c) === req.id);
       children.forEach((c) => flatten(c, level + 1));
     };
 
@@ -1730,10 +1782,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       has3DPlot: parent.has3DPlot,
       direction: parent.direction,
       priority: parent.priority,
-      reqStatus: "Draft",
-      prodStatus: "Scheduled",
-      deliveryStatus: "Paused",
-      status: "Draft",
+      reqStatus: "Pending",
+      prodStatus: "Unscheduled",
+      deliveryStatus: "NotLaunched",
+      status: "Pending",
       rating: 0,
       createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       completedAt: "",
@@ -1752,7 +1804,25 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     if (editingScheduleId === scheduleId) return;
     const schedule = schedules.find((s) => s.id === scheduleId);
     if (!schedule) return;
-    openCreateRequirementDialog(scheduleId);
+
+    if (schedule.scenario === "Localized") {
+      openCreateRequirementDialog(scheduleId);
+      return;
+    }
+
+    const newReq = buildRequirementFromSchedule(
+      schedule,
+      requirements.length + 1,
+      {
+        name: `新创意需求 - ${schedule.directionName}`,
+        assetType: schedule.form || "Video",
+      },
+    );
+
+    setRequirements([newReq, ...requirements]);
+    setSelectedReq(newReq);
+    setShowScheduleSelector(false);
+    setCombinedSubView("list");
   };
 
   const getStatusStyle = (status: RequirementReqStatus) => {
@@ -1770,6 +1840,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
   const getProdStatusStyle = (status: RequirementProdStatus) => {
     switch (status) {
+      case "Unscheduled":
+        return "bg-slate-50 text-slate-400 border-slate-100";
       case "Completed":
         return "bg-emerald-50 text-emerald-600 border-emerald-100";
       case "InProgress":
@@ -1779,6 +1851,24 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       default:
         return "bg-slate-50 text-slate-500 border-slate-100";
     }
+  };
+
+  const getDeliveryStatusStyle = (status: RequirementDeliveryStatus) => {
+    switch (status) {
+      case "Delivering":
+        return "text-emerald-600 border-emerald-200 bg-emerald-50";
+      case "Paused":
+        return "text-slate-500 border-slate-200 bg-slate-50";
+      case "NotLaunched":
+      default:
+        return "text-slate-400 border-slate-200 bg-slate-50";
+    }
+  };
+
+  const getDeliveryStatusLabel = (status: RequirementDeliveryStatus) => {
+    if (status === "Delivering") return "投放中";
+    if (status === "Paused") return "暂停投放";
+    return "未投放";
   };
 
   const getFeedbackStatusStyle = (status: string) => {
@@ -1808,6 +1898,70 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     return `${formatDate(monday)} ~ ${formatDate(nextMonday)}`;
   };
 
+  const isScheduleVisibleInCoordinatedView = useCallback(
+    (schedule: CreativeSchedule) => {
+      const hasDateRange = Boolean(dateRangeStart || dateRangeEnd);
+
+      if (!hasDateRange && schedule.weekRange !== selectedWeekRange) {
+        return false;
+      }
+
+      if (
+        hasDateRange &&
+        !rangesOverlap(
+          schedule.requirementStart || parseWeekRangeDates(schedule.weekRange).start,
+          schedule.requirementEnd || parseWeekRangeDates(schedule.weekRange).end,
+          dateRangeStart,
+          dateRangeEnd,
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        filters.creativePersonnel !== "全部" &&
+        schedule.owner !== filters.creativePersonnel
+      ) {
+        return false;
+      }
+
+      if (filters.assetType !== "全部" && schedule.form !== filters.assetType) {
+        return false;
+      }
+
+      if (
+        filters.broadDirection !== "全部" &&
+        schedule.broadDirection !== filters.broadDirection
+      ) {
+        return false;
+      }
+
+      if (filters.scheduleRisk !== "全部") {
+        return false;
+      }
+
+      const query = searchQuery.trim().toLowerCase();
+      if (query) {
+        return (
+          schedule.directionName?.toLowerCase().includes(query) ||
+          schedule.id.toLowerCase().includes(query)
+        );
+      }
+
+      return true;
+    },
+    [
+      dateRangeStart,
+      dateRangeEnd,
+      filters.assetType,
+      filters.broadDirection,
+      filters.creativePersonnel,
+      filters.scheduleRisk,
+      searchQuery,
+      selectedWeekRange,
+    ],
+  );
+
   const addScheduleRow = (weekRange?: string, atTop: boolean = false) => {
     const defaultWeek = weekRange || "2026-05-20 ~ 2026-05-27";
     const newSchedule: CreativeSchedule = {
@@ -1833,6 +1987,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       setSchedules([...schedules, newSchedule]);
     }
     setEditingScheduleId(newSchedule.id);
+    if (
+      combinedSubView === "coordinated" &&
+      !isScheduleVisibleInCoordinatedView(newSchedule)
+    ) {
+      showToast("新建方向已创建，但被当前筛选隐藏。清空筛选或调整条件后可查看。");
+    }
   };
 
   const updateSchedule = (id: string, updates: Partial<CreativeSchedule>) => {
@@ -2162,6 +2322,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
   return (
     <div className="w-full flex bg-slate-50/50 min-h-screen">
+      {toast && (
+        <div className="fixed right-6 top-6 z-[220] max-w-sm rounded-2xl border border-amber-100 bg-white px-4 py-3 text-xs font-black text-slate-700 shadow-2xl shadow-slate-900/12">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <span className="leading-relaxed">{toast}</span>
+          </div>
+        </div>
+      )}
       {/* 主内容区域 */}
       <div className="flex-1 flex flex-col space-y-4 overflow-hidden">
         {combinedSubView === "upload" ? (
@@ -2363,29 +2531,50 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           </label>
                         ))}
 
-                        <button
-                          type="button"
-                          onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                          className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-[10px] font-black transition-all ${
-                            showAdvancedFilters ||
-                            filters.creativePersonnel !== "全部" ||
-                            dateRangeStart ||
-                            dateRangeEnd
-                              ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                              : "border-slate-150 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                        <label
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-[10px] font-black shadow-3xs transition-all ${
+                            filters.creativePersonnel !== "全部"
+                              ? "border-indigo-150 bg-indigo-50 text-indigo-700"
+                              : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
                           }`}
                         >
-                          更多筛选
-                          {coordinatedFilterChips.length > 0 && (
-                            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[9px] text-indigo-600">
-                              {coordinatedFilterChips.length}
-                            </span>
-                          )}
-                          <ChevronDown
-                            className={`h-3 w-3 transition-transform ${
-                              showAdvancedFilters ? "rotate-180" : ""
-                            }`}
-                          />
+                          <User className="h-3.5 w-3.5 text-slate-350" />
+                          <span className="text-slate-400">创意人员</span>
+                          <select
+                            value={filters.creativePersonnel}
+                            onChange={(e) =>
+                              setFilters((prev) => ({
+                                ...prev,
+                                creativePersonnel: e.target.value,
+                              }))
+                            }
+                            className="max-w-[90px] bg-transparent p-0 text-[10px] font-black text-inherit outline-none focus:ring-0"
+                          >
+                            <option value="全部">全部</option>
+                            <option value="唐欣怡">唐欣怡</option>
+                            <option value="吉意煊">吉意煊</option>
+                            <option value="马嘉良">马嘉良</option>
+                          </select>
+                        </label>
+
+                        <DateRangePicker
+                          label="时间范围"
+                          start={dateRangeStart}
+                          end={dateRangeEnd}
+                          onChange={({ start, end }) => {
+                            setDateRangeStart(start);
+                            setDateRangeEnd(end);
+                          }}
+                          compact
+                          className="min-w-[260px] flex-1"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={resetCoordinatedFilters}
+                          className="inline-flex h-8 items-center rounded-xl border border-slate-150 bg-white px-3 text-[10px] font-black text-slate-400 transition-all hover:border-rose-150 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          清空筛选
                         </button>
                       </div>
 
@@ -2434,50 +2623,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         </div>
                       </div>
                     </div>
-
-                    {showAdvancedFilters && (
-                      <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-center">
-                        <label className="flex items-center gap-2 rounded-xl border border-slate-150 bg-white px-3 py-2 text-[10px] font-black text-slate-600">
-                          <User className="h-3.5 w-3.5 text-slate-350" />
-                          <span className="text-slate-400">创意人员</span>
-                          <select
-                            value={filters.creativePersonnel}
-                            onChange={(e) =>
-                              setFilters((prev) => ({
-                                ...prev,
-                                creativePersonnel: e.target.value,
-                              }))
-                            }
-                            className="min-w-0 flex-1 bg-transparent p-0 text-[10px] font-black text-slate-700 outline-none focus:ring-0"
-                          >
-                            <option value="全部">全部</option>
-                            <option value="唐欣怡">唐欣怡</option>
-                            <option value="吉意煊">吉意煊</option>
-                            <option value="马嘉良">马嘉良</option>
-                          </select>
-                        </label>
-
-                        <DateRangePicker
-                          label="时间范围"
-                          start={dateRangeStart}
-                          end={dateRangeEnd}
-                          onChange={({ start, end }) => {
-                            setDateRangeStart(start);
-                            setDateRangeEnd(end);
-                          }}
-                          compact
-                          className="min-w-[260px]"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={resetCoordinatedFilters}
-                          className="h-8 rounded-xl border border-slate-150 bg-white px-3 text-[10px] font-black text-slate-400 transition-all hover:border-rose-150 hover:bg-rose-50 hover:text-rose-600"
-                        >
-                          清空筛选
-                        </button>
-                      </div>
-                    )}
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -2531,7 +2676,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] items-start gap-4 pb-2">
+                    <div className="grid min-w-[1360px] grid-cols-4 items-start gap-4 pb-2">
                       {visibleSchedules.map((s) => {
                         const associatedReqs = requirements.filter(
                           (r) => r.scheduleId === s.id,
@@ -2571,7 +2716,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           productionInsights.highRiskRequirements.filter(
                             (item) => item.req.scheduleId === s.id,
                           );
-                        const feedback = directionFeedbackMap.get(s.id);
 
                         const cardPriorityStyle =
                           "border-slate-150 shadow-xs hover:shadow-md";
@@ -2580,7 +2724,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <div
                             key={s.id}
                             onClick={() => setSelectedScheduleForModal(s)}
-                            className={`bg-white rounded-3xl border transition-all p-5 flex flex-col justify-between cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
+                            className={`min-h-[430px] bg-white rounded-3xl border transition-all p-5 flex flex-col justify-between cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
                           >
                             <div>
                               {/* 头部信息 */}
@@ -2696,14 +2840,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     </>
                                   ) : (
                                     <>
-                                      {feedback && (
-                                        <span
-                                          className={`inline-flex h-[24px] items-center rounded-full border px-2 text-[10px] font-black ${getFeedbackStatusStyle(feedback.status)}`}
-                                          title={feedback.insight}
-                                        >
-                                          数据回流 {feedback.winnerCount}/{feedback.launchedCreativeCount}
-                                        </span>
-                                      )}
                                       {/* Read-Only Form badge */}
                                       <span
                                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-extrabold h-[24px] shrink-0 whitespace-nowrap ${
@@ -3156,7 +3292,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             </div>
 
                             {/* 两个部分进度条同时显示 */}
-                            <div className="mt-auto space-y-3 pt-3 border-t border-slate-100">
+                            <div className="mt-auto shrink-0 space-y-3 pt-3 border-t border-slate-100">
                               {/* 1. 需求提交进度 (Requirement 5) */}
                               <div>
                                 {(() => {
@@ -3553,6 +3689,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             Pending: "待审核 Pending",
                             Approved: "审核通过 Approved",
                             Modification: "需求修改",
+                            Unscheduled: "未排期",
                             Scheduled: "已排期",
                             InProgress: "进行中",
                             Completed: "已完成",
@@ -3619,16 +3756,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setFilters({
-                            materialStage: "全部",
-                            broadDirection: "全部",
-                            creativePersonnel: "全部",
-                            priority: "全部",
-                            reqStatus: "全部",
-                            prodStatus: "全部",
-                            assetType: "全部",
-                            scheduleRisk: "全部",
-                          });
+                          setFilters({ ...INITIAL_REQUIREMENT_FILTERS });
                           setCreatedRangeStart("");
                           setCreatedRangeEnd("");
                           setCompletedRangeStart("");
@@ -3727,11 +3855,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         </thead>
                         <tbody className="divide-y divide-slate-50 text-[11px]">
                           {filteredRequirements.map((req) => {
-                            const requirementRisk =
-                              productionInsights.highRiskRequirements.find(
-                                (item) => item.req.id === req.id,
-                              );
-                            const feedback = requirementFeedbackMap.get(req.id);
+                            const requirementRisk = req.isLocalization
+                              ? undefined
+                              : productionInsights.highRiskRequirements.find(
+                                  (item) => item.req.id === req.id,
+                                );
+                            const feedback = req.isLocalization
+                              ? undefined
+                              : requirementFeedbackMap.get(req.id);
 
                             return (
                             <tr
@@ -3909,6 +4040,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     }
                                     className={`px-2 py-1 border rounded text-[10px] font-bold focus:ring-0 cursor-pointer transition-all ${getProdStatusStyle(req.prodStatus)}`}
                                   >
+                                    <option value="Unscheduled">未排期</option>
                                     <option value="Scheduled">已排期</option>
                                     <option value="InProgress">进行中</option>
                                     <option value="Completed">已完成</option>
@@ -3949,26 +4081,17 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <div className="flex justify-center font-sans">
-                                  <button
-                                    onClick={() =>
-                                      updateRequirement(req.id, {
-                                        deliveryStatus:
-                                          req.deliveryStatus === "Delivering"
-                                            ? "Paused"
-                                            : "Delivering",
-                                      })
-                                    }
-                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all font-bold ${req.deliveryStatus === "Delivering" ? "text-emerald-600 bg-emerald-50" : "text-slate-400 bg-slate-50"}`}
+                                  <span
+                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border font-bold ${getDeliveryStatusStyle(req.deliveryStatus)}`}
+                                    title="投放状态由三方投放数据同步，需求界面不可手动修改"
                                   >
                                     {req.deliveryStatus === "Delivering" ? (
                                       <Play className="w-2.5 h-2.5 fill-current" />
                                     ) : (
                                       <Pause className="w-2.5 h-2.5 fill-current" />
                                     )}
-                                    {req.deliveryStatus === "Delivering"
-                                      ? "投放中"
-                                      : "暂停投放"}
-                                  </button>
+                                    {getDeliveryStatusLabel(req.deliveryStatus)}
+                                  </span>
                                 </div>
                               </td>
 
@@ -3987,7 +4110,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     >
                                       <Trash2 className="w-3.5 h-3.5" /> 删除
                                     </button>
-                                    {!req.parentId && (
+                                    {req.level === 0 && (
                                       <button
                                         onClick={(e) =>
                                           handleAddSubRequirement(req, e)
@@ -5301,10 +5424,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     materialStage: "新",
                     broadDirection: "原始玩法",
                     priority: "Mid",
-                    reqStatus: "Draft",
-                    prodStatus: "Scheduled",
-                    deliveryStatus: "Paused",
-                    status: "Draft",
+                    reqStatus: "Pending",
+                    prodStatus: "Unscheduled",
+                    deliveryStatus: "NotLaunched",
+                    status: "Pending",
                     rating: 0,
                     createdAt: new Date()
                       .toISOString()
@@ -5436,14 +5559,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         </div>
       )}
 
-      {createDialogSchedule && (
+      {createDialogSchedule?.scenario === "Localized" && (
         <div className="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200 p-6">
           <div className="bg-white rounded-[28px] shadow-2xl w-full max-w-5xl max-h-[88vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
             <div className="px-7 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-xl bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-700">
-                    {createDialogSchedule.scenario === "Localized" ? "本地化方向" : "常规方向"}
+                    本地化方向
                   </span>
                   <span className="rounded-xl bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">
                     {createDialogSchedule.form === "Image" ? "图片" : createDialogSchedule.form === "Playable" ? "试玩" : "视频"}
@@ -5467,131 +5590,131 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
             <div className="flex-1 overflow-y-auto bg-slate-50/60 p-6 no-scrollbar">
               <div className="space-y-4">
-                <section className="rounded-3xl border border-slate-150 bg-white p-5 shadow-3xs">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-black text-slate-900">选择语言</h4>
-                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
-                        同一批中，每个语言生成 1 条本地化大版本需求。
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">
-                      已选 {selectedLocalizationLanguageMetas.length} 个
-                    </span>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {LOCALIZATION_LANGUAGES.map((item) => {
-                      const selected = selectedLocalizationLanguages.includes(item.code);
-                      return (
-                        <button
-                          key={item.code}
-                          type="button"
-                          onClick={() => toggleLocalizationLanguage(item.code)}
-                          className={`rounded-xl border px-4 py-2 text-xs font-black transition-all ${
-                            selected
-                              ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/15"
-                              : "border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                <section className="flex min-h-[420px] flex-col rounded-3xl border border-slate-150 bg-white shadow-3xs">
-                  <div className="border-b border-slate-100 p-5">
+                  <section className="rounded-3xl border border-slate-150 bg-white p-5 shadow-3xs">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h4 className="text-sm font-black text-slate-900">选择需求</h4>
+                        <h4 className="text-sm font-black text-slate-900">选择语言</h4>
                         <p className="mt-1 text-[11px] font-semibold text-slate-400">
-                          可多选，默认按最近 30 天花费倒序；支持搜索编号、名称和方向。
+                          同一批中，每个语言生成 1 条本地化大版本需求。
                         </p>
                       </div>
-                      <div className="relative w-full sm:w-80">
-                        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                        <input
-                          value={localizationSearchQuery}
-                          onChange={(e) => setLocalizationSearchQuery(e.target.value)}
-                          placeholder="搜索来源需求..."
-                          className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-xs font-bold text-slate-800 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                        />
+                      <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">
+                        已选 {selectedLocalizationLanguageMetas.length} 个
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {LOCALIZATION_LANGUAGES.map((item) => {
+                        const selected = selectedLocalizationLanguages.includes(item.code);
+                        return (
+                          <button
+                            key={item.code}
+                            type="button"
+                            onClick={() => toggleLocalizationLanguage(item.code)}
+                            className={`rounded-xl border px-4 py-2 text-xs font-black transition-all ${
+                              selected
+                                ? "border-indigo-500 bg-indigo-600 text-white shadow-md shadow-indigo-600/15"
+                                : "border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="flex min-h-[420px] flex-col rounded-3xl border border-slate-150 bg-white shadow-3xs">
+                    <div className="border-b border-slate-100 p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-900">选择需求</h4>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                            可多选，默认按最近 30 天花费倒序；支持搜索编号、名称和方向。
+                          </p>
+                        </div>
+                        <div className="relative w-full sm:w-80">
+                          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                          <input
+                            value={localizationSearchQuery}
+                            onChange={(e) => setLocalizationSearchQuery(e.target.value)}
+                            placeholder="搜索来源需求..."
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-xs font-bold text-slate-800 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
-                    {localizationCandidateRequirements.length === 0 ? (
-                      <div className="flex h-full min-h-[240px] items-center justify-center text-center text-xs font-bold text-slate-400">
-                        暂无可作为本地化来源的需求
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
-                        {localizationCandidateRequirements.map((req) => {
-                          const selected = selectedLocalizationSourceIds.includes(req.id);
-                          const recentSpend = recentRequirementSpendMap[req.id] || 0;
-                          const typeLabel = getAssetTypeLabel(req.assetType);
-                          return (
-                            <button
-                              key={req.id}
-                              type="button"
-                              onClick={() => toggleLocalizationSource(req.id)}
-                              className={`w-full rounded-2xl border p-3 text-left transition-all ${
-                                selected
-                                  ? "border-indigo-300 bg-indigo-50 shadow-sm"
-                                  : "border-slate-150 bg-white hover:border-indigo-200 hover:bg-slate-50"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-mono text-xs font-black text-slate-900">
-                                      {req.id}
-                                    </span>
-                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-500">
-                                      {req.language.toUpperCase()}
-                                    </span>
-                                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
-                                      req.assetType === "Image"
-                                        ? "bg-amber-50 text-amber-700"
-                                        : req.assetType === "Playable"
-                                          ? "bg-emerald-50 text-emerald-700"
-                                          : "bg-indigo-50 text-indigo-700"
-                                    }`}>
-                                      {typeLabel}
-                                    </span>
-                                    {selected && (
-                                      <CheckCircle className="h-4 w-4 text-indigo-600" />
-                                    )}
+                    <div className="min-h-0 flex-1 overflow-y-auto p-3 no-scrollbar">
+                      {localizationCandidateRequirements.length === 0 ? (
+                        <div className="flex h-full min-h-[240px] items-center justify-center text-center text-xs font-bold text-slate-400">
+                          暂无可作为本地化来源的需求
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+                          {localizationCandidateRequirements.map((req) => {
+                            const selected = selectedLocalizationSourceIds.includes(req.id);
+                            const recentSpend = recentRequirementSpendMap[req.id] || 0;
+                            const typeLabel = getAssetTypeLabel(req.assetType);
+                            return (
+                              <button
+                                key={req.id}
+                                type="button"
+                                onClick={() => toggleLocalizationSource(req.id)}
+                                className={`w-full rounded-2xl border p-3 text-left transition-all ${
+                                  selected
+                                    ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                                    : "border-slate-150 bg-white hover:border-indigo-200 hover:bg-slate-50"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-mono text-xs font-black text-slate-900">
+                                        {req.id}
+                                      </span>
+                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-500">
+                                        {req.language.toUpperCase()}
+                                      </span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${
+                                        req.assetType === "Image"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : req.assetType === "Playable"
+                                            ? "bg-emerald-50 text-emerald-700"
+                                            : "bg-indigo-50 text-indigo-700"
+                                      }`}>
+                                        {typeLabel}
+                                      </span>
+                                      {selected && (
+                                        <CheckCircle className="h-4 w-4 text-indigo-600" />
+                                      )}
+                                    </div>
+                                    <div className="mt-1 truncate text-xs font-black text-slate-700">
+                                      {req.name}
+                                    </div>
+                                    <div className="mt-1 truncate text-[10px] font-bold text-slate-400">
+                                      {req.direction}
+                                    </div>
                                   </div>
-                                  <div className="mt-1 truncate text-xs font-black text-slate-700">
-                                    {req.name}
-                                  </div>
-                                  <div className="mt-1 truncate text-[10px] font-bold text-slate-400">
-                                    {req.direction}
+                                  <div className="shrink-0 text-right">
+                                    <div className="text-[9px] font-black text-slate-400">近 30 天花费</div>
+                                    <div className="mt-1 font-mono text-xs font-black text-emerald-600">
+                                      {formatCurrencyCompact(recentSpend)}
+                                    </div>
                                   </div>
                                 </div>
-                                <div className="shrink-0 text-right">
-                                  <div className="text-[9px] font-black text-slate-400">近 30 天花费</div>
-                                  <div className="mt-1 font-mono text-xs font-black text-emerald-600">
-                                    {formatCurrencyCompact(recentSpend)}
-                                  </div>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </section>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
-                {localizationCreateDisabledReason && (
-                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs font-black text-rose-600">
-                    {localizationCreateDisabledReason}
-                  </div>
-                )}
+                  {localizationCreateDisabledReason && (
+                    <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs font-black text-rose-600">
+                      {localizationCreateDisabledReason}
+                    </div>
+                  )}
               </div>
             </div>
 
@@ -5933,10 +6056,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {associatedReqs.map((req) => {
-                              const requirementRisk =
-                                productionInsights.highRiskRequirements.find(
-                                  (item) => item.req.id === req.id,
-                                );
+                              const requirementRisk = req.isLocalization
+                                ? undefined
+                                : productionInsights.highRiskRequirements.find(
+                                    (item) => item.req.id === req.id,
+                                  );
 
                               return (
                               <tr
@@ -6116,6 +6240,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     }
 	                                    className={`min-w-[82px] whitespace-nowrap px-2 py-1 border rounded-lg text-[10px] font-bold focus:ring-1 focus:ring-slate-150 cursor-pointer tracking-tight transition-all ${getProdStatusStyle(req.prodStatus)}`}
 	                                  >
+                                      <option value="Unscheduled">未排期</option>
 	                                    <option value="Scheduled">已排期</option>
 	                                    <option value="InProgress">
 	                                      进行中
@@ -6165,33 +6290,21 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <div className="flex justify-center">
-                                    <button
-                                      onClick={() =>
-                                        updateRequirement(req.id, {
-                                          deliveryStatus:
-                                            req.deliveryStatus === "Delivering"
-                                              ? "Paused"
-                                              : "Delivering",
-                                        })
-                                      }
-                                      className={`flex min-w-[76px] items-center justify-center gap-1.5 whitespace-nowrap px-3 py-1 bg-white hover:bg-slate-50 border rounded-xl shadow-3xs transition-all font-black text-[10px] ${
-                                        req.deliveryStatus === "Delivering"
-                                          ? "text-emerald-600 border-emerald-250 bg-emerald-50/20"
-                                          : "text-slate-400 border-slate-200"
-                                      }`}
+                                    <span
+                                      className={`flex min-w-[76px] items-center justify-center gap-1.5 whitespace-nowrap px-3 py-1 border rounded-xl shadow-3xs font-black text-[10px] ${getDeliveryStatusStyle(req.deliveryStatus)}`}
+                                      title="投放状态由三方投放数据同步，需求界面不可手动修改"
                                     >
                                       {req.deliveryStatus === "Delivering" ? (
                                         <>
                                           <Play className="w-2.5 h-2.5 fill-current text-emerald-600" />
-                                          <span>投放中</span>
                                         </>
 	                                      ) : (
 	                                        <>
 	                                          <Pause className="w-2.5 h-2.5 fill-current text-slate-400" />
-	                                          <span>暂停投放</span>
 	                                        </>
 	                                      )}
-                                    </button>
+                                      <span>{getDeliveryStatusLabel(req.deliveryStatus)}</span>
+                                    </span>
                                   </div>
                                 </td>
 

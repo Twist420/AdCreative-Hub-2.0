@@ -171,6 +171,7 @@ const REQUIREMENT_STATUSES = [
 ];
 
 const PRODUCTION_STATUSES = [
+  { id: 'Unscheduled', name: '未排期' },
   { id: 'Scheduled', name: '已排期' },
   { id: 'InProgress', name: '进行中' },
   { id: 'Completed', name: '已完成' },
@@ -285,9 +286,10 @@ const getProductionTypeByRole = (role: string): ProductionTask['type'] => {
 
 const summarizeProductionStatus = (req: Requirement): RequirementProdStatus => {
   const tasks = req.tasks || [];
-  if (tasks.length === 0) return req.prodStatus || 'Scheduled';
+  if (tasks.length === 0) return req.prodStatus || 'Unscheduled';
   if (tasks.every(task => task.status === '已完成')) return 'Completed';
   if (tasks.some(task => task.status === '制作中')) return 'InProgress';
+  if (req.prodStatus === 'Unscheduled') return 'Unscheduled';
   return 'Scheduled';
 };
 

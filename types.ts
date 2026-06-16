@@ -108,8 +108,8 @@ export interface KeywordAnalysisData {
 
 export type RequirementPriority = 'Low' | 'Mid' | 'High' | 'Highest';
 export type RequirementReqStatus = 'Draft' | 'Pending' | 'Approved' | 'Modification';
-export type RequirementProdStatus = 'Scheduled' | 'InProgress' | 'Completed';
-export type RequirementDeliveryStatus = 'Delivering' | 'Paused';
+export type RequirementProdStatus = 'Unscheduled' | 'Scheduled' | 'InProgress' | 'Completed';
+export type RequirementDeliveryStatus = 'NotLaunched' | 'Delivering' | 'Paused';
 
 export interface ProjectInfo {
   name: string;
