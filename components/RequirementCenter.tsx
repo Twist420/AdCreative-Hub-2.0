@@ -2724,13 +2724,19 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <div
                             key={s.id}
                             onClick={() => setSelectedScheduleForModal(s)}
-                            className={`min-h-[430px] bg-white rounded-3xl border transition-all p-5 flex flex-col justify-between cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
+                            className={`h-[470px] bg-white rounded-3xl border transition-all p-5 flex flex-col justify-between cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
                           >
                             <div>
                               {/* 头部信息 */}
-                              <div className="flex flex-col min-[480px]:flex-row min-[480px]:items-start justify-between gap-2 mb-3 pr-7 min-[480px]:pr-0">
+                              <div className={`mb-3 ${
+                                isEditing
+                                  ? "flex items-start gap-1"
+                                  : "flex flex-col pr-9 min-[480px]:flex-row min-[480px]:items-start justify-between gap-2"
+                              }`}>
                                 <div
-                                  className="flex min-w-0 flex-wrap gap-1.5"
+                                  className={`flex min-w-0 gap-1.5 ${
+                                    isEditing ? "flex-nowrap" : "flex-wrap"
+                                  }`}
                                   onClick={
                                     isEditing
                                       ? (e: React.MouseEvent) =>
@@ -2741,7 +2747,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   {isEditing ? (
                                     <>
                                       {/* Form selector dropdown inside Edit Mode */}
-                                      <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-slate-200 bg-white text-slate-705 text-[10px] font-bold h-[24px]">
+                                      <div className="inline-flex h-[24px] w-[50px] shrink-0 items-center rounded-full border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-bold text-slate-705">
                                         <select
                                           value={s.form || "Video"}
                                           onChange={(e) =>
@@ -2749,7 +2755,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                               form: e.target.value as any,
                                             })
                                           }
-                                          className="bg-transparent border-none p-0 focus:ring-0 text-[10px] font-extrabold cursor-pointer focus:outline-none w-10 text-inherit"
+                                          className="w-full cursor-pointer border-none bg-transparent p-0 text-[10px] font-extrabold text-inherit focus:outline-none focus:ring-0"
                                         >
                                           <option
                                             value="Playable"
@@ -2773,7 +2779,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       </div>
 
                                       {/* Broad direction selector dropdown inside Edit Mode */}
-                                      <div className="inline-flex items-center px-1.5 py-0.5 rounded-full border border-slate-200 bg-white text-slate-705 text-[10px] font-bold h-[24px]">
+                                      <div className="inline-flex h-[24px] w-[62px] shrink-0 items-center rounded-full border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-bold text-slate-705">
                                         <select
                                           value={s.broadDirection || "原始玩法"}
                                           onChange={(e) =>
@@ -2782,7 +2788,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                                 .value as any,
                                             })
                                           }
-                                          className="bg-transparent border-none p-0 focus:ring-0 text-[10px] font-extrabold cursor-pointer focus:outline-none text-inherit"
+                                          className="w-full cursor-pointer border-none bg-transparent p-0 text-[10px] font-extrabold text-inherit focus:outline-none focus:ring-0"
                                         >
                                           <option
                                             value="3D玩法"
@@ -2806,7 +2812,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       </div>
 
                                       {/* Material Stage selector dropdown inside Edit Mode (Requirement 3) */}
-                                      <div className="inline-flex items-center px-1.5 py-0.5 rounded-full border border-slate-200 bg-white text-slate-705 text-[10px] font-bold h-[24px]">
+                                      <div className="inline-flex h-[24px] w-[38px] shrink-0 items-center rounded-full border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-bold text-slate-705">
                                         <select
                                           value={s.materialStage || "新"}
                                           onChange={(e) =>
@@ -2815,7 +2821,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                                 .value as any,
                                             })
                                           }
-                                          className="bg-transparent border-none p-0 focus:ring-0 text-[10px] font-extrabold cursor-pointer focus:outline-none text-inherit"
+                                          className="w-full cursor-pointer border-none bg-transparent p-0 text-[10px] font-extrabold text-inherit focus:outline-none focus:ring-0"
                                         >
                                           <option
                                             value="新"
@@ -2894,7 +2900,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </div>
 
                                 <div
-                                  className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 self-start min-[480px]:self-auto"
+                                  className={`flex shrink-0 items-center justify-end gap-1.5 self-start min-[480px]:self-auto ${
+                                    isEditing ? "flex-nowrap" : "flex-wrap"
+                                  }`}
                                   onClick={
                                     isEditing
                                       ? (e: React.MouseEvent) =>
@@ -2911,7 +2919,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           priority: e.target.value as any,
                                         })
                                       }
-                                      className={`px-2 py-0.5 rounded-full border text-[10px] font-bold cursor-pointer h-[24px] outline-none shrink-0 whitespace-nowrap ${
+                                      className={`h-[24px] w-[66px] shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-1 py-0.5 text-[10px] font-bold outline-none ${
                                         s.priority === "Highest"
                                           ? "bg-rose-50 border-rose-200 text-rose-700 font-extrabold"
                                           : s.priority === "High"
@@ -2958,10 +2966,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                         setEditingScheduleId(s.id);
                                       }
                                     }}
-                                    className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold cursor-pointer h-[24px] flex items-center gap-1 transition-all shrink-0 whitespace-nowrap ${
+                                    className={`flex h-[24px] shrink-0 cursor-pointer items-center justify-center gap-1 rounded-full border py-0.5 text-[10px] font-bold whitespace-nowrap transition-all ${
                                       isEditing
-                                        ? "bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-emerald-700 font-black shadow-xs"
-                                        : "bg-indigo-50 border-indigo-200 hover:bg-indigo-100 text-indigo-700 hover:border-indigo-300 shadow-3xs"
+                                        ? "w-[50px] bg-emerald-50 border-emerald-200 px-1 hover:bg-emerald-100 text-emerald-700 font-black shadow-xs"
+                                        : "bg-indigo-50 border-indigo-200 px-2.5 hover:bg-indigo-100 text-indigo-700 hover:border-indigo-300 shadow-3xs"
                                     }`}
                                     title={
                                       isEditing
@@ -2986,7 +2994,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                               {/* 方向 & 目标 - 采用精美的高级背景色块作为底色 */}
                               <div
-                                className="mb-3"
+                                className="mb-2"
                                 onClick={
                                   isEditing
                                     ? (e: React.MouseEvent) =>
@@ -3003,12 +3011,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       })
                                     }
                                     placeholder="输入方向名称..."
-                                    className="text-sm font-black text-slate-850 tracking-tight leading-snug bg-slate-50 hover:bg-slate-100/80 focus:bg-white focus:ring-1 focus:ring-indigo-150 p-1.5 w-full rounded-xl border border-slate-200 focus:border-indigo-500 focus:outline-none transition-all"
+                                    className="h-[38px] w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-0 text-sm font-black leading-none tracking-tight text-slate-850 transition-all hover:bg-slate-100/80 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-150"
                                     title="修改方向名称"
                                   />
                                 ) : (
                                   <div
-                                    className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 shadow-3xs ${
+                                    className={`h-[38px] px-3 py-0 rounded-xl border flex items-center justify-between gap-2 shadow-3xs ${
                                       s.priority === "Highest"
                                         ? "bg-rose-50/70 text-rose-900 border-rose-150/60"
                                         : s.priority === "High"
@@ -3042,7 +3050,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               </div>
 
                               <div
-                                className="mb-4 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100 flex items-start gap-1"
+                                className="mb-3 flex h-[34px] items-center gap-1 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-0"
                                 onClick={
                                   isEditing
                                     ? (e: React.MouseEvent) =>
@@ -3050,7 +3058,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     : undefined
                                 }
                               >
-                                <Target className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                                <Target className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                 {isEditing ? (
                                   <input
                                     value={s.validationGoal || ""}
@@ -3060,7 +3068,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       })
                                     }
                                     placeholder="关联测试假说或检验目标..."
-                                    className="bg-white text-[11px] text-slate-600 font-bold p-1 w-[92%] border border-slate-200 hover:border-slate-300 focus:border-indigo-505 focus:outline-none rounded transition-all"
+                                    className="h-7 w-full rounded border border-slate-200 bg-white px-2 py-0 text-[11px] font-bold text-slate-600 transition-all hover:border-slate-300 focus:border-indigo-505 focus:outline-none"
                                     title="修改测试目标"
                                   />
                                 ) : (
@@ -3075,7 +3083,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               </div>
 
                               {/* 属性网格 */}
-                              <div className="grid grid-cols-1 min-[440px]:grid-cols-2 gap-y-2.5 gap-x-2 text-[10px] py-2.5 border-t border-b border-slate-100/70 mb-4 bg-slate-50/30 p-2.5 rounded-xl">
+                              <div className="mb-3 grid grid-cols-1 gap-x-2 gap-y-2 rounded-xl border-t border-b border-slate-100/70 bg-slate-50/30 p-2 py-2 text-[10px] min-[440px]:grid-cols-2">
                                 {/* 负责人 */}
                                 <div
                                   className="flex items-center gap-1 text-slate-600"
@@ -3597,7 +3605,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     ),
                                   );
                               }}
-                              className="absolute top-2.5 right-2.5 p-1 bg-white/95 hover:bg-rose-50 text-slate-350 hover:text-rose-600 rounded-lg border border-slate-200 opacity-0 group-hover:opacity-100 transition-all shadow-3xs"
+                              className={`absolute top-2.5 right-2.5 rounded-lg border border-slate-200 bg-white/95 p-1 text-slate-350 shadow-3xs transition-all hover:bg-rose-50 hover:text-rose-600 ${
+                                isEditing
+                                  ? "hidden"
+                                  : "opacity-0 group-hover:opacity-100"
+                              }`}
                               title="删除此方向"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
