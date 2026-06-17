@@ -40,4 +40,4 @@
 
 ## 当前迁移说明
 
-项目从 `/Users/fourteen/Documents/Codex/AdCreative-Hub-2.0` 导入到当前仓库。原目录未删除，可作为短期备份来源。
+当前 Git 工作目录固定为 `/Users/fourteen/Documents/广告需求平台`。旧目录 `/Users/fourteen/Documents/Codex/AdCreative-Hub-2.0` 仅作为历史备份来源，不再作为默认开发或提交入口。
