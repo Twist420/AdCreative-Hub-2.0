@@ -884,24 +884,45 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
   );
 
   const renderVersionSegmentCard = (version: VersionDraft, index: number, disabled = false) => (
-    <div key={version.version} className="flex min-h-[420px] w-[270px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-3">
-        <span className="shrink-0 rounded-lg bg-indigo-500 px-2 py-1 text-[10px] font-black text-white shadow-sm">v{version.version}</span>
-        <input
-          value={version.name}
-          onChange={(event) => updateVersion(version.version, { name: event.target.value })}
-          disabled={disabled}
-          className="min-w-0 flex-1 rounded-xl border border-slate-150 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-700 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white disabled:bg-slate-50/70"
-          placeholder="版本名称"
-        />
-        <button type="button" onClick={() => duplicateVersion(version)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-400 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600" title="复制版本">
-          <Copy className="h-3.5 w-3.5" />
-        </button>
-        {index > 0 && (
-          <button type="button" onClick={() => deleteVersion(version.version)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-300 hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500" title="删除版本">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
+    <div key={version.version} className="flex min-h-[460px] w-[300px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 bg-slate-50/70 px-3.5 py-3">
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <span className="inline-flex h-8 items-center rounded-xl bg-indigo-600 px-3 text-[11px] font-black text-white shadow-3xs">
+            v{version.version}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={() => duplicateVersion(version)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-400 shadow-4xs hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600" title="复制版本">
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+            {index > 0 && (
+              <button type="button" onClick={() => deleteVersion(version.version)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-300 shadow-4xs hover:border-rose-100 hover:bg-rose-50 hover:text-rose-500" title="删除版本">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="block space-y-1">
+            <FieldLabel>版本名称</FieldLabel>
+            <input
+              value={version.name}
+              onChange={(event) => updateVersion(version.version, { name: event.target.value })}
+              disabled={disabled}
+              className="h-9 w-full rounded-xl border border-slate-150 bg-white px-3 text-[11px] font-black text-slate-700 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white disabled:bg-slate-50/70"
+              placeholder="填写版本名称"
+            />
+          </label>
+          <label className="block space-y-1">
+            <FieldLabel>验证目的</FieldLabel>
+            <input
+              value={version.goal}
+              onChange={(event) => updateVersion(version.version, { goal: event.target.value })}
+              disabled={disabled}
+              className="h-9 w-full rounded-xl border border-slate-150 bg-white px-3 text-[11px] font-bold text-slate-600 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white disabled:bg-slate-50/70"
+              placeholder="填写这一版要验证的卖点或目标"
+            />
+          </label>
+        </div>
       </div>
       <ReferenceResourceBox
             assetIds={version.references}
@@ -991,14 +1012,26 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
       <div className="space-y-4">
         {versionDrafts.map((version, index) => (
           <div key={version.version} className="overflow-hidden border-t border-slate-200 bg-white pt-4">
-            <div className="flex flex-wrap items-center gap-3 px-1 pb-4">
-              <span className="shrink-0 rounded-xl bg-indigo-600 px-3 py-1.5 text-[11px] font-black text-white shadow-3xs">v{version.version}</span>
-              <input
-                value={version.name}
-                onChange={(event) => updateVersion(version.version, { name: event.target.value })}
-                className="min-w-[240px] flex-1 rounded-2xl border border-slate-150 bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white"
-                placeholder="填写版本名称"
-              />
+            <div className="flex flex-wrap items-end gap-3 px-1 pb-4">
+              <span className="shrink-0 rounded-lg bg-indigo-500 px-3 py-1.5 text-[10px] font-black text-white shadow-sm">v{version.version}</span>
+              <label className="min-w-[240px] flex-1 space-y-1">
+                <FieldLabel>版本名称</FieldLabel>
+                <input
+                  value={version.name}
+                  onChange={(event) => updateVersion(version.version, { name: event.target.value })}
+                  className="w-full rounded-2xl border border-slate-150 bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white"
+                  placeholder="填写版本名称"
+                />
+              </label>
+              <label className="min-w-[240px] flex-1 space-y-1">
+                <FieldLabel>验证目标</FieldLabel>
+                <input
+                  value={version.goal}
+                  onChange={(event) => updateVersion(version.version, { goal: event.target.value })}
+                  className="w-full rounded-2xl border border-slate-150 bg-slate-50 px-4 py-2.5 text-xs font-bold text-slate-600 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white"
+                  placeholder="填写这一版要验证的卖点、画面或转化目标"
+                />
+              </label>
               <button type="button" onClick={() => duplicateVersion(version)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-150 bg-white text-slate-400 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600" title="复制版本">
                 <Copy className="h-4 w-4" />
               </button>

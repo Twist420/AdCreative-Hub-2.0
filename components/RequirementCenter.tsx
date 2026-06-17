@@ -12,14 +12,12 @@ import {
   CreativeScenario,
   CreativeDirectionType,
   FinishedCreativePerformance,
-  RequirementFeedbackSummary,
   AssetVersionItem,
 } from "../types";
 import {
   generateRequirements,
   generateSchedules,
   generateFinishedCreativePerformance,
-  summarizeRequirementFeedback,
 } from "../services/mockData";
 import {
   Plus,
@@ -33,6 +31,7 @@ import {
   User,
   Filter,
   MoreHorizontal,
+  Copy,
   AlertCircle,
   XCircle,
   X,
@@ -104,6 +103,56 @@ const PRODUCERS: Producer[] = [
   { name: "李嘉鑫", alias: "ljx", group: "程序", status: "在职" },
   { name: "肖环宇", alias: "xhy", group: "程序", status: "在职" }
 ];
+
+const CREATIVE_PEOPLE = ["唐欣怡", "吉意煊", "马嘉良"];
+
+const PERSON_AVATAR_URLS: Record<string, string> = {
+  "唐欣怡": "/avatars/tang-xinyi.png",
+  "吉意煊": "/avatars/ji-yixuan.png",
+  "马嘉良": "/avatars/ma-jialiang.png",
+  "张欢": "/avatars/zhang-huan.png",
+  "何思乔": "/avatars/he-siqiao.png"
+};
+
+const getPersonAvatarUrl = (name?: string) => {
+  const normalizedName = name || "unknown";
+  return (
+    PERSON_AVATAR_URLS[normalizedName] ||
+    `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${encodeURIComponent(normalizedName)}`
+  );
+};
+
+const PersonBadge: React.FC<{
+  name?: string;
+  size?: "xs" | "sm" | "md";
+  muted?: boolean;
+  className?: string;
+}> = ({ name, size = "sm", muted = false, className = "" }) => {
+  const displayName = name || "未指派";
+  const sizeClass =
+    size === "xs" ? "h-5 w-5" : size === "md" ? "h-8 w-8" : "h-6 w-6";
+  const textClass =
+    size === "xs" ? "text-[10px]" : size === "md" ? "text-sm" : "text-xs";
+
+  return (
+    <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
+      <img
+        src={getPersonAvatarUrl(displayName)}
+        alt={displayName}
+        className={`${sizeClass} shrink-0 rounded-full border border-slate-200 bg-slate-50 object-cover`}
+        referrerPolicy="no-referrer"
+      />
+      <span
+        className={`truncate font-extrabold ${
+          muted ? "text-slate-500" : "text-slate-705"
+        } ${textClass}`}
+        title={displayName}
+      >
+        {displayName}
+      </span>
+    </span>
+  );
+};
 
 interface PipelineStage {
   name: string;
@@ -439,6 +488,22 @@ const parseRequirementVersionId = (id: string) => {
   };
 };
 
+const getRequirementMajorId = (req: Pick<Requirement, "id" | "assetIndex" | "assetType">) => {
+  const parsed = parseRequirementVersionId(req.id);
+  if (parsed) return parsed.majorId;
+  const prefix = req.assetType === "Image" ? "tp" : req.assetType === "Playable" ? "sw" : "cp";
+  return `${prefix}${req.assetIndex}`;
+};
+
+const formatRequirementId = (
+  assetType: CreativeForm,
+  assetIndex: number,
+  assetVersion: string,
+) => {
+  const prefix = assetType === "Image" ? "tp" : assetType === "Playable" ? "sw" : "cp";
+  return `${prefix}${assetIndex}-${assetVersion}`;
+};
+
 const formatCurrencyCompact = (value: number) => {
   if (value >= 10000) return `$${(value / 10000).toFixed(1)}w`;
   return `$${Math.round(value).toLocaleString()}`;
@@ -510,14 +575,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   const finishedCreativePerformance = useMemo<FinishedCreativePerformance[]>(
     () => generateFinishedCreativePerformance(requirements),
     [requirements],
-  );
-  const requirementFeedbackSummaries = useMemo<RequirementFeedbackSummary[]>(
-    () => summarizeRequirementFeedback(finishedCreativePerformance),
-    [finishedCreativePerformance],
-  );
-  const requirementFeedbackMap = useMemo(
-    () => new Map(requirementFeedbackSummaries.map((item) => [item.requirementId, item])),
-    [requirementFeedbackSummaries],
   );
   const recentRequirementSpendMap = useMemo(() => {
     const sinceDate = addDaysToDateString(todayDateString, -30);
@@ -612,6 +669,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   const [selectedCreateType, setSelectedCreateType] =
     useState<CreativeForm>("Video");
   const [createDialogScheduleId, setCreateDialogScheduleId] = useState<string | null>(null);
+  const [pendingIteration, setPendingIteration] = useState<{
+    mode: "single" | "all";
+    sourceId: string;
+  } | null>(null);
   const [selectedLocalizationLanguages, setSelectedLocalizationLanguages] = useState<string[]>(["de"]);
   const [selectedLocalizationSourceIds, setSelectedLocalizationSourceIds] = useState<string[]>([]);
   const [localizationSearchQuery, setLocalizationSearchQuery] = useState("");
@@ -949,6 +1010,99 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     return usedIndexes.length > 0 ? Math.max(...usedIndexes) + 1 : 8000;
   };
 
+  const getNextAssetIndexForType = (assetType: CreativeForm) => {
+    const prefix = getRequirementIdPrefix(assetType);
+    const usedIndexes = requirements
+      .filter((req) => req.id.startsWith(prefix))
+      .map((req) => req.assetIndex)
+      .filter((index) => Number.isFinite(index));
+    return usedIndexes.length > 0 ? Math.max(...usedIndexes) + 1 : 3377;
+  };
+
+  const getRequirementVersionGroup = (source: Requirement) => {
+    const majorId = getRequirementMajorId(source);
+    return requirements
+      .filter((req) => getRequirementMajorId(req) === majorId)
+      .sort((a, b) => {
+        const aVersion = parseRequirementVersionId(a.id)?.version || Number.parseInt(a.assetVersion, 10) || 0;
+        const bVersion = parseRequirementVersionId(b.id)?.version || Number.parseInt(b.assetVersion, 10) || 0;
+        return aVersion - bVersion;
+      });
+  };
+
+  const isBlankRequirementDraft = (req: Requirement) => {
+    if (req.reqStatus !== "Draft") return false;
+    const hasCustomName =
+      req.name.trim() &&
+      !["新子需求", "未命名子需求", "子需求"].some((marker) =>
+        req.name.includes(marker),
+      );
+    return (
+      !hasCustomName &&
+      !(req.description || "").trim() &&
+      !(req.script || "").trim() &&
+      (req.previews || []).length === 0
+    );
+  };
+
+  const stripBlankVersionsForReview = (
+    list: Requirement[],
+    activeRequirement: Requirement,
+  ) => {
+    const activeMajorId = getRequirementMajorId(activeRequirement);
+    return list.filter(
+      (item) =>
+        item.id === activeRequirement.id ||
+        getRequirementMajorId(item) !== activeMajorId ||
+        !isBlankRequirementDraft(item),
+    );
+  };
+
+  const buildRequirementIteration = (
+    source: Requirement,
+    schedule: CreativeSchedule,
+    assetIndex: number,
+    version: string,
+  ): Requirement => {
+    const assetType = schedule.form || source.assetType;
+    const broadDirection =
+      schedule.broadDirection ||
+      (schedule.directionType?.includes("3D")
+        ? "3D玩法"
+        : schedule.directionName?.includes("大字报")
+          ? "大字报"
+          : source.broadDirection);
+    const nextId = formatRequirementId(assetType, assetIndex, version);
+
+    return {
+      ...source,
+      id: nextId,
+      parentId: undefined,
+      parentRequirementId: source.id,
+      sourceRequirementId: source.id,
+      sourceRequirementIds: [source.id],
+      scheduleId: schedule.id,
+      assetType,
+      assetIndex,
+      assetVersion: version,
+      materialStage: "迭",
+      broadDirection,
+      creativePersonnel: schedule.owner || source.creativePersonnel,
+      owner: schedule.owner || source.owner,
+      direction: schedule.directionName || source.direction,
+      channels: schedule.channels?.length ? schedule.channels : source.channels,
+      priority: schedule.priority || source.priority,
+      reqStatus: "Pending",
+      prodStatus: "Unscheduled",
+      deliveryStatus: "NotLaunched",
+      status: "Pending",
+      rating: 0,
+      createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+      completedAt: "",
+      tasks: createDefaultProductionTasks(nextId, assetType, broadDirection),
+    };
+  };
+
   const getFinishedReferenceIdsForRequirement = (source: Requirement) => {
     const rows = finishedCreativePerformance.filter(
       (item) => item.requirementId === source.id,
@@ -1161,7 +1315,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     null,
   );
 
-  const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(true);
+  const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(false);
   const weekFilterRef = useRef<HTMLDivElement>(null);
   const productionInsights = useMemo(() => {
     const weekStart = todayDateString;
@@ -1757,47 +1911,91 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
+    const group = getRequirementVersionGroup(parent);
+    const blankChild = group.find(
+      (item) => item.id !== parent.id && isBlankRequirementDraft(item),
+    );
+    if (blankChild) {
+      setSelectedReq(blankChild);
+      return;
+    }
+    const majorId = getRequirementMajorId(parent);
+    const nextVersionNumber =
+      group.reduce((maxVersion, item) => {
+        const parsedVersion =
+          parseRequirementVersionId(item.id)?.version ||
+          Number.parseInt(item.assetVersion, 10) ||
+          0;
+        return Math.max(maxVersion, parsedVersion);
+      }, 0) + 1;
+    const assetVersion = String(nextVersionNumber).padStart(2, "0");
+    const nextId = `${majorId}-${assetVersion}`;
     const newReq: Requirement = {
-      id: `${parent.id}-sub${Math.floor(Math.random() * 100)}`,
+      ...parent,
+      id: nextId,
       parentId: parent.id,
-      scheduleId: parent.scheduleId,
-      name: `子需求 - ${parent.name}`,
-      assetType: parent.assetType,
-      assetIndex: parent.assetIndex,
-      assetVersion: `${parseInt(parent.assetVersion) + 1}`.padStart(2, "0"),
-      projectName: parent.projectName,
-      materialStage: parent.materialStage,
-      broadDirection: parent.broadDirection,
-      creativePersonnel: parent.creativePersonnel,
-      productionPersonnel: parent.productionPersonnel,
-      language: parent.language,
-      channels: parent.channels,
-      testDirections: parent.testDirections,
-      dimensions: parent.dimensions,
+      parentRequirementId: parent.id,
+      name: "新子需求",
+      assetVersion,
       previews: [],
-      owner: parent.owner,
-      duration: "0:30",
-      goal: "子需求描述",
-      template: parent.template,
-      has3DPlot: parent.has3DPlot,
-      direction: parent.direction,
-      priority: parent.priority,
-      reqStatus: "Pending",
+      description: "",
+      script: "",
+      sections: undefined,
+      reqStatus: "Draft",
       prodStatus: "Unscheduled",
       deliveryStatus: "NotLaunched",
-      status: "Pending",
+      status: "Draft",
       rating: 0,
       createdAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       completedAt: "",
-      stageType: parent.stageType,
-      script: "",
-      aTags: [],
-      bTags: [],
-      difficulty: "C",
       tasks: [],
     };
     setRequirements([newReq, ...requirements]);
     setSelectedReq(newReq);
+  };
+
+  const openIterationDirectionSelector = (
+    source: Requirement,
+    mode: "single" | "all",
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+    setSelectedCreateType(source.assetType);
+    setPendingIteration({ mode, sourceId: source.id });
+  };
+
+  const closeIterationDirectionSelector = () => {
+    setPendingIteration(null);
+  };
+
+  const createIterationFromSchedule = (scheduleId: string) => {
+    const source = requirements.find((item) => item.id === pendingIteration?.sourceId);
+    const schedule = schedules.find((item) => item.id === scheduleId);
+    if (!source || !schedule || !pendingIteration) return;
+
+    const sources =
+      pendingIteration.mode === "all"
+        ? getRequirementVersionGroup(source)
+        : [source];
+    const assetType = schedule.form || source.assetType;
+    const assetIndex = getNextAssetIndexForType(assetType);
+    const newRequirements = sources.map((item, index) => {
+      const sourceVersion =
+        pendingIteration.mode === "all"
+          ? parseRequirementVersionId(item.id)?.version ||
+            Number.parseInt(item.assetVersion, 10) ||
+            index + 1
+          : 1;
+      const version = String(sourceVersion).padStart(2, "0");
+      return buildRequirementIteration(item, schedule, assetIndex, version);
+    });
+
+    setRequirements((prev) => [...newRequirements, ...prev]);
+    setSelectedReq(newRequirements[0] || null);
+    setSearchQuery(formatRequirementId(assetType, assetIndex, "01").split("-")[0]);
+    resetCoordinatedFilters();
+    setCombinedSubView("list");
+    closeIterationDirectionSelector();
   };
 
   const handleAddRequirementFromSchedule = (scheduleId: string) => {
@@ -1869,21 +2067,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     if (status === "Delivering") return "投放中";
     if (status === "Paused") return "暂停投放";
     return "未投放";
-  };
-
-  const getFeedbackStatusStyle = (status: string) => {
-    switch (status) {
-      case "Winner":
-        return "border-emerald-200 bg-emerald-50 text-emerald-700";
-      case "Failed":
-        return "border-rose-200 bg-rose-50 text-rose-700";
-      case "Flat":
-        return "border-amber-200 bg-amber-50 text-amber-700";
-      case "Paused":
-        return "border-slate-200 bg-slate-100 text-slate-500";
-      default:
-        return "border-indigo-200 bg-indigo-50 text-indigo-700";
-    }
   };
 
   const getWeekRange = (dateStr: string) => {
@@ -2031,9 +2214,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       const next = { ...req, ...updates };
       return { ...next, prodStatus: summarizeProductionStatus(next) };
     };
-    setRequirements((prev) =>
-      prev.map((r) => (r.id === id ? mergeRequirement(r) : r)),
-    );
+    const entersReview =
+      updates.reqStatus !== undefined && updates.reqStatus !== "Draft";
+    setRequirements((prev) => {
+      const nextList = prev.map((r) => (r.id === id ? mergeRequirement(r) : r));
+      const active = nextList.find((item) => item.id === id);
+      return entersReview && active
+        ? stripBlankVersionsForReview(nextList, active)
+        : nextList;
+    });
     setSelectedReq((prev) => (prev?.id === id ? mergeRequirement(prev) : prev));
   };
 
@@ -2043,9 +2232,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       prodStatus: summarizeProductionStatus(updatedReq),
     };
     setSelectedReq(normalizedReq);
-    setRequirements((prev) =>
-      prev.map((r) => (r.id === normalizedReq.id ? normalizedReq : r)),
-    );
+    setRequirements((prev) => {
+      const nextList = prev.map((r) =>
+        r.id === normalizedReq.id ? normalizedReq : r,
+      );
+      return normalizedReq.reqStatus !== "Draft"
+        ? stripBlankVersionsForReview(nextList, normalizedReq)
+        : nextList;
+    });
   }, []);
 
   const handleRequirementDetailDelete = useCallback((requirementId: string) => {
@@ -3099,23 +3293,33 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     负责:
                                   </span>
                                   {isEditing ? (
-                                    <select
-                                      value={s.owner || ""}
-                                      onChange={(e) =>
-                                        updateSchedule(s.id, {
-                                          owner: e.target.value,
-                                        })
-                                      }
-                                      className="bg-white border border-slate-200 hover:border-slate-300 px-1 py-0.5 rounded text-[10px] font-extrabold text-slate-705 focus:outline-none h-6 flex-1 min-w-[65px]"
-                                    >
-                                      <option>唐欣怡</option>
-                                      <option>吉意煊</option>
-                                      <option>马嘉良</option>
-                                    </select>
+                                    <div className="flex min-w-0 flex-1 items-center gap-1">
+                                      <img
+                                        src={getPersonAvatarUrl(s.owner)}
+                                        alt={s.owner || "未指派"}
+                                        className="h-5 w-5 shrink-0 rounded-full border border-slate-200 bg-white object-cover"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                      <select
+                                        value={s.owner || ""}
+                                        onChange={(e) =>
+                                          updateSchedule(s.id, {
+                                            owner: e.target.value,
+                                          })
+                                        }
+                                        className="h-6 min-w-0 flex-1 rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-extrabold text-slate-705 hover:border-slate-300 focus:outline-none"
+                                      >
+                                        {CREATIVE_PEOPLE.map((person) => (
+                                          <option key={person}>{person}</option>
+                                        ))}
+                                      </select>
+                                    </div>
                                   ) : (
-                                    <span className="font-extrabold text-slate-705 bg-white px-1.5 py-0.5 rounded border border-slate-100 font-sans">
-                                      {s.owner || "未指派"}
-                                    </span>
+                                    <PersonBadge
+                                      name={s.owner}
+                                      size="xs"
+                                      className="rounded border border-slate-100 bg-white px-1 py-0.5"
+                                    />
                                   )}
                                 </div>
 
@@ -3872,9 +4076,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               : productionInsights.highRiskRequirements.find(
                                   (item) => item.req.id === req.id,
                                 );
-                            const feedback = req.isLocalization
-                              ? undefined
-                              : requirementFeedbackMap.get(req.id);
+                            const isParentRequirement = req.level === 0;
+                            const iterationGroup = getRequirementVersionGroup(req);
+                            const iterationPreviewText =
+                              iterationGroup.length > 1
+                                ? `将复制 ${iterationGroup.map((item) => item.id).join("、")}，并按原小版本顺序生成新大版本`
+                                : "当前大版本只有 1 条需求，将生成 -01 迭代版本";
 
                             return (
                             <tr
@@ -3889,9 +4096,70 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     <div className="w-[1px] h-full bg-slate-200 absolute -left-1 bottom-1/2"></div>
                                   </div>
                                 )}
-                                <span className={req.level > 0 ? "ml-4" : ""}>
-                                  {req.id}
-                                </span>
+                                <div className={`flex items-center gap-2 ${req.level > 0 ? "ml-4" : ""}`}>
+                                  <span className="whitespace-nowrap">
+                                    {req.id}
+                                  </span>
+                                  <div
+                                    className="flex items-center gap-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="group/iter relative">
+                                      <button
+                                        type="button"
+                                        onClick={(e) =>
+                                          openIterationDirectionSelector(req, "single", e)
+                                        }
+                                        className="rounded-md border border-blue-100 bg-blue-50 p-1 text-blue-600 transition-all hover:border-blue-300 hover:bg-blue-100"
+                                        title="迭代当前需求"
+                                      >
+                                        <Copy className="h-3.5 w-3.5" />
+                                      </button>
+                                      <div className="pointer-events-none absolute left-0 top-full z-[90] mt-2 hidden w-56 rounded-xl border border-slate-150 bg-white p-3 text-left shadow-xl group-hover/iter:block">
+                                        <div className="text-[10px] font-black text-slate-800">迭代当前需求</div>
+                                        <div className="mt-1 text-[9px] font-bold leading-relaxed text-slate-400">
+                                          先选择方向，生成新大版本的 -01，并引用 {req.id} 的描述和引用信息。
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {isParentRequirement && (
+                                      <div className="group/iterall relative">
+                                        <button
+                                          type="button"
+                                          onClick={(e) =>
+                                            openIterationDirectionSelector(req, "all", e)
+                                          }
+                                          className="rounded-md border border-slate-200 bg-white p-1 text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                                          title="迭代全部版本"
+                                        >
+                                          <Copy className="h-3.5 w-3.5" />
+                                        </button>
+                                        <div className="pointer-events-none absolute left-0 top-full z-[90] mt-2 hidden w-64 rounded-xl border border-slate-150 bg-white p-3 text-left shadow-xl group-hover/iterall:block">
+                                          <div className="text-[10px] font-black text-slate-800">迭代全部版本</div>
+                                          <div className="mt-1 text-[9px] font-bold leading-relaxed text-slate-400">
+                                            {iterationPreviewText}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="group/addsub relative">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleAddSubRequirement(req, e)}
+                                        className="rounded-md border border-emerald-100 bg-emerald-50 p-1 text-emerald-600 transition-all hover:border-emerald-300 hover:bg-emerald-100"
+                                        title="添加子需求"
+                                      >
+                                        <Plus className="h-3.5 w-3.5" />
+                                      </button>
+                                      <div className="pointer-events-none absolute left-0 top-full z-[90] mt-2 hidden w-56 rounded-xl border border-slate-150 bg-white p-3 text-left shadow-xl group-hover/addsub:block">
+                                        <div className="text-[10px] font-black text-slate-800">添加子需求</div>
+                                        <div className="mt-1 text-[9px] font-bold leading-relaxed text-slate-400">
+                                          有空草稿版本时直接打开；没有则按当前大版本顺序生成下一条子需求。
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex gap-1">
@@ -3924,32 +4192,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     </span>
                                   )}
                                   <span className="truncate">{req.name}</span>
-                                  {requirementRisk && (
-                                    <span
-                                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black ${
-                                        requirementRisk.severity === "danger"
-                                          ? "bg-rose-50 text-rose-600"
-                                          : "bg-amber-50 text-amber-700"
-                                      }`}
-                                      title={`${requirementRisk.reason}：${requirementRisk.action}`}
-                                    >
-                                      {requirementRisk.reason}
-                                    </span>
-                                  )}
-                                  {feedback && (
-                                    <span
-                                      className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] font-black ${getFeedbackStatusStyle(feedback.status)}`}
-                                      title={feedback.insight}
-                                    >
-                                      {feedback.nextAction}
-                                    </span>
-                                  )}
                                 </div>
-                                {requirementRisk && (
-                                  <div className="mt-1 truncate text-[9px] font-bold text-rose-400">
-                                    {requirementRisk.action}
-                                  </div>
-                                )}
                                 {req.isLocalization && (
                                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] font-black text-slate-400">
                                     <span className="rounded-lg bg-slate-50 px-1.5 py-0.5 text-indigo-600">
@@ -4006,8 +4249,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </div>
                               </td>
 
-                              <td className="px-4 py-3 text-slate-600 font-semibold font-sans">
-                                {req.creativePersonnel}
+                              <td className="px-4 py-3 font-sans">
+                                <PersonBadge name={req.creativePersonnel} />
                               </td>
 
                               {/* 需求状态 */}
@@ -4041,7 +4284,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 className="px-4 py-3"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <div className="flex justify-center font-sans">
+                                <div className="flex flex-col items-center justify-center gap-1 font-sans">
                                   <select
                                     value={req.prodStatus}
                                     onChange={(e) =>
@@ -4057,6 +4300,18 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     <option value="InProgress">进行中</option>
                                     <option value="Completed">已完成</option>
                                   </select>
+                                  {requirementRisk && (
+                                    <span
+                                      className={`rounded-full px-1.5 py-0.5 text-[8px] font-black ${
+                                        requirementRisk.severity === "danger"
+                                          ? "bg-rose-50 text-rose-600"
+                                          : "bg-amber-50 text-amber-700"
+                                      }`}
+                                      title={`${requirementRisk.reason}：${requirementRisk.action}`}
+                                    >
+                                      {requirementRisk.reason}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
 
@@ -4122,16 +4377,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     >
                                       <Trash2 className="w-3.5 h-3.5" /> 删除
                                     </button>
-                                    {req.level === 0 && (
-                                      <button
-                                        onClick={(e) =>
-                                          handleAddSubRequirement(req, e)
-                                        }
-                                        className="w-full px-3 py-1.5 text-left text-primary hover:bg-primary/5 flex items-center gap-2 font-bold transition-colors"
-                                      >
-                                        <Plus className="w-3.5 h-3.5" /> 子需求
-                                      </button>
-                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -5159,14 +5404,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                         </div>
                                       </td>
                                       <td className="px-4 py-4">
-                                        <div className="flex items-center gap-2">
-                                          <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-bold border border-slate-200">
-                                            {row.owner.charAt(0)}
-                                          </div>
-                                          <span className="font-bold text-slate-600">
-                                            {row.owner}
-                                          </span>
-                                        </div>
+                                        <PersonBadge name={row.owner} />
                                       </td>
                                       <td className="px-4 py-4 text-[9px] text-slate-400 space-y-1">
                                         <div className="flex items-center gap-2">
@@ -5407,7 +5645,11 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               {label}
                             </div>
                             <div className="mt-1 truncate text-[11px] font-black text-slate-700">
-                              {value}
+                              {label === "负责人" ? (
+                                <PersonBadge name={value} size="xs" />
+                              ) : (
+                                value
+                              )}
                             </div>
                           </div>
                         ))}
@@ -5499,6 +5741,157 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         </div>
       )}
 
+      {pendingIteration &&
+        (() => {
+          const source = requirements.find(
+            (item) => item.id === pendingIteration.sourceId,
+          );
+          if (!source) return null;
+          const sourceGroup = getRequirementVersionGroup(source);
+          const iterationCount =
+            pendingIteration.mode === "all" ? sourceGroup.length : 1;
+          const availableSchedules = schedules.filter(
+            (sched) => sched.form === selectedCreateType,
+          );
+
+          return (
+            <div className="fixed inset-0 z-[112] flex items-center justify-center bg-slate-900/60 p-6 backdrop-blur-md animate-in fade-in duration-200">
+              <div className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-slate-150 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-8 py-6">
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-black leading-tight text-slate-900">
+                      选择迭代方向
+                    </h3>
+                    <p className="mt-1 text-xs font-medium text-slate-500">
+                      {pendingIteration.mode === "all"
+                        ? `将迭代 ${iterationCount} 条版本，版本顺序与原需求保持一致。`
+                        : "将迭代当前单条需求，并生成新大版本的 -01。"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeIterationDirectionSelector}
+                    className="rounded-full p-2 text-slate-400 transition-all hover:bg-slate-50 hover:text-slate-600"
+                  >
+                    <XCircle className="h-8 w-8" />
+                  </button>
+                </div>
+
+                <div className="border-b border-slate-100 bg-slate-50/50 px-8 py-4">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-black">
+                    <span className="rounded-xl bg-white px-3 py-1.5 text-slate-500 shadow-3xs">
+                      来源：{source.id}
+                    </span>
+                    <span className="rounded-xl bg-indigo-50 px-3 py-1.5 text-indigo-700">
+                      类型：{getAssetTypeLabel(source.assetType)}
+                    </span>
+                    <span className="rounded-xl bg-slate-100 px-3 py-1.5 text-slate-500">
+                      父需求字段将指向原需求
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex-1 space-y-4 overflow-y-auto p-8 no-scrollbar">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">
+                        选择挂靠方向
+                      </h4>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                        新版本会跟随方向的制作类型、方向、负责人、优先级和渠道；描述、引用、预览等内容沿用原需求。
+                      </p>
+                    </div>
+                    <span className="rounded-xl bg-slate-100 px-3 py-1.5 text-[11px] font-black text-slate-500">
+                      当前筛选：{selectedCreateType === "Video" ? "视频" : selectedCreateType === "Image" ? "图片" : "试玩"}
+                    </span>
+                  </div>
+
+                  {availableSchedules.length === 0 ? (
+                    <div className="flex min-h-[220px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 text-center">
+                      <Inbox className="h-10 w-10 text-slate-300" />
+                      <p className="mt-3 text-xs font-black text-slate-500">
+                        暂无匹配该制作类型的方向
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {availableSchedules.map((sched) => {
+                        const associatedReqs = requirements.filter(
+                          (req) => req.scheduleId === sched.id,
+                        );
+                        const remainingCount = Math.max(
+                          0,
+                          (sched.totalRequiredCount || 0) - associatedReqs.length,
+                        );
+                        const formConfig = getFormConfig(sched.form);
+                        const FormIcon = formConfig.icon || Video;
+
+                        return (
+                          <button
+                            key={sched.id}
+                            type="button"
+                            onClick={() => createIterationFromSchedule(sched.id)}
+                            className="group relative flex cursor-pointer flex-col gap-4 rounded-3xl border border-slate-150 bg-white p-5 text-left transition-all hover:border-indigo-300 hover:shadow-xl hover:shadow-slate-900/5"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <div className="mb-2 flex items-center gap-2">
+                                  <span className={`rounded-lg px-2 py-1 text-[10px] font-black shadow-sm ${getPriorityStyle(sched.priority)}`}>
+                                    {sched.priority === "Highest"
+                                      ? "最高"
+                                      : sched.priority === "High"
+                                        ? "高"
+                                        : sched.priority === "Low"
+                                          ? "低"
+                                          : "中"}
+                                  </span>
+                                  <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${formConfig.color}`}>
+                                    <FormIcon className="h-3 w-3" />
+                                    {sched.form === "Video" ? "视频" : sched.form === "Image" ? "图片" : "试玩"}
+                                  </span>
+                                </div>
+                                <h5 className="truncate text-sm font-black text-slate-900 transition-colors group-hover:text-indigo-700">
+                                  {sched.directionName}
+                                </h5>
+                                <p className="mt-1 line-clamp-1 text-[11px] font-semibold text-slate-400">
+                                  {sched.validationGoal || "暂无验证目标"}
+                                </p>
+                              </div>
+                              <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-slate-300 transition-all group-hover:translate-x-1 group-hover:text-indigo-600" />
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-2 border-t border-slate-100 pt-4">
+                              {[
+                                ["负责人", sched.owner || "未指派"],
+                                ["截止", sched.submissionDeadline || sched.requirementEnd || "--"],
+                                ["渠道", sched.channels?.[0]?.toUpperCase() || "ALL"],
+                                ["剩余", `${remainingCount}/${sched.totalRequiredCount || 0}`],
+                              ].map(([label, value]) => (
+                                <div key={label} className="rounded-2xl bg-slate-50 px-3 py-2">
+                                  <div className="text-[9px] font-black text-slate-400">
+                                    {label}
+                                  </div>
+                                  <div className="mt-1 truncate text-[11px] font-black text-slate-700">
+                                    {label === "负责人" ? (
+                                      <PersonBadge name={value} size="xs" />
+                                    ) : (
+                                      value
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {showProductionRiskModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 p-6 backdrop-blur-md animate-in fade-in duration-200">
           <div className="flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] border border-slate-150 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
@@ -5539,10 +5932,19 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             <span className="shrink-0 text-[8.5px] font-black uppercase tracking-widest text-slate-400">
                               制作
                             </span>
-                            <span className="truncate text-[11px] font-black text-slate-700">
-                              {(req.productionPersonnel || []).length > 0
-                                ? req.productionPersonnel.join("、")
-                                : "-"}
+                            <span className="flex min-w-0 flex-wrap items-center gap-1">
+                              {(req.productionPersonnel || []).length > 0 ? (
+                                req.productionPersonnel.map((person) => (
+                                  <PersonBadge
+                                    key={person}
+                                    name={person}
+                                    size="xs"
+                                    muted
+                                  />
+                                ))
+                              ) : (
+                                <PersonBadge name="-" size="xs" muted />
+                              )}
                             </span>
                           </div>
                         </div>
@@ -6197,14 +6599,23 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 {/* Personnel */}
                                 <td className="px-5 py-3.5 whitespace-nowrap">
                                   <div className="flex flex-col gap-0.5 font-sans">
-                                    <span className="font-extrabold text-slate-705 whitespace-nowrap">
-                                      {req.creativePersonnel}
-                                    </span>
+                                    <PersonBadge
+                                      name={req.creativePersonnel}
+                                      size="sm"
+                                    />
 	                                  <span className="text-[9.5px] text-slate-400 font-semibold italic whitespace-nowrap">
-	                                      制作人员:{" "}
-	                                      {(req.productionPersonnel || ["-"]).join(
-	                                        ", ",
-	                                      )}
+	                                    <span className="mr-1">制作人员:</span>
+                                      {(req.productionPersonnel || ["-"]).map(
+                                        (person) => (
+                                          <PersonBadge
+                                            key={person}
+                                            name={person}
+                                            size="xs"
+                                            muted
+                                            className="mr-1"
+                                          />
+                                        ),
+                                      )}
                                     </span>
                                   </div>
                                 </td>

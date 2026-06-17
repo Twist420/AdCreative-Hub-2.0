@@ -1,10 +1,10 @@
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { generateOverviewData, generateTopMaterials, OverviewMetric, mockKeywordAnalysis } from '../services/mockData';
 import { analyzeMaterials } from '../services/geminiService';
 import { AdMaterial, KeywordAnalysisData } from '../types';
-import { ArrowUpRight, Calendar, Clock, Database, Layers, LoaderCircle, Sparkles } from 'lucide-react';
+import { Calendar, Check, ChevronLeft, ChevronRight, Clock, Database, Layers, LoaderCircle, Minus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, BarChart, Bar, CartesianGrid } from 'recharts';
 import DateRangePicker from './DateRangePicker';
 
@@ -23,6 +23,14 @@ const seriesPalette = [
   '#65a30d',
   '#ea580c',
   '#64748b',
+  '#14b8a6',
+  '#f97316',
+  '#8b5cf6',
+  '#06b6d4',
+  '#84cc16',
+  '#e11d48',
+  '#2563eb',
+  '#9333ea',
 ];
 
 const seriesFillPalette = [
@@ -38,6 +46,14 @@ const seriesFillPalette = [
   '#ecfccb',
   '#ffedd5',
   '#f1f5f9',
+  '#ccfbf1',
+  '#fed7aa',
+  '#ede9fe',
+  '#cffafe',
+  '#ecfccb',
+  '#ffe4e6',
+  '#dbeafe',
+  '#f3e8ff',
 ];
 
 const materialSeries = [
@@ -53,40 +69,463 @@ const materialSeries = [
   'cp3616-02',
   'cp2709-02',
   'cp3892-01',
+  'cp4108-03',
+  'cp3722-04',
+  'cp3661-01',
+  'cp4120-02',
+  'cp3906-03',
+  'cp3558-01',
+  'cp4187-02',
+  'cp4011-04',
+];
+const topMaterialSeries = materialSeries.slice(0, 20);
+
+type MaterialTypeKey = 'video' | 'playable';
+type LanguageKey = 'en' | 'de' | 'fr' | 'it' | 'ja' | 'ko' | 'tw' | 'es' | 'pt';
+type StackMode = 'normal' | 'percent';
+
+const channelSeries = [
+  { key: 'all', label: 'ALL', color: '#475569' },
+  { key: 'applovin', label: 'Applovin', color: '#4f46e5' },
+  { key: 'facebook', label: 'Facebook', color: '#0ea5e9' },
+  { key: 'google', label: 'Google', color: '#059669' },
+];
+
+const languageOptions: { key: LanguageKey; label: string; scale: number }[] = [
+  { key: 'en', label: 'EN', scale: 1 },
+  { key: 'de', label: 'DE', scale: 0.76 },
+  { key: 'fr', label: 'FR', scale: 0.72 },
+  { key: 'it', label: 'IT', scale: 0.66 },
+  { key: 'ja', label: 'JA', scale: 0.82 },
+  { key: 'ko', label: 'KO', scale: 0.7 },
+  { key: 'tw', label: 'TW', scale: 0.64 },
+  { key: 'es', label: 'ES', scale: 0.78 },
+  { key: 'pt', label: 'PT', scale: 0.68 },
+];
+
+const materialTypeOptions: { key: MaterialTypeKey; label: string; scale: number }[] = [
+  { key: 'video', label: '视频', scale: 1 },
+  { key: 'playable', label: '试玩', scale: 0.62 },
 ];
 
 const formatDateAxis = (value: string) => value.slice(5);
 
+const sharedDateAxisProps = {
+  dataKey: 'date',
+  tick: { fontSize: 8, fill: '#64748b' },
+  tickFormatter: formatDateAxis,
+  axisLine: false,
+  tickLine: { stroke: '#cbd5e1' },
+  interval: 0,
+  minTickGap: 0,
+  height: 38,
+  padding: { left: 0, right: 0 },
+} as const;
+
 const EmptyTooltip = () => null;
 
-const StackedTooltip = ({ active, payload, label }: any) => {
+const createSeededRandom = (seed: string) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h >>> 0) / 4294967296;
+  };
+};
+
+const getChartDates = (start: string, end: string) => {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const diff = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000) + 1);
+  const length = Math.min(15, diff);
+
+  return Array.from({ length }, (_, index) => {
+    const date = new Date(startDate);
+    const step = length === diff ? index : Math.floor((index / Math.max(length - 1, 1)) * (diff - 1));
+    date.setDate(date.getDate() + step);
+    return date.toISOString().slice(0, 10);
+  });
+};
+
+const sumSelectedScales = <T extends string>(selected: T[], options: { key: T; scale: number }[]) =>
+  options.filter((option) => selected.includes(option.key)).reduce((sum, option) => sum + option.scale, 0) || 0.01;
+
+const buildStackedData = (
+  seed: string,
+  dates: string[],
+  selectedLanguages: LanguageKey[],
+  selectedTypes: MaterialTypeKey[],
+  scale = 1,
+) => {
+  const rng = createSeededRandom(`${seed}-${selectedLanguages.join('-')}-${selectedTypes.join('-')}`);
+  const languageScale = sumSelectedScales(selectedLanguages, languageOptions) / languageOptions.reduce((sum, option) => sum + option.scale, 0);
+  const typeScale = sumSelectedScales(selectedTypes, materialTypeOptions) / materialTypeOptions.reduce((sum, option) => sum + option.scale, 0);
+
+  return dates.map((date, dayIndex) => {
+    const row: Record<string, number | string> = { date };
+    materialSeries.forEach((key, index) => {
+      const peak = Math.exp(-Math.pow(dayIndex - (6 + index * 0.24), 2) / (18 + index * 1.5));
+      const wave = 0.86 + Math.sin((dayIndex + index) / (2.4 + index * 0.12)) * 0.16;
+      const base = Math.max(0, 620 - index * 38) * scale;
+      const value = Math.max(0, base * (0.46 + peak * 0.58) * wave * languageScale * typeScale + rng() * 34 * scale);
+      row[key] = Number(value.toFixed(2));
+    });
+    return row;
+  });
+};
+
+const buildTopShareData = (dates: string[], selectedTypes: MaterialTypeKey[]) => {
+  const typeScale = sumSelectedScales(selectedTypes, materialTypeOptions) / materialTypeOptions.reduce((sum, option) => sum + option.scale, 0);
+  const rng = createSeededRandom(`top-share-${dates.join('-')}-${selectedTypes.join('-')}`);
+  return dates.map((date, index) => {
+    const wave = Math.sin(index / 2.1) * 1.8;
+    return {
+      date,
+      all: Number((31.5 + wave + rng() * 1.6 + typeScale * 3.2).toFixed(2)),
+      applovin: Number((34.8 + wave * 1.2 + rng() * 1.9 + typeScale * 2.8).toFixed(2)),
+      facebook: Number((28.4 + wave * 0.9 + rng() * 1.4 + typeScale * 2.5).toFixed(2)),
+      google: Number((30.6 + wave * 1.05 + rng() * 1.7 + typeScale * 2.9).toFixed(2)),
+    };
+  });
+};
+
+const buildTypeShareData = (dates: string[], channelKey: string) => {
+  const rng = createSeededRandom(`type-share-${channelKey}-${dates.join('-')}`);
+  const channelOffset = channelKey === 'applovin' ? -4 : channelKey === 'facebook' ? 5 : channelKey === 'google' ? -1 : 0;
+  return dates.map((date, index) => ({
+    date,
+    video: Number((58 + channelOffset + Math.sin(index / 2.2) * 5 + rng() * 2).toFixed(2)),
+    playable: Number((42 - channelOffset - Math.sin(index / 2.2) * 5 + rng() * 2).toFixed(2)),
+  }));
+};
+
+const buildCpa7MaterialData = (dates: string[], seed: string, scale = 1) => {
+  const rng = createSeededRandom(`cpa7-${seed}-${dates.join('-')}`);
+  return dates.map((date, dayIndex) => {
+    const row: Record<string, number | string> = { date };
+    topMaterialSeries.forEach((key, index) => {
+      const baseline = (214 + index * 13) * scale;
+      const wave = Math.sin((dayIndex + index) / 2.4) * (18 + index * 1.2);
+      const value = Math.max(95, baseline + wave + rng() * 28);
+      row[key] = Number(value.toFixed(0));
+    });
+    return row;
+  });
+};
+
+const formatTooltipValue = (value: number, unit: 'number' | 'percent' | 'currency') => {
+  if (unit === 'percent') {
+    const percentValue = value <= 1 ? value * 100 : value;
+    return `${percentValue.toFixed(2)}%`;
+  }
+  if (unit === 'currency') {
+    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+
+const UnifiedTooltip = ({
+  active,
+  payload,
+  label,
+  unit = 'number',
+  nameMap = {},
+  coordinate,
+  viewBox,
+}: {
+  active?: boolean;
+  payload?: any[];
+  label?: string;
+  unit?: 'number' | 'percent' | 'currency';
+  nameMap?: Record<string, string>;
+  coordinate?: { x?: number; y?: number };
+  viewBox?: { width?: number };
+}) => {
   if (!active || !payload?.length) return null;
   const rows = payload
-    .filter((item: any) => Number(item.value) > 0)
+    .filter((item: any) => item.value !== null && item.value !== undefined && Number(item.value) > 0)
     .slice()
     .reverse();
+  const total = rows.reduce((sum: number, item: any) => sum + Number(item.value || 0), 0);
+  const chartWidth = Number(viewBox?.width || 0);
+  const cursorX = Number(coordinate?.x || 0);
+  const cursorY = Number(coordinate?.y || 0);
+  const tooltipWidth = 288;
+  const canUseOutsidePosition = Boolean(chartWidth && coordinate?.x !== undefined);
+  const placeRight = canUseOutsidePosition ? cursorX < chartWidth / 2 : true;
+  const translateX = canUseOutsidePosition ? (placeRight ? chartWidth - cursorX + 16 : -cursorX - tooltipWidth - 16) : 0;
+  const translateY = canUseOutsidePosition && cursorY ? -cursorY + 8 : 0;
 
   return (
-    <div className="w-72 rounded-2xl border border-slate-150 bg-white p-4 text-xs shadow-2xl ring-1 ring-slate-900/5">
+    <div
+      className="w-72 rounded-xl border border-slate-150 bg-white p-3 text-xs shadow-xl ring-1 ring-slate-900/5"
+      style={canUseOutsidePosition ? { transform: `translate(${translateX}px, ${translateY}px)` } : undefined}
+    >
       <div className="mb-3 text-sm font-black text-slate-900">{label}</div>
-      <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+      <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
         {rows.map((item: any) => (
           <div key={item.dataKey} className="grid grid-cols-[14px_1fr_auto] items-center gap-2">
-            <span className="h-0.5 w-4 rounded-full" style={{ backgroundColor: item.stroke || item.color }} />
-            <span className="min-w-0 truncate font-medium text-slate-600">{item.name}</span>
-            <span className="font-mono font-black text-slate-900">{Number(item.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: item.stroke || item.fill || item.color }} />
+            <span className="min-w-0 truncate font-bold text-slate-600">{nameMap[String(item.dataKey)] || item.name || item.dataKey}</span>
+            <span className="font-mono font-black text-slate-900">{formatTooltipValue(Number(item.value), unit)}</span>
           </div>
         ))}
       </div>
       <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 text-xs">
         <span className="font-medium text-slate-500">总计</span>
-        <span className="font-mono font-black text-slate-900">
-          {rows.reduce((sum: number, item: any) => sum + Number(item.value || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-        </span>
+        <span className="font-mono font-black text-slate-900">{formatTooltipValue(total, unit)}</span>
       </div>
     </div>
   );
 };
+
+const tooltipOutsideChartProps = {
+  allowEscapeViewBox: { x: true, y: true },
+  position: { x: 8, y: 176 },
+  wrapperStyle: { zIndex: 60, pointerEvents: 'none' as const },
+} as const;
+
+const SeriesToggleGroup = ({
+  options,
+  visible,
+  onToggle,
+}: {
+  options: { key: string; label: string; color: string }[];
+  visible: string[];
+  onToggle: (key: string) => void;
+}) => {
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1.5">
+      {options.map((option) => {
+        const isActive = visible.includes(option.key);
+        return (
+          <button
+            key={option.key}
+            onClick={() => onToggle(option.key)}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[9px] font-black transition-all ${
+              isActive ? 'border-slate-200 bg-white text-slate-800 shadow-sm' : 'border-slate-150 bg-slate-100 text-slate-400'
+            }`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: isActive ? option.color : '#cbd5e1' }} />
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+const PaginatedSeriesToggleGroup = ({
+  options,
+  visible,
+  onToggle,
+  pageSize = 7,
+}: {
+  options: { key: string; label: string; color: string }[];
+  visible: string[];
+  onToggle: (key: string) => void;
+  pageSize?: number;
+}) => {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(options.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageOptions = options.slice(safePage * pageSize, safePage * pageSize + pageSize);
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => setPage((current) => Math.max(0, current - 1))}
+        disabled={safePage === 0}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-400 transition-all hover:border-slate-150 hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-25"
+        aria-label="上一页"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <SeriesToggleGroup
+        options={pageOptions}
+        visible={visible}
+        onToggle={onToggle}
+      />
+      <button
+        onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+        disabled={safePage === pageCount - 1}
+        className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-400 transition-all hover:border-slate-150 hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-25"
+        aria-label="下一页"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  );
+};
+
+const CheckboxIcon = ({ checked, mixed }: { checked: boolean; mixed?: boolean }) => (
+  <span
+    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-all ${
+      checked || mixed ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white text-transparent'
+    }`}
+  >
+    {mixed ? <Minus className="h-3 w-3" /> : <Check className="h-3 w-3 stroke-[3]" />}
+  </span>
+);
+
+const FilterChipGroup = <T extends string>({
+  options,
+  selected,
+  onToggle,
+  onSelectAll,
+  onClear,
+}: {
+  options: { key: T; label: string }[];
+  selected: T[];
+  onToggle: (key: T) => void;
+  onSelectAll?: () => void;
+  onClear?: () => void;
+}) => (
+  <div className="space-y-1">
+    {onSelectAll && onClear && options.length > 1 && (() => {
+      const allSelected = selected.length === options.length;
+      const partiallySelected = selected.length > 0 && !allSelected;
+      return (
+        <button
+          onClick={allSelected ? onClear : onSelectAll}
+          className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[11px] font-black text-slate-800 transition-colors hover:bg-slate-50"
+        >
+          <CheckboxIcon checked={allSelected} mixed={partiallySelected} />
+          <span>全选</span>
+        </button>
+      );
+    })()}
+    <div className="space-y-1">
+      {options.map((option) => {
+        const isActive = selected.includes(option.key);
+        return (
+          <button
+            key={option.key}
+            onClick={() => onToggle(option.key)}
+            className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[11px] font-bold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <CheckboxIcon checked={isActive} />
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const StackModeSwitch = ({ value, onChange }: { value: StackMode; onChange: (value: StackMode) => void }) => (
+  <div className="flex rounded-lg border border-slate-150 bg-white p-0.5">
+    {[
+      { key: 'percent', label: '百分比' },
+      { key: 'normal', label: '常规' },
+    ].map((option) => (
+      <button
+        key={option.key}
+        onClick={() => onChange(option.key as StackMode)}
+        className={`rounded-md px-2 py-0.5 text-[8.5px] font-black transition-all ${
+          value === option.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-400 hover:text-slate-700'
+        }`}
+      >
+        {option.label}
+      </button>
+    ))}
+  </div>
+);
+
+const FilterMenu = ({ children, label = '筛选' }: { children: React.ReactNode; label?: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={menuRef} className="relative shrink-0">
+      <button
+        onClick={() => setIsOpen((current) => !current)}
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-black transition-all ${
+          isOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-600 shadow-sm' : 'border-slate-150 bg-white text-slate-500 hover:text-slate-900'
+        }`}
+      >
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        {label}
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 top-9 z-30 w-72 rounded-xl border border-slate-150 bg-white p-3 text-left shadow-xl ring-1 ring-slate-900/5">
+          <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+            {children}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const FilterBlock = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div className="space-y-1.5">
+    <p className="text-[9.5px] font-black uppercase tracking-widest text-slate-400">{title}</p>
+    {children}
+  </div>
+);
+
+const ChartPanel = ({
+  title,
+  subtitle,
+  controls,
+  footer,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  controls?: React.ReactNode;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+}) => (
+  <article className="flex h-[390px] min-w-0 flex-col overflow-visible rounded-2xl border border-slate-150 bg-slate-50/80 p-4 shadow-3xs">
+    <div className="mb-3 flex min-h-[74px] flex-col gap-2 border-b border-slate-150/70 pb-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-black tracking-tight text-slate-800" title={title}>{title}</h3>
+          {subtitle && <p className="mt-1 text-[9.5px] font-bold text-slate-400">{subtitle}</p>}
+        </div>
+        {controls}
+      </div>
+    </div>
+    <div className="h-[168px] shrink-0 overflow-visible">
+      {children}
+    </div>
+    {footer && (
+      <div className="mt-3 border-t border-slate-150/70 pt-3">
+        {footer}
+      </div>
+    )}
+  </article>
+);
 
 const MiniChart = ({ metric, color, type }: { metric: OverviewMetric, color: string, type: 'area' | 'line' | 'bar' }) => {
   if (type === 'area') {
@@ -145,8 +584,6 @@ const Overview: React.FC = () => {
   // Channel Filter
   const [channel, setChannel] = useState<string>('all');
   
-  const [trendLanguage, setTrendLanguage] = useState<'all' | 'en' | 'localized'>('all');
-
   const [materials, setMaterials] = useState<AdMaterial[]>([]);
   
   // We need two sets of metrics for the KPI cards (Total vs Localized)
@@ -158,6 +595,17 @@ const Overview: React.FC = () => {
 
   const [cpa7Min, setCpa7Min] = useState<number>(0);
   const [cpa7Max, setCpa7Max] = useState<number>(400);
+  const [selectedTypes, setSelectedTypes] = useState<MaterialTypeKey[]>(['video', 'playable']);
+  const [selectedLanguages, setSelectedLanguages] = useState<LanguageKey[]>(languageOptions.map((option) => option.key));
+  const [topShareVisible, setTopShareVisible] = useState<string[]>(channelSeries.map((item) => item.key));
+  const [stackVisible, setStackVisible] = useState<string[]>(topMaterialSeries);
+  const [typeShareChannel, setTypeShareChannel] = useState<string>('all');
+  const [typeShareVisible, setTypeShareVisible] = useState<string[]>(['video', 'playable']);
+  const [cpa7Visible, setCpa7Visible] = useState<string[]>(topMaterialSeries);
+  const [globalStackMode, setGlobalStackMode] = useState<StackMode>('percent');
+  const [applovinAndroidStackMode, setApplovinAndroidStackMode] = useState<StackMode>('normal');
+  const [applovinIosStackMode, setApplovinIosStackMode] = useState<StackMode>('normal');
+  const [googleStackMode, setGoogleStackMode] = useState<StackMode>('normal');
   
   useEffect(() => {
     // Fetch materials (Global context usually implies 'all' for materials list if filter is removed)
@@ -206,35 +654,6 @@ const Overview: React.FC = () => {
      }
   };
 
-  const buildStackedData = (seed: string, daysLimit = 15, scale = 1) => {
-    const rng = (() => {
-      let h = 0x811c9dc5;
-      for (let i = 0; i < seed.length; i++) {
-        h ^= seed.charCodeAt(i);
-        h = Math.imul(h, 0x01000193);
-      }
-      return () => {
-        h = Math.imul(h ^ (h >>> 16), 2246822507);
-        h = Math.imul(h ^ (h >>> 13), 3266489909);
-        return (h >>> 0) / 4294967296;
-      };
-    })();
-    const baseDate = new Date(spendStart);
-    return Array.from({ length: daysLimit }, (_, dayIndex) => {
-      const date = new Date(baseDate);
-      date.setDate(date.getDate() + dayIndex);
-      const row: Record<string, number | string> = { date: date.toISOString().slice(0, 10) };
-      materialSeries.forEach((key, index) => {
-        const peak = Math.exp(-Math.pow(dayIndex - (7 + index * 0.28), 2) / (18 + index * 1.6));
-        const wave = 0.82 + Math.sin((dayIndex + index) / (2.6 + index * 0.12)) * 0.18;
-        const base = Math.max(0, 520 - index * 46) * scale;
-        const value = Math.max(0, base * (0.42 + peak * 0.62) * wave + rng() * 42 * scale - index * 4);
-        row[key] = Number(value.toFixed(2));
-      });
-      return row;
-    });
-  };
-
   const overviewKpis = [
     {
       key: 'totalCost',
@@ -270,55 +689,62 @@ const Overview: React.FC = () => {
     },
   ];
 
-  const allLanguageStack = buildStackedData(`all-${spendStart}-${spendEnd}`, 15, 1);
-  const englishStack = buildStackedData(`en-${spendStart}-${spendEnd}`, 15, 0.86);
-  const channelStacks = [
-    { title: 'Applovin Android', data: buildStackedData('apl-android', 15, 0.78) },
-    { title: 'Applovin iOS', data: buildStackedData('apl-ios', 15, 0.68) },
-    { title: 'Google', data: buildStackedData('google', 15, 0.72) },
-  ];
+  const chartDates = useMemo(() => getChartDates(spendStart, spendEnd), [spendStart, spendEnd]);
+  const topShareData = useMemo(() => buildTopShareData(chartDates, selectedTypes), [chartDates, selectedTypes]);
+  const typeShareData = useMemo(() => buildTypeShareData(chartDates, typeShareChannel), [chartDates, typeShareChannel]);
+  const globalStackData = useMemo(
+    () => buildStackedData(`global-${spendStart}-${spendEnd}`, chartDates, selectedLanguages, selectedTypes, 1),
+    [chartDates, selectedLanguages, selectedTypes, spendStart, spendEnd],
+  );
+  const applovinAndroidStack = useMemo(
+    () => buildStackedData('applovin-android', chartDates, selectedLanguages, selectedTypes, 0.78),
+    [chartDates, selectedLanguages, selectedTypes],
+  );
+  const applovinIosStack = useMemo(
+    () => buildStackedData('applovin-ios', chartDates, selectedLanguages, selectedTypes, 0.68),
+    [chartDates, selectedLanguages, selectedTypes],
+  );
+  const googleStack = useMemo(
+    () => buildStackedData('google', chartDates, selectedLanguages, selectedTypes, 0.72),
+    [chartDates, selectedLanguages, selectedTypes],
+  );
+  const materialLegendOptions = topMaterialSeries.map((key, index) => ({
+    key,
+    label: key,
+    color: seriesPalette[index],
+  }));
+  const toggleListValue = <T extends string>(current: T[], key: T) =>
+    current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+  const toggleVisibleValue = (current: string[], key: string) =>
+    current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+  const cpa7LegendOptions = topMaterialSeries.map((key, index) => ({
+    key,
+    label: key,
+    color: seriesPalette[index],
+  }));
   const cpa7Charts = [
     {
-      title: 'AL - Android',
-      color: '#6366f1',
-      data: [
-        { date: '2026-05-19', cpa7: 338 },
-        { date: '2026-05-20', cpa7: 346 },
-        { date: '2026-05-23', cpa7: 388 },
-        { date: '2026-05-27', cpa7: 382 },
-        { date: '2026-05-31', cpa7: 352 },
-        { date: '2026-06-04', cpa7: 391 },
-        { date: '2026-06-06', cpa7: 236 },
-        { date: '2026-06-09', cpa7: 351 },
-        { date: '2026-06-11', cpa7: 340 },
-      ],
+      title: 'Applovin Android Top20素材 CPA7',
+      data: buildCpa7MaterialData(chartDates, 'applovin-android', 1),
     },
     {
-      title: 'AL - iOS',
-      color: '#ec4899',
-      data: [],
+      title: 'Applovin iOS Top20素材 CPA7',
+      data: buildCpa7MaterialData(chartDates, 'applovin-ios', 1.08),
     },
     {
-      title: 'Google - Android',
-      color: '#3b82f6',
-      data: [
-        { date: '2026-05-17', cpa7: 260 },
-        { date: '2026-05-18', cpa7: 345 },
-        { date: '2026-05-19', cpa7: 392 },
-        { date: '2026-05-20', cpa7: 262 },
-        { date: '2026-05-21', cpa7: 388 },
-        { date: '2026-05-25', cpa7: 398 },
-        { date: '2026-05-29', cpa7: 280 },
-        { date: '2026-06-01', cpa7: 377 },
-        { date: '2026-06-04', cpa7: 350 },
-        { date: '2026-06-08', cpa7: 250 },
-        { date: '2026-06-09', cpa7: 371 },
-        { date: '2026-06-10', cpa7: 323 },
-      ],
+      title: 'Google Top20素材 CPA7',
+      data: buildCpa7MaterialData(chartDates, 'google', 0.94),
     },
   ].map((chart) => ({
     ...chart,
-    data: chart.data.filter((item) => item.cpa7 >= cpa7Min && item.cpa7 <= cpa7Max),
+    data: chart.data.map((row) => {
+      const next: Record<string, number | string | null> = { date: row.date };
+      topMaterialSeries.forEach((key) => {
+        const value = Number(row[key] || 0);
+        next[key] = value >= cpa7Min && value <= cpa7Max ? value : null;
+      });
+      return next;
+    }),
   }));
 
   return (
@@ -441,7 +867,7 @@ const Overview: React.FC = () => {
       </div>
 
       <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className="mb-4 border-b border-slate-100 pb-4">
           <div>
             <h2 className="flex items-center text-xl font-black tracking-tight text-slate-900">
               <span className="mr-3 h-6 w-1.5 rounded-full bg-primary"></span>
@@ -449,92 +875,211 @@ const Overview: React.FC = () => {
             </h2>
             <p className="mt-3 flex items-center gap-2 text-xs font-black text-slate-700">
               <span className="h-4 w-1 rounded-full bg-indigo-500"></span>
-              Top20 视频素材个案累计堆叠分析
+              Top20 素材花费结构与类型占比
             </p>
-          </div>
-          <div className="flex rounded-lg border border-slate-150 bg-slate-50 p-1">
-            {[
-              { id: 'all', label: '全部' },
-              { id: 'en', label: '英语' },
-              { id: 'localized', label: '本地' },
-            ].map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => setTrendLanguage(opt.id as any)}
-                className={`rounded-md px-2.5 py-1 text-[9.5px] font-bold transition-all ${
-                  trendLanguage === opt.id ? 'bg-primary text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
           </div>
         </div>
 
-        <div>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            {[
-              { title: '所有语言 Top20', data: allLanguageStack },
-              { title: '英语 Top20', data: englishStack },
-            ].map((chart) => (
-              <div key={chart.title} className="h-[360px] rounded-2xl border border-slate-150 bg-slate-50/80 p-5">
-                <h3 className="mb-3 text-center text-sm font-black text-slate-500">{chart.title === '所有语言 Top20' ? '所有语言 (All)' : '英语素材 (EN)'}</h3>
-                <ResponsiveContainer width="100%" height="88%">
-                  <AreaChart data={chart.data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-                    <CartesianGrid stroke="#d8dee8" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={formatDateAxis} axisLine={{ stroke: '#475569' }} tickLine={false} interval={1} />
-                    <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={{ stroke: '#475569' }} tickLine={false} />
-                    <Tooltip content={<StackedTooltip />} cursor={{ stroke: '#334155', strokeWidth: 1, strokeDasharray: '4 4' }} />
-                    {materialSeries.slice(0, 8).map((key, index) => (
-                      <Area
-                        key={key}
-                        type="linear"
-                        dataKey={key}
-                        stackId="1"
-                        stroke={seriesPalette[index]}
-                        fill={seriesFillPalette[index]}
-                        fillOpacity={0.78}
-                        strokeWidth={1.6}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ))}
-          </div>
-          <p className="mb-4 mt-6 flex items-center gap-2 border-t border-slate-100 pt-5 text-xs font-black text-slate-700">
-            <span className="h-4 w-1 rounded-full bg-slate-500"></span>
-            分渠道 Top20 素材累计堆叠
-          </p>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            {channelStacks.map((chart) => (
-              <div key={chart.title} className="h-64 rounded-xl border border-slate-150 bg-slate-50/80 p-4">
-                <h3 className="mb-2 text-center text-xs font-black text-slate-600">{chart.title}</h3>
-                <ResponsiveContainer width="100%" height="88%">
-                  <AreaChart data={chart.data} margin={{ top: 5, right: 8, left: -18, bottom: 0 }}>
-                    <CartesianGrid stroke="#d8dee8" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={formatDateAxis} axisLine={false} tickLine={false} interval={4} />
-                    <YAxis tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<StackedTooltip />} cursor={{ stroke: '#334155', strokeWidth: 1, strokeDasharray: '4 4' }} />
-                    {materialSeries.slice(0, 8).map((key, index) => (
-                      <Area
-                        key={key}
-                        type="linear"
-                        dataKey={key}
-                        stackId="1"
-                        stroke={seriesPalette[index]}
-                        fill={seriesFillPalette[index]}
-                        fillOpacity={0.78}
-                        strokeWidth={1.6}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ))}
-          </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <ChartPanel
+            title="Top20素材花费占全部素材花费占比"
+            subtitle="ALL / Applovin / Facebook / Google"
+            controls={
+              <FilterMenu>
+                <FilterBlock title="素材类型">
+                  <FilterChipGroup
+                    options={materialTypeOptions}
+                    selected={selectedTypes}
+                    onToggle={(key) => setSelectedTypes((current) => toggleListValue(current, key))}
+                    onSelectAll={() => setSelectedTypes(materialTypeOptions.map((option) => option.key))}
+                    onClear={() => setSelectedTypes([])}
+                  />
+                </FilterBlock>
+              </FilterMenu>
+            }
+            footer={
+              <SeriesToggleGroup
+                options={channelSeries}
+                visible={topShareVisible}
+                onToggle={(key) => setTopShareVisible((current) => toggleVisibleValue(current, key))}
+              />
+            }
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={topShareData} margin={{ top: 12, right: 12, left: -14, bottom: 0 }}>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                <XAxis {...sharedDateAxisProps} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={(value) => `${value}%`} axisLine={false} tickLine={false} width={42} />
+                <Tooltip
+                  content={<UnifiedTooltip unit="percent" nameMap={Object.fromEntries(channelSeries.map((item) => [item.key, item.label]))} />}
+                  {...tooltipOutsideChartProps}
+                />
+                {channelSeries.filter((item) => topShareVisible.includes(item.key)).map((item) => (
+                  <Line key={item.key} type="monotone" dataKey={item.key} stroke={item.color} strokeWidth={2.2} dot={{ r: 2, fill: '#fff', stroke: item.color }} isAnimationActive={false} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartPanel>
+
+          <ChartPanel
+            title="全渠道Top20素材花费比例"
+            subtitle="语言：EN / DE / FR / IT / JA / KO / TW / ES / PT"
+            controls={
+              <FilterMenu>
+                <FilterBlock title="堆叠模式">
+                  <StackModeSwitch value={globalStackMode} onChange={setGlobalStackMode} />
+                </FilterBlock>
+                <FilterBlock title="素材类型">
+                  <FilterChipGroup
+                    options={materialTypeOptions}
+                    selected={selectedTypes}
+                    onToggle={(key) => setSelectedTypes((current) => toggleListValue(current, key))}
+                    onSelectAll={() => setSelectedTypes(materialTypeOptions.map((option) => option.key))}
+                    onClear={() => setSelectedTypes([])}
+                  />
+                </FilterBlock>
+                <FilterBlock title="语言">
+                  <FilterChipGroup
+                    options={languageOptions}
+                    selected={selectedLanguages}
+                    onToggle={(key) => setSelectedLanguages((current) => toggleListValue(current, key))}
+                    onSelectAll={() => setSelectedLanguages(languageOptions.map((option) => option.key))}
+                    onClear={() => setSelectedLanguages([])}
+                  />
+                </FilterBlock>
+              </FilterMenu>
+            }
+            footer={
+              <PaginatedSeriesToggleGroup
+                options={materialLegendOptions}
+                visible={stackVisible}
+                onToggle={(key) => setStackVisible((current) => toggleVisibleValue(current, key))}
+              />
+            }
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={globalStackData} stackOffset={globalStackMode === 'percent' ? 'expand' : 'none'} margin={{ top: 8, right: 10, left: -12, bottom: 0 }}>
+                <CartesianGrid stroke="#d8dee8" strokeDasharray="3 3" vertical={false} />
+                <XAxis {...sharedDateAxisProps} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={(value) => globalStackMode === 'percent' ? `${Math.round(Number(value) * 100)}%` : `${value}`} axisLine={false} tickLine={false} width={42} />
+                <Tooltip
+                  content={<UnifiedTooltip unit={globalStackMode === 'percent' ? 'percent' : 'number'} />}
+                  cursor={{ stroke: '#334155', strokeWidth: 1, strokeDasharray: '4 4' }}
+                  {...tooltipOutsideChartProps}
+                />
+                {topMaterialSeries.filter((key) => stackVisible.includes(key)).map((key) => {
+                  const index = topMaterialSeries.indexOf(key);
+                  return (
+                  <Area key={key} type="linear" dataKey={key} stackId="1" stroke={seriesPalette[index]} fill={seriesFillPalette[index]} fillOpacity={0.82} strokeWidth={1.4} isAnimationActive={false} />
+                  );
+                })}
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartPanel>
+
+          <ChartPanel
+            title="试玩和视频花费占比"
+            subtitle="渠道通过右侧筛选切换"
+            controls={
+              <FilterMenu>
+                <FilterBlock title="渠道">
+                  <FilterChipGroup
+                    options={channelSeries}
+                    selected={[typeShareChannel]}
+                    onToggle={(key) => setTypeShareChannel(key)}
+                  />
+                </FilterBlock>
+              </FilterMenu>
+            }
+            footer={
+              <SeriesToggleGroup
+                options={[
+                  { key: 'video', label: '视频', color: '#4f46e5' },
+                  { key: 'playable', label: '试玩', color: '#a5b4fc' },
+                ]}
+                visible={typeShareVisible}
+                onToggle={(key) => setTypeShareVisible((current) => toggleVisibleValue(current, key))}
+              />
+            }
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={typeShareData} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                <XAxis {...sharedDateAxisProps} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={(value) => `${value}%`} axisLine={false} tickLine={false} width={42} />
+                <Tooltip
+                  content={<UnifiedTooltip unit="percent" nameMap={{ video: '视频', playable: '试玩' }} />}
+                  cursor={{ fill: '#e2e8f066' }}
+                  {...tooltipOutsideChartProps}
+                />
+                {typeShareVisible.includes('video') && <Bar dataKey="video" name="视频" fill="#4f46e5" radius={[2, 2, 0, 0]} isAnimationActive={false} />}
+                {typeShareVisible.includes('playable') && <Bar dataKey="playable" name="试玩" fill="#a5b4fc" radius={[2, 2, 0, 0]} isAnimationActive={false} />}
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartPanel>
+
+          {[
+            { title: 'applovin- Android Top20素材花费', data: applovinAndroidStack, mode: applovinAndroidStackMode, setMode: setApplovinAndroidStackMode },
+            { title: 'applovin- iOS Top20素材花费', data: applovinIosStack, mode: applovinIosStackMode, setMode: setApplovinIosStackMode },
+            { title: 'google Top20素材花费', data: googleStack, mode: googleStackMode, setMode: setGoogleStackMode },
+          ].map((chart) => (
+            <ChartPanel
+              key={chart.title}
+              title={chart.title}
+              subtitle="Top20 素材日花费堆叠"
+              controls={
+                <FilterMenu>
+                  <FilterBlock title="堆叠模式">
+                    <StackModeSwitch value={chart.mode} onChange={chart.setMode} />
+                  </FilterBlock>
+                  <FilterBlock title="素材类型">
+                    <FilterChipGroup
+                      options={materialTypeOptions}
+                      selected={selectedTypes}
+                      onToggle={(key) => setSelectedTypes((current) => toggleListValue(current, key))}
+                      onSelectAll={() => setSelectedTypes(materialTypeOptions.map((option) => option.key))}
+                      onClear={() => setSelectedTypes([])}
+                    />
+                  </FilterBlock>
+                  <FilterBlock title="语言">
+                    <FilterChipGroup
+                      options={languageOptions}
+                      selected={selectedLanguages}
+                      onToggle={(key) => setSelectedLanguages((current) => toggleListValue(current, key))}
+                      onSelectAll={() => setSelectedLanguages(languageOptions.map((option) => option.key))}
+                      onClear={() => setSelectedLanguages([])}
+                    />
+                  </FilterBlock>
+                </FilterMenu>
+              }
+              footer={
+                <PaginatedSeriesToggleGroup
+                  options={materialLegendOptions}
+                  visible={stackVisible}
+                  onToggle={(key) => setStackVisible((current) => toggleVisibleValue(current, key))}
+                />
+              }
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chart.data} stackOffset={chart.mode === 'percent' ? 'expand' : 'none'} margin={{ top: 8, right: 10, left: -12, bottom: 0 }}>
+                  <CartesianGrid stroke="#d8dee8" strokeDasharray="3 3" vertical={false} />
+                  <XAxis {...sharedDateAxisProps} />
+                  <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={(value) => chart.mode === 'percent' ? `${Math.round(Number(value) * 100)}%` : `${value}`} axisLine={false} tickLine={false} width={42} />
+                  <Tooltip
+                    content={<UnifiedTooltip unit={chart.mode === 'percent' ? 'percent' : 'number'} />}
+                    cursor={{ stroke: '#334155', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    {...tooltipOutsideChartProps}
+                  />
+                  {topMaterialSeries.filter((key) => stackVisible.includes(key)).map((key) => {
+                    const index = topMaterialSeries.indexOf(key);
+                    return (
+                      <Area key={key} type="linear" dataKey={key} stackId="1" stroke={seriesPalette[index]} fill={seriesFillPalette[index]} fillOpacity={0.82} strokeWidth={1.4} isAnimationActive={false} />
+                    );
+                  })}
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          ))}
         </div>
       </section>
 
@@ -542,33 +1087,59 @@ const Overview: React.FC = () => {
         <div className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="flex items-center text-xl font-black tracking-tight text-slate-900">
             <span className="mr-3 h-6 w-1.5 rounded-full bg-primary"></span>
-            CPA7 每日趋势 (Daily CPA7 Trend)
+            Top20 素材 CPA7 折线图
           </h2>
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
-            <span className="text-[9.5px] font-bold text-slate-600">CPA7 范围:</span>
-            <input value={cpa7Min} onChange={(e) => setCpa7Min(Number(e.target.value))} className="h-7 w-16 rounded-lg border border-slate-200 bg-white text-center text-xs font-bold text-slate-700" type="number" />
-            <span className="text-[9.5px] font-medium text-slate-400">~</span>
-            <input value={cpa7Max} onChange={(e) => setCpa7Max(Number(e.target.value))} className="h-7 w-16 rounded-lg border border-slate-200 bg-white text-center text-xs font-bold text-slate-700" type="number" />
-          </div>
+          <FilterMenu>
+            <FilterBlock title="CPA7 范围">
+              <div className="flex items-center gap-2">
+                <input value={cpa7Min} onChange={(e) => setCpa7Min(Number(e.target.value))} className="h-7 w-20 rounded-lg border border-slate-200 bg-white text-center text-xs font-bold text-slate-700" type="number" />
+                <span className="text-[9.5px] font-medium text-slate-400">~</span>
+                <input value={cpa7Max} onChange={(e) => setCpa7Max(Number(e.target.value))} className="h-7 w-20 rounded-lg border border-slate-200 bg-white text-center text-xs font-bold text-slate-700" type="number" />
+              </div>
+            </FilterBlock>
+          </FilterMenu>
         </div>
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           {cpa7Charts.map((chart) => (
-            <div key={chart.title} className="h-56">
-              <h3 className="mb-2 text-xs font-black text-slate-700">{chart.title}</h3>
-              {chart.data.length === 0 ? (
-                <div className="flex h-[190px] items-center justify-center border-b border-slate-150 text-[9.5px] font-medium text-slate-400">暂无数据满足筛选区间</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="88%">
-                  <LineChart data={chart.data} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-                    <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={formatDateAxis} axisLine={false} tickLine={false} interval={1} />
-                    <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={(value) => `$${value}`} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value: any) => [`$${value}`, 'CPA7']} />
-                    <Line type="linear" dataKey="cpa7" stroke={chart.color} fill={chart.color} strokeWidth={2.2} dot={{ r: 2.4, fill: '#fff', stroke: chart.color }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+            <ChartPanel
+              key={chart.title}
+              title={chart.title}
+              subtitle="按素材编号展示 CPA7 日趋势"
+              footer={
+                <PaginatedSeriesToggleGroup
+                  options={cpa7LegendOptions}
+                  visible={cpa7Visible}
+                  onToggle={(key) => setCpa7Visible((current) => toggleVisibleValue(current, key))}
+                />
+              }
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chart.data} margin={{ top: 12, right: 12, left: -16, bottom: 0 }}>
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                  <XAxis {...sharedDateAxisProps} />
+                  <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickFormatter={(value) => `$${value}`} axisLine={false} tickLine={false} width={42} />
+                  <Tooltip
+                    content={<UnifiedTooltip unit="currency" />}
+                    {...tooltipOutsideChartProps}
+                  />
+                  {topMaterialSeries.filter((key) => cpa7Visible.includes(key)).map((key) => {
+                    const index = topMaterialSeries.indexOf(key);
+                    return (
+                      <Line
+                        key={key}
+                        type="monotone"
+                        dataKey={key}
+                        stroke={seriesPalette[index]}
+                        strokeWidth={1.9}
+                        dot={{ r: 1.8, fill: '#fff', stroke: seriesPalette[index] }}
+                        connectNulls={false}
+                        isAnimationActive={false}
+                      />
+                    );
+                  })}
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartPanel>
           ))}
         </div>
       </section>
