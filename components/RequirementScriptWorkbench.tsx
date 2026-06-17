@@ -43,6 +43,10 @@ interface SelectableOption {
   duration: string;
   status: string;
   previewUrl: string;
+  directionGroup?: string;
+  spent?: number;
+  createdAt?: string;
+  isCurrentDirection?: boolean;
 }
 
 interface PickerFacet {
@@ -102,20 +106,24 @@ const ASSET_OPTIONS: SelectableOption[] = [
 ];
 
 const FINISHED_OPTIONS: SelectableOption[] = [
-  { id: 'FIN-3683-01', name: '3683口播大字报换山下湖泊背景', type: '成片 / 当前方向', duration: '00:22', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=480&h=640&fit=crop' },
-  { id: 'FIN-3684-02', name: '3684口播大字报换蔚蓝海滩背景', type: '成片 / 当前方向', duration: '00:21', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=480&h=640&fit=crop' },
-  { id: 'FIN-3370-01', name: '吸量大字报-爆金币转场成片', type: '成片 / 近期待观察', duration: '00:18', status: 'Insufficient Data', previewUrl: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=480&h=640&fit=crop' },
-  { id: 'FIN-3366-03', name: '3D剧情-冰原Boss压迫感成片', type: '成片 / 已初投', duration: '00:26', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=480&h=640&fit=crop' },
+  { id: 'FIN-3683-01', name: '3683口播大字报换山下湖泊背景', type: '成片 / 当前方向', duration: '00:22', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=480&h=640&fit=crop', directionGroup: '吸量大字报', spent: 18600, createdAt: '2026-06-16', isCurrentDirection: true },
+  { id: 'FIN-3684-02', name: '3684口播大字报换蔚蓝海滩背景', type: '成片 / 当前方向', duration: '00:21', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=480&h=640&fit=crop', directionGroup: '吸量大字报', spent: 15420, createdAt: '2026-06-15', isCurrentDirection: true },
+  { id: 'FIN-3370-01', name: '吸量大字报-爆金币转场成片', type: '成片 / 近期待观察', duration: '00:18', status: 'Insufficient Data', previewUrl: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=480&h=640&fit=crop', directionGroup: '吸量大字报', spent: 12880, createdAt: '2026-06-12' },
+  { id: 'FIN-3366-03', name: '3D剧情-冰原Boss压迫感成片', type: '成片 / 已初投', duration: '00:26', status: 'Pending Data', previewUrl: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=480&h=640&fit=crop', directionGroup: '3D剧情', spent: 9650, createdAt: '2026-06-10' },
 ];
 
 const buildFinishedOptionFromVersion = (version: AssetVersionItem, index: number): SelectableOption[] => (
   (version.finishedReferenceIds || []).map((id, referenceIndex) => ({
     id,
     name: `${version.sourceRequirementName || version.name || version.sourceRequirementId || '原始需求'} 成片${referenceIndex + 1}`,
-    type: '成片 / 原始需求',
+    type: '成片 / 当前方向',
     duration: '-',
     status: 'Pending Data',
     previewUrl: `https://picsum.photos/seed/${encodeURIComponent(id)}-${index}-${referenceIndex}/480/640`,
+    directionGroup: '当前方向',
+    spent: 7200 + index * 1800 + referenceIndex * 650,
+    createdAt: `2026-06-${String(16 - ((index + referenceIndex) % 7)).padStart(2, '0')}`,
+    isCurrentDirection: true,
   }))
 );
 
@@ -149,7 +157,7 @@ const ASSET_PICKER_FACETS: PickerFacet[] = [
 
 const FINISHED_PICKER_FACETS: PickerFacet[] = [
   { id: 'all', label: '全部成片', group: '成片范围', match: () => true },
-  { id: 'current_direction', label: '当前方向', group: '成片范围', match: pickerMatchTerms(['当前方向']) },
+  { id: 'current_direction', label: '当前方向', group: '成片范围', match: item => Boolean(item.isCurrentDirection) || pickerMatchTerms(['当前方向'])(item) },
   { id: 'recent_pending', label: '近期待观察', group: '成片范围', match: pickerMatchTerms(['近期待观察', 'Pending Data']) },
   { id: 'insufficient', label: '数据不足', group: '数据状态', match: item => item.status === 'Insufficient Data' },
   { id: 'billboard', label: '大字报成片', group: '内容类型', match: pickerMatchTerms(['大字报', '口播']) },
@@ -242,7 +250,40 @@ const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
 const uniqueOptionsById = (items: SelectableOption[]) => (
   Array.from(new Map(items.map(item => [item.id, item])).values())
 );
+const formatSpend = (value?: number) => (
+  value === undefined ? '-' : `$${value.toLocaleString()}`
+);
 const createDefaultMatrixColumns = () => ['A段', 'B段'];
+const formatMatrixColumnName = (index: number) => (
+  index < 26 ? `${String.fromCharCode(65 + index)}段` : `新增段${index + 1}`
+);
+const normalizeMatrixColumns = (columns: string[]) => (
+  columns.map((_, index) => formatMatrixColumnName(index))
+);
+const reindexMatrixCellsForVersion = (
+  cells: Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }>,
+  version: string,
+  columnPairs: Array<{ from: string; to: string }>,
+) => {
+  const columnMap = new Map(columnPairs.map(item => [item.from, item.to]));
+  const nextCells: Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }> = {};
+
+  Object.entries(cells).forEach(([key, value]) => {
+    const [cellVersion, ...columnParts] = key.split('-');
+    const column = columnParts.join('-');
+    if (cellVersion !== version) {
+      nextCells[key] = value;
+      return;
+    }
+
+    const nextColumn = columnMap.get(column);
+    if (nextColumn) {
+      nextCells[`${version}-${nextColumn}`] = value;
+    }
+  });
+
+  return nextCells;
+};
 const createInitialMatrixCells = (
   subVersions: AssetVersionItem[],
 ): Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }> => (
@@ -262,11 +303,6 @@ const createInitialMatrixCells = (
       ]),
   )
 );
-const getNextMatrixColumn = (columns: string[]) => (
-  Array.from({ length: 24 }, (_, index) => `${String.fromCharCode(65 + index)}段`)
-    .find(column => !columns.includes(column)) || `新增段${columns.length + 1}`
-);
-
 const FieldLabel = ({ children }: { children: React.ReactNode }) => (
   <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500">{children}</label>
 );
@@ -492,6 +528,8 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
   const [assetPickerSearch, setAssetPickerSearch] = useState('');
   const [assetPickerFacetId, setAssetPickerFacetId] = useState('all');
   const [assetPickerDirectoryId, setAssetPickerDirectoryId] = useState('all');
+  const [finishedPickerDirectionId, setFinishedPickerDirectionId] = useState('current');
+  const [finishedPickerSort, setFinishedPickerSort] = useState<'spend' | 'time'>('spend');
   const [expandedPickerDirectoryIds, setExpandedPickerDirectoryIds] = useState<string[]>(['fragment', 'pre_hook', 'component']);
   const [landingByVersion, setLandingByVersion] = useState<Record<string, string>>(() => (
     Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, '9:16']))
@@ -512,6 +550,28 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     ]),
     [subVersions],
   );
+  const finishedDirectionOptions = React.useMemo(() => {
+    const directionGroups = Array.from(new Set(
+      finishedOptions
+        .map(item => item.directionGroup)
+        .filter((item): item is string => Boolean(item) && item !== '当前方向')
+    ));
+
+    return [
+      {
+        id: 'current',
+        label: '当前方向',
+        desc: requirement.direction || '当前需求方向',
+        match: (item: SelectableOption) => Boolean(item.isCurrentDirection) || item.type.includes('当前方向'),
+      },
+      ...directionGroups.map(group => ({
+        id: group,
+        label: group,
+        desc: '大方向成片',
+        match: (item: SelectableOption) => item.directionGroup === group,
+      })),
+    ];
+  }, [finishedOptions, requirement.direction]);
 
   const getDefaultPickerFacet = (target: AssetPickerTarget | null) => {
     if (!target || target.mode !== 'asset') return 'all';
@@ -553,6 +613,8 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     } else if (assetPickerTarget?.mode === 'finished') {
       setAssetPickerSearch('');
       setAssetPickerFacetId('all');
+      setFinishedPickerDirectionId('current');
+      setFinishedPickerSort('spend');
     }
   }, [assetPickerTarget, requirement.assetType, template]);
 
@@ -659,32 +721,42 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
   const getMatrixColumns = (version: string) => matrixColumnsByVersion[version] || createDefaultMatrixColumns();
 
   const addMatrixColumn = (version: string, afterIndex: number) => {
+    const current = getMatrixColumns(version);
+    const insertIndex = Math.max(0, Math.min(afterIndex + 1, current.length));
+    const nextColumns = normalizeMatrixColumns([
+      ...current.slice(0, insertIndex),
+      '__new_matrix_column__',
+      ...current.slice(insertIndex)
+    ]);
+    const columnPairs = current.map((column, index) => ({
+      from: column,
+      to: nextColumns[index >= insertIndex ? index + 1 : index]
+    }));
+
     setMatrixColumnsByVersion(prev => {
-      const current = prev[version] || createDefaultMatrixColumns();
-      const nextColumn = getNextMatrixColumn(current);
       return {
         ...prev,
-        [version]: [
-          ...current.slice(0, afterIndex + 1),
-          nextColumn,
-          ...current.slice(afterIndex + 1)
-        ]
+        [version]: nextColumns
       };
     });
+    setMatrixCells(prev => reindexMatrixCellsForVersion(prev, version, columnPairs));
   };
 
   const deleteMatrixColumn = (version: string, column: string) => {
     if (column === 'B段') return;
+    const current = getMatrixColumns(version);
+    const remainingColumns = current.filter(item => item !== column);
+    const nextColumns = normalizeMatrixColumns(remainingColumns);
+    const columnPairs = remainingColumns.map((item, index) => ({
+      from: item,
+      to: nextColumns[index]
+    }));
+
     setMatrixColumnsByVersion(prev => ({
       ...prev,
-      [version]: (prev[version] || createDefaultMatrixColumns()).filter(item => item !== column)
+      [version]: nextColumns
     }));
-    setMatrixCells(prev => (
-      Object.fromEntries(Object.entries(prev).filter(([key]) => {
-        const [cellVersion, ...columnParts] = key.split('-');
-        return !(cellVersion === version && columnParts.join('-') === column);
-      }))
-    ));
+    setMatrixCells(prev => reindexMatrixCellsForVersion(prev, version, columnPairs));
   };
 
   const toggleIds = (current: string[], id: string) => (
@@ -739,13 +811,24 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     const facetPool = assetPickerTarget?.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS;
     const activeFacet = facetPool.find(item => item.id === assetPickerFacetId) || facetPool[0];
     const activeDirectory = ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId) || ASSET_PICKER_DIRECTORY_OPTIONS[0];
+    const activeFinishedDirection = finishedDirectionOptions.find(item => item.id === finishedPickerDirectionId) || finishedDirectionOptions[0];
     const query = assetPickerSearch.trim().toLowerCase();
-    return optionPool.filter(asset => {
+    const filteredOptions = optionPool.filter(asset => {
       if (assetPickerTarget?.mode === 'asset' && !activeDirectory.match(asset)) return false;
+      if (assetPickerTarget?.mode === 'finished' && activeFinishedDirection && !activeFinishedDirection.match(asset)) return false;
       const matchesFacet = activeFacet.match(asset);
       if (!matchesFacet) return false;
       if (!query) return true;
-      return [asset.id, asset.name, asset.type, asset.status].join(' ').toLowerCase().includes(query);
+      return [asset.id, asset.name, asset.type, asset.status, asset.directionGroup, asset.createdAt].join(' ').toLowerCase().includes(query);
+    });
+
+    if (assetPickerTarget?.mode !== 'finished') return filteredOptions;
+
+    return [...filteredOptions].sort((a, b) => {
+      if (finishedPickerSort === 'time') {
+        return new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime();
+      }
+      return (b.spent || 0) - (a.spent || 0);
     });
   };
 
@@ -753,7 +836,19 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     (assetPickerTarget?.mode === 'finished' ? FINISHED_PICKER_FACETS : ASSET_PICKER_FACETS).reduce<Record<string, number>>((acc, facet) => {
       const activeDirectory = ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId) || ASSET_PICKER_DIRECTORY_OPTIONS[0];
       const optionPool = assetPickerTarget?.mode === 'finished' ? finishedOptions : ASSET_OPTIONS;
-      acc[facet.id] = optionPool.filter(item => (assetPickerTarget?.mode !== 'asset' || activeDirectory.match(item)) && facet.match(item)).length;
+      const activeFinishedDirection = finishedDirectionOptions.find(item => item.id === finishedPickerDirectionId) || finishedDirectionOptions[0];
+      acc[facet.id] = optionPool.filter(item => (
+        (assetPickerTarget?.mode !== 'asset' || activeDirectory.match(item)) &&
+        (assetPickerTarget?.mode !== 'finished' || !activeFinishedDirection || activeFinishedDirection.match(item)) &&
+        facet.match(item)
+      )).length;
+      return acc;
+    }, {})
+  );
+
+  const getFinishedDirectionCounts = () => (
+    finishedDirectionOptions.reduce<Record<string, number>>((acc, direction) => {
+      acc[direction.id] = finishedOptions.filter(item => direction.match(item)).length;
       return acc;
     }, {})
   );
@@ -1250,9 +1345,43 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
               assetPickerTarget.mode === 'landing'
                 ? 'lg:grid-cols-[280px_minmax(0,1fr)]'
                 : assetPickerTarget.mode === 'finished'
-                  ? 'lg:grid-cols-[280px_minmax(0,1fr)]'
+                  ? 'lg:grid-cols-[220px_280px_minmax(0,1fr)]'
                   : 'lg:grid-cols-[220px_280px_minmax(0,1fr)]'
             }`}>
+              {assetPickerTarget.mode === 'finished' && (
+                <aside className="border-r border-slate-100 bg-emerald-50/40 p-5">
+                  <div className="mb-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">大方向</p>
+                    <p className="mt-1 text-[10px] font-bold leading-relaxed text-slate-400">按创意大方向查看可引用成片</p>
+                  </div>
+                  <div className="max-h-[66vh] space-y-1 overflow-y-auto pr-1 no-scrollbar">
+                    {finishedDirectionOptions.map(direction => {
+                      const isActive = finishedPickerDirectionId === direction.id;
+                      const count = getFinishedDirectionCounts()[direction.id] || 0;
+                      return (
+                        <button
+                          key={direction.id}
+                          type="button"
+                          onClick={() => setFinishedPickerDirectionId(direction.id)}
+                          className={`w-full rounded-xl px-3 py-2.5 text-left transition-all ${
+                            isActive
+                              ? 'bg-white text-emerald-600 shadow-sm ring-1 ring-emerald-100'
+                              : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                          }`}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs font-black">{direction.label}</span>
+                            <span className={`rounded-lg px-1.5 py-0.5 text-[9px] font-black ${isActive ? 'bg-emerald-50 text-emerald-500' : 'bg-white text-slate-300'}`}>
+                              {count}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-[9px] font-bold text-slate-400">{direction.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </aside>
+              )}
               {assetPickerTarget.mode === 'asset' && (
                 <aside className="border-r border-slate-100 bg-slate-50/80 p-5">
                   <div className="mb-3 flex items-center justify-between">
@@ -1334,6 +1463,11 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                         {ASSET_PICKER_DIRECTORY_OPTIONS.find(item => item.id === assetPickerDirectoryId)?.label || '全部资产'}
                       </span>
                     )}
+                    {assetPickerTarget.mode === 'finished' && (
+                      <span className="rounded-lg bg-white px-2.5 py-1 text-[10px] font-black text-slate-700 ring-1 ring-slate-100">
+                        {finishedDirectionOptions.find(item => item.id === finishedPickerDirectionId)?.label || '当前方向'}
+                      </span>
+                    )}
                     <span className={`rounded-lg px-2.5 py-1 text-[10px] font-black ring-1 ${
                       assetPickerTarget.mode === 'finished'
                         ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
@@ -1345,6 +1479,28 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                       <span className="rounded-lg bg-white px-2.5 py-1 text-[10px] font-black text-slate-500 ring-1 ring-slate-100">
                         搜索 {assetPickerSearch.trim()}
                       </span>
+                    )}
+                    {assetPickerTarget.mode === 'finished' && (
+                      <div className="ml-auto flex overflow-hidden rounded-xl border border-slate-150 bg-white p-1">
+                        {[
+                          { id: 'spend', label: '花费倒序' },
+                          { id: 'time', label: '时间顺序' },
+                        ].map(option => {
+                          const active = finishedPickerSort === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => setFinishedPickerSort(option.id as 'spend' | 'time')}
+                              className={`rounded-lg px-3 py-1.5 text-[10px] font-black transition-all ${
+                                active ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1387,7 +1543,17 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                           <h4 className="line-clamp-2 text-xs font-black text-slate-800">{asset.name}</h4>
                           <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[8px] font-black ${asset.status === 'Recommended' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{asset.status}</span>
                         </div>
-                        <p className="mt-2 text-[10px] font-bold text-slate-400">{asset.id} / {asset.duration}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                          <span>{asset.id}</span>
+                          <span>/</span>
+                          <span>{asset.duration}</span>
+                          {assetPickerTarget.mode === 'finished' && (
+                            <>
+                              <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-black text-emerald-600">{formatSpend(asset.spent)}</span>
+                              <span>{asset.createdAt}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );})}
