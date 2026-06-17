@@ -12,8 +12,8 @@ import {
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Cell, AreaChart, Area, ReferenceLine, Label
 } from 'recharts';
-import { Calendar, Clock, Globe, Layers, Table as TableIcon, LayoutGrid, Minus, ChevronDown, X, Play, TrendingUp } from 'lucide-react';
-import DateRangePicker from './DateRangePicker';
+import { Clock, Layers, Table as TableIcon, LayoutGrid, Minus, X, Play, TrendingUp } from 'lucide-react';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
@@ -540,22 +540,16 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
   const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart');
   const [exploreTarget, setExploreTarget] = useState<{ category: string, dimension: string } | null>(null);
   
-  const [launchStart, setLaunchStart] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(1); 
-    return d.toISOString().slice(0, 10);
-  });
-  const [launchEnd, setLaunchEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [launchStart, setLaunchStart] = useState<string>('');
+  const [launchEnd, setLaunchEnd] = useState<string>('');
 
   const [spendStart, setSpendStart] = useState<string>(() => {
-     const d = new Date();
-     d.setDate(d.getDate() - 30);
-     return d.toISOString().slice(0, 10);
+     return getRecentUtcRange(30).start;
   });
-  const [spendEnd, setSpendEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [spendEnd, setSpendEnd] = useState<string>(() => getRecentUtcRange(30).end);
   
   const [language, setLanguage] = useState<'all' | 'en' | 'localized'>('all');
-  const [channel, setChannel] = useState<string>('all');
+  const [channel, setChannel] = useState<string>('');
   const feedbackRequirements = useMemo(() => generateRequirements(), []);
   const feedbackSchedules = useMemo(() => generateSchedules(), []);
   const scheduleNameMap = useMemo(
@@ -609,7 +603,7 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
             spendStart={spendStart}
             spendEnd={spendEnd}
             language={language}
-            channel={channel}
+            channel={channel || 'all'}
             viewMode={viewMode}
             onExplore={(cat, dimLabel) => setExploreTarget({ category: cat, dimension: dimLabel })}
           />
@@ -644,72 +638,48 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
            </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-10">
-            <div className="space-y-3">
-                <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest">
-                    <Calendar className="w-4 h-4 text-indigo-500" />
-                    <span>素材投产期</span>
-                </div>
-                <DateRangePicker
-                    start={launchStart}
-                    end={launchEnd}
-                    onChange={({ start, end }) => {
-                        setLaunchStart(start);
-                        setLaunchEnd(end);
-                    }}
-                    compact
-                    buttonClassName="h-12 rounded-2xl px-5"
-                />
-            </div>
-
-            <div className="space-y-3 border-l border-slate-100 pl-10">
-                <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest">
-                    <Globe className="w-4 h-4 text-sky-500" />
-                    <span>分语言包</span>
-                </div>
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full">
-                    {[{ id: 'all', label: '全部' }, { id: 'en', label: '英语' }, { id: 'localized', label: '本地' }].map((opt) => (
-                        <button key={opt.id} onClick={() => setLanguage(opt.id as any)} className={`flex-1 px-4 py-2 rounded-xl text-[10px] font-black transition-all ${language === opt.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{opt.label}</button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="space-y-3 border-l border-slate-100 pl-10">
-                <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest">
-                    <Layers className="w-4 h-4 text-orange-500" />
-                    <span>投放渠道</span>
-                </div>
-                <div className="relative">
-                   <select value={channel} onChange={e => setChannel(e.target.value)} className="w-full h-[48px] bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-black rounded-2xl focus:ring-1 focus:ring-primary focus:border-primary block px-5 appearance-none">
-                     <option value="all">Global (All Channels)</option>
-                     <option value="applovin">AppLovin</option>
-                     <option value="unity">Unity</option>
-                     <option value="google">Google Ads</option>
-                     <option value="facebook">Facebook</option>
-                     <option value="tiktok">TikTok</option>
-                   </select>
-                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none" />
-                </div>
-            </div>
-
-            <div className="space-y-3 border-l border-slate-100 pl-10">
-                <div className="flex items-center gap-2 text-slate-400 font-black text-[10px] uppercase tracking-widest">
-                    <Clock className="w-4 h-4 text-emerald-500" />
-                    <span>花费统计跨度</span>
-                </div>
-                <DateRangePicker
-                    start={spendStart}
-                    end={spendEnd}
-                    onChange={({ start, end }) => {
-                        setSpendStart(start);
-                        setSpendEnd(end);
-                    }}
-                    align="right"
-                    compact
-                    buttonClassName="h-12 rounded-2xl px-5"
-                />
-            </div>
-        </div>
+        <AnalyticsFilterBar>
+          <AnalyticsDateRangeField
+            mode="launch"
+            start={launchStart}
+            end={launchEnd}
+            onChange={({ start, end }) => {
+              setLaunchStart(start);
+              setLaunchEnd(end);
+            }}
+          />
+          <AnalyticsDateRangeField
+            start={spendStart}
+            end={spendEnd}
+            onChange={({ start, end }) => {
+              setSpendStart(start);
+              setSpendEnd(end);
+            }}
+          />
+          <AnalyticsSelectField
+            placeholder="语言"
+            value={language === 'all' ? '' : language}
+            onChange={(value) => setLanguage((value || 'all') as 'all' | 'en' | 'localized')}
+            options={[
+              { value: 'en', label: '英语' },
+              { value: 'localized', label: '本地' },
+            ]}
+            className="w-[180px]"
+          />
+          <AnalyticsSelectField
+            placeholder="渠道"
+            value={channel}
+            onChange={setChannel}
+            options={[
+              { value: 'applovin', label: 'AppLovin' },
+              { value: 'unity', label: 'Unity' },
+              { value: 'google', label: 'Google Ads' },
+              { value: 'facebook', label: 'Facebook' },
+              { value: 'tiktok', label: 'TikTok' },
+            ]}
+            className="w-[180px]"
+          />
+        </AnalyticsFilterBar>
       </div>
 
       <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -795,7 +765,7 @@ const CreativeAnalysis: React.FC<CreativeAnalysisProps> = ({ activeSubTab }) => 
           spendStart={spendStart}
           spendEnd={spendEnd}
           language={language}
-          channel={channel}
+          channel={channel || 'all'}
         />
       )}
     </div>

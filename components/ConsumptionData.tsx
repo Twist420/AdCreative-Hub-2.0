@@ -1,15 +1,19 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Play, ArrowUpDown, X } from 'lucide-react';
-import DateRangePicker from './DateRangePicker';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowUpDown, Check, ChevronLeft, ChevronRight, GripVertical, Play, Settings, X } from 'lucide-react';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSearchField, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
+
+type MaterialType = 'video' | 'playable' | 'image';
+type SortDirection = 'asc' | 'desc';
 
 interface MaterialSpend {
-  id: string; // m_01
-  name: string; // US_Hook_D01
-  contentId: string; // origin_en_01
+  id: string;
+  name: string;
+  contentId: string;
   thumbnail: string;
-  type: 'video' | 'playable' | 'image';
+  type: MaterialType;
+  platform: 'Android' | 'iOS';
   launchTime: string;
-  firstImpressionTime: string; // UTC String
+  firstImpressionTime: string;
   spend: number;
   impressions: number;
   clicks: number;
@@ -20,646 +24,517 @@ interface MaterialSpend {
   isNew: boolean;
   associatedSets: {
     setName: string;
+    campaign: string;
+    firstLaunch: string;
+    campaignCount: number;
     status: 'Live' | 'Paused';
-    createdAt: string;
     spend: number;
   }[];
 }
 
-const INITIAL_SPENDS: MaterialSpend[] = [
-  {
-    id: 'm_01',
-    name: 'US_Hook_Rescue_V01',
-    contentId: 'origin_en_101',
-    thumbnail: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=150&q=80',
-    type: 'video',
-    launchTime: '2026-05-15',
-    firstImpressionTime: '2026-05-15 04:00 UTC',
-    spend: 4500,
-    impressions: 250000,
-    clicks: 7500,
-    language: 'EN',
-    size: '1080x1920',
-    owner: '唐欣怡',
-    designer: '王杰华',
-    isNew: true,
-    associatedSets: [
-      { setName: 'cp4124-03-en-m-txy-wjh-原始玩法_20260515', status: 'Live', createdAt: '2026-05-15', spend: 7800 },
-      { setName: 'cp4124-04-en-m-txy-wjh-玩法迭代_20260517', status: 'Paused', createdAt: '2026-05-17', spend: 1200 },
-    ]
-  },
-  {
-    id: 'm_02',
-    name: 'US_3D_Boss_fight_V02',
-    contentId: 'origin_en_102',
-    thumbnail: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=150&q=80',
-    type: 'video',
-    launchTime: '2026-05-18',
-    firstImpressionTime: '2026-05-18 08:30 UTC',
-    spend: 3300,
-    impressions: 200000,
-    clicks: 5000,
-    language: 'EN',
-    size: '1080x1920',
-    owner: '唐欣怡',
-    designer: '王杰华',
-    isNew: true,
-    associatedSets: [
-      { setName: 'cp4124-03-en-m-txy-wjh-原始玩法_20260515', status: 'Live', createdAt: '2026-05-15', spend: 7800 }
-    ]
-  },
-  {
-    id: 'm_03',
-    name: 'JP_Intro_Cute_Neko_V01',
-    contentId: 'origin_ja_201',
-    thumbnail: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=150&q=80',
-    type: 'video',
-    launchTime: '2026-05-28',
-    firstImpressionTime: '2026-05-28 02:15 UTC',
-    spend: 2100,
-    impressions: 150000,
-    clicks: 4500,
-    language: 'JA',
-    size: '1080x1080',
-    owner: '吉意煊',
-    designer: '唐欣怡',
-    isNew: false,
-    associatedSets: [
-      { setName: 'cp4128-02-jp-m-txy-原始玩法_20260528', status: 'Live', createdAt: '2026-05-28', spend: 2100 }
-    ]
-  },
-  {
-    id: 'm_04',
-    name: 'US_Bigtext_Hyper_Speed',
-    contentId: 'origin_en_103',
-    thumbnail: 'https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&w=150&q=80',
-    type: 'video',
-    launchTime: '2026-05-20',
-    firstImpressionTime: '2026-05-20 12:00 UTC',
-    spend: 8900,
-    impressions: 550000,
-    clicks: 20000,
-    language: 'EN',
-    size: '1920x1080',
-    owner: '唐欣怡',
-    designer: '马嘉良',
-    isNew: true,
-    associatedSets: [
-      { setName: 'cp4120-05-en-m-jt-吸量大字报_20260520', status: 'Live', createdAt: '2026-05-20', spend: 15400 }
-    ]
-  },
-  {
-    id: 'm_05',
-    name: 'CA_Minigame_Match3_Playable',
-    contentId: 'playable_en_match3',
-    thumbnail: 'https://images.unsplash.com/photo-1612287230202-1bf1d85d1bdf?auto=format&fit=crop&w=150&q=80',
-    type: 'playable',
-    launchTime: '2026-05-20',
-    firstImpressionTime: '2026-05-21 00:00 UTC',
-    spend: 6500,
-    impressions: 430000,
-    clicks: 14000,
-    language: 'EN',
-    size: '1080x1920',
-    owner: '吉意煊',
-    designer: '王杰华',
-    isNew: true,
-    associatedSets: [
-      { setName: 'cp4120-05-en-m-jt-吸量大字报_20260520', status: 'Live', createdAt: '2026-05-20', spend: 15400 }
-    ]
-  },
-  {
-    id: 'm_06',
-    name: 'DE_Rewards_Showcase_Bnt',
-    contentId: 'image_de_banner',
-    thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
-    type: 'image',
-    launchTime: '2026-05-22',
-    firstImpressionTime: '2026-05-22 15:45 UTC',
-    spend: 3800,
-    impressions: 210000,
-    clicks: 8600,
-    language: 'DE',
-    size: '1080x1080',
-    owner: '马嘉良',
-    designer: '王杰华',
-    isNew: false,
-    associatedSets: [
-      { setName: 'cp4126-01-de-m-mlg-其他玩法_20260522', status: 'Live', createdAt: '2026-05-22', spend: 3800 }
-    ]
-  },
-  {
-    id: 'm_07',
-    name: 'KR_Plot_3D_Cinema_Intro',
-    contentId: 'origin_kr_301',
-    thumbnail: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=150&q=80',
-    type: 'video',
-    launchTime: '2026-05-10',
-    firstImpressionTime: '2026-05-10 10:10 UTC',
-    spend: 0,
-    impressions: 0,
-    clicks: 0,
-    language: 'KO',
-    size: '1920x1080',
-    owner: '唐欣怡',
-    designer: '王杰华',
-    isNew: false,
-    associatedSets: [
-      { setName: 'cp4130-01-kr-m-jyx-3D玩法_20260510', status: 'Paused', createdAt: '2026-05-10', spend: 6400 }
-    ]
-  }
+interface ColumnConfig {
+  id: string;
+  name: string;
+  visible: boolean;
+}
+
+const materialTemplates = [
+  '仙子举牌剧情',
+  '克朗复刻买点',
+  '奖励endingcard',
+  '大字报无玩法',
+  '精灵王子变蛇',
+  '公告文案复盘',
+  '三消树玩法植入',
+  '剧情开场冲突',
+  '资源收集试玩',
+  '失败惩罚口播',
 ];
 
+const thumbnails = [
+  'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=150&q=80',
+  'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=150&q=80',
+  'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=150&q=80',
+  'https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&w=150&q=80',
+  'https://images.unsplash.com/photo-1612287230202-1bf1d85d1bdf?auto=format&fit=crop&w=150&q=80',
+  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
+];
+
+const channels = ['Applovin', 'Google', 'Facebook', 'Adjoe', 'Moloco', 'Unity'];
+const platforms: MaterialSpend['platform'][] = ['Android', 'iOS'];
+const languages: MaterialSpend['language'][] = ['EN', 'JA', 'KO', 'DE'];
+const sizes: MaterialSpend['size'][] = ['1080x1920', '1920x1080', '1080x1080'];
+const owners = ['唐欣怡', '吉意煊', '马嘉良', '王杰华'];
+const designers = ['王杰华', '唐欣怡', '李思晨', '周明'];
+const types: MaterialType[] = ['video', 'playable', 'image'];
+
+const buildMockSpends = (): MaterialSpend[] =>
+  Array.from({ length: 132 }, (_, index) => {
+    const cp = 3097 + (index * 37) % 900;
+    const variant = String((index % 9) + 1).padStart(2, '0');
+    const language = languages[index % languages.length];
+    const type = types[index % types.length];
+    const channel = channels[index % channels.length];
+    const template = materialTemplates[index % materialTemplates.length];
+    const date = new Date(Date.UTC(2026, 4, 10 + (index % 38)));
+    const day = date.toISOString().slice(0, 10);
+    const setCount = 3 + (index % 10);
+    const spend = 820 + ((index * 1379) % 26000);
+    const impressions = 42000 + ((index * 43871) % 760000);
+    const clicks = Math.floor(impressions * (0.018 + (index % 13) * 0.003));
+
+    return {
+      id: `cp${cp}-${variant}`,
+      name: `cp${cp}-${variant}-${language.toLowerCase()}-${type === 'playable' ? 'p' : type === 'image' ? 'i' : 'm'}-${template}-9-16`,
+      contentId: `content_${language.toLowerCase()}_${String(1000 + index).padStart(4, '0')}`,
+      thumbnail: thumbnails[index % thumbnails.length],
+      type,
+      platform: platforms[index % platforms.length],
+      launchTime: day,
+      firstImpressionTime: `${day} ${String(2 + (index % 18)).padStart(2, '0')}:00 UTC`,
+      spend,
+      impressions,
+      clicks,
+      language,
+      size: sizes[index % sizes.length],
+      owner: owners[index % owners.length],
+      designer: designers[index % designers.length],
+      isNew: index % 4 !== 0,
+      associatedSets: Array.from({ length: setCount }, (_, setIndex) => ({
+        setName: `【260${(index + setIndex) % 9 + 10}-A动画剧情-B无玩法】 ${2 + (setIndex % 8)}cp+10sw-${setIndex % 2 ? 'reward' : 'relax'} cpp`,
+        campaign: `Campaign ${channel} ${String(40 + (index % 12)).padStart(3, '0')}`,
+        firstLaunch: new Date(Date.UTC(2026, 3 + (setIndex % 2), 8 + ((index + setIndex) % 22))).toISOString().slice(0, 10),
+        campaignCount: 1 + (setIndex % 3),
+        status: setIndex % 4 === 0 ? 'Paused' : 'Live',
+        spend: Math.round(spend * (0.18 + setIndex * 0.045)),
+      })),
+    };
+  });
+
+const INITIAL_COLUMNS: ColumnConfig[] = [
+  { id: 'id', name: '素材ID', visible: true },
+  { id: 'name', name: '素材名称', visible: true },
+  { id: 'contentId', name: '素材内容ID', visible: true },
+  { id: 'thumbnail', name: '素材预览', visible: true },
+  { id: 'sets', name: 'Set数量', visible: true },
+  { id: 'firstImpressionTime', name: '首次展示时间', visible: true },
+  { id: 'spend', name: '花费', visible: true },
+  { id: 'spendRatio', name: '花费占比', visible: true },
+  { id: 'impressions', name: '展示量', visible: true },
+  { id: 'clicks', name: '点击', visible: true },
+  { id: 'ctr', name: 'CTR', visible: true },
+  { id: 'language', name: '语言', visible: true },
+  { id: 'size', name: '尺寸', visible: false },
+  { id: 'owner', name: '需求负责人', visible: false },
+  { id: 'designer', name: '制作人员', visible: false },
+];
+
+const metricHelp: Record<string, string> = {
+  id: '素材ID：按需求中心风格生成的素材编号。',
+  name: '素材名称：素材投放命名，用于识别内容、语言、类型与尺寸。',
+  contentId: '素材内容ID：同一内容资产的聚合标识。',
+  sets: 'Set数量：使用该素材的 Ad Set 数量，点击查看具体 Set。',
+  firstImpressionTime: '首次展示时间：素材首次产生展示的 UTC 时间。',
+  spend: '花费：当前筛选周期内素材消耗金额。',
+  spendRatio: '花费占比 = 素材花费 / 当前结果总花费。',
+  impressions: '展示量：素材在投放周期内产生的曝光次数。',
+  clicks: '点击：用户点击广告素材的次数。',
+  ctr: 'CTR = 点击 / 展示。',
+  language: '语言：素材投放语言。隐藏后按内容ID聚合。',
+  size: '尺寸：素材尺寸。隐藏后按素材ID聚合。',
+  owner: '需求负责人：素材需求侧负责人。',
+  designer: '制作人员：素材制作执行人。',
+};
+
+const getTypeLabel = (type: MaterialType) => ({ video: '视频', playable: '试玩', image: '图片' }[type]);
+
+const getSortValue = (row: MaterialSpend, key: string, totalSpend: number) => {
+  if (key === 'sets') return row.associatedSets.length;
+  if (key === 'spendRatio') return totalSpend > 0 ? row.spend / totalSpend : 0;
+  if (key === 'ctr') return row.impressions > 0 ? row.clicks / row.impressions : 0;
+  return row[key as keyof MaterialSpend] as string | number;
+};
+
+const ColumnConfigDropdown = ({
+  columns,
+  onClose,
+  onDrag,
+  onToggle,
+  open,
+}: {
+  columns: ColumnConfig[];
+  onClose: () => void;
+  onDrag: (from: number, to: number) => void;
+  onToggle: (id: string) => void;
+  open: boolean;
+}) => {
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+
+  if (!open) return null;
+
+  return (
+    <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/80">
+      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+        <span className="text-xs font-black text-slate-700">字段配置</span>
+        <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="max-h-80 overflow-y-auto p-1.5">
+        {columns.map((column, index) => (
+          <div
+            key={column.id}
+            draggable
+            onDragStart={() => setDraggingIndex(index)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              if (draggingIndex !== null && draggingIndex !== index) onDrag(draggingIndex, index);
+              setDraggingIndex(null);
+            }}
+            className="flex h-9 cursor-grab items-center gap-2 rounded-lg px-2 text-xs font-bold text-slate-600 hover:bg-slate-50 active:cursor-grabbing"
+          >
+            <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+            <button
+              type="button"
+              onClick={() => onToggle(column.id)}
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                column.visible ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300 bg-white'
+              }`}
+            >
+              {column.visible && <Check className="h-3 w-3" />}
+            </button>
+            <span className="min-w-0 flex-1 truncate">{column.name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const ConsumptionDataPage: React.FC = () => {
-  // Filter conditions
-  const [launchStart, setLaunchStart] = useState('2026-05-10');
-  const [launchEnd, setLaunchEnd] = useState('2026-06-03');
-  const [filterOutsideLaunch, setFilterOutsideLaunch] = useState(false);
-
-  const [spendStart, setSpendStart] = useState('2026-05-10');
-  const [spendEnd, setSpendEnd] = useState('2026-06-03');
-  const [selectedChannel, setSelectedChannel] = useState('All');
-  const [selectedLanguage, setSelectedLanguage] = useState('All');
-
-  // Table Search Filters
+  const [launchStart, setLaunchStart] = useState('');
+  const [launchEnd, setLaunchEnd] = useState('');
+  const [spendStart, setSpendStart] = useState(() => getRecentUtcRange(30).start);
+  const [spendEnd, setSpendEnd] = useState(() => getRecentUtcRange(30).end);
+  const [selectedChannel, setSelectedChannel] = useState('');
+  const [selectedPlatform, setSelectedPlatform] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState('');
+  const [campaignQuery, setCampaignQuery] = useState('');
   const [setQuery, setSetQuery] = useState('');
   const [materialIdQuery, setMaterialIdQuery] = useState('');
   const [materialNameQuery, setMaterialNameQuery] = useState('');
-
-  // Column visibility / toggle aggregation properties
-  const [showLangCol, setShowLangCol] = useState(true);
-  const [showSizeCol, setShowSizeCol] = useState(false);
-  const [showOwnerCol, setShowOwnerCol] = useState(false);
-  const [showDesignerCol, setShowDesignerCol] = useState(false);
-
-  // Tab filters inside Table: Videos, Playables, Images
-  const [activeTypeTab, setActiveTypeTab] = useState<'all' | 'video' | 'playable' | 'image'>('all');
-
-  // Popup state for showing material set uses
+  const [activeTypeTab, setActiveTypeTab] = useState<'all' | MaterialType>('all');
   const [modalMaterialUses, setModalMaterialUses] = useState<MaterialSpend | null>(null);
+  const [columns, setColumns] = useState(INITIAL_COLUMNS);
+  const [showConfig, setShowConfig] = useState(false);
+  const [sortKey, setSortKey] = useState('spend');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [tooltip, setTooltip] = useState<{ left: number; text: string; top: number } | null>(null);
 
-  // Table Sorting
-  const [sortKey, setSortKey] = useState<string>('spend');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const allSpends = useMemo(() => buildMockSpends(), []);
+  const showLangCol = columns.find((column) => column.id === 'language')?.visible ?? true;
+  const showSizeCol = columns.find((column) => column.id === 'size')?.visible ?? false;
+  const visibleColumns = columns.filter((column) => column.visible);
 
-  // Filter rows
   const filteredMaterials = useMemo(() => {
-    let rows = INITIAL_SPENDS.filter(item => {
-      // Channel
-      if (selectedChannel !== 'All') {
-        const matchesChannel = item.associatedSets.some(set => set.setName.toLowerCase().includes(selectedChannel.toLowerCase()));
+    let rows = allSpends.filter((item) => {
+      if (selectedChannel) {
+        const matchesChannel = item.associatedSets.some((set) => set.campaign.toLowerCase().includes(selectedChannel.toLowerCase()));
         if (!matchesChannel) return false;
       }
-
-      // Language
-      if (selectedLanguage !== 'All' && item.language !== selectedLanguage) return false;
-
-      // Filter launch
-      if (filterOutsideLaunch) {
-        if (item.launchTime < launchStart || item.launchTime > launchEnd) return false;
-      }
-
-      // Type tabs
+      if (selectedPlatform && item.platform !== selectedPlatform) return false;
+      if (selectedLanguage && item.language !== selectedLanguage) return false;
       if (activeTypeTab !== 'all' && item.type !== activeTypeTab) return false;
-
-      // Header inputs
-      if (setQuery) {
-        const matchesSet = item.associatedSets.some(set => set.setName.toLowerCase().includes(setQuery.toLowerCase()));
-        if (!matchesSet) return false;
+      if (campaignQuery && !item.associatedSets.some((set) => set.campaign.toLowerCase().includes(campaignQuery.toLowerCase()))) return false;
+      if (setQuery && !item.associatedSets.some((set) => set.setName.toLowerCase().includes(setQuery.toLowerCase()))) return false;
+      const materialQuery = materialNameQuery || materialIdQuery;
+      if (materialQuery) {
+        const normalizedQuery = materialQuery.toLowerCase();
+        if (!item.id.toLowerCase().includes(normalizedQuery) && !item.name.toLowerCase().includes(normalizedQuery)) return false;
       }
-      if (materialIdQuery && !item.id.toLowerCase().includes(materialIdQuery.toLowerCase())) return false;
-      if (materialNameQuery && !item.name.toLowerCase().includes(materialNameQuery.toLowerCase())) return false;
-
       return true;
     });
 
-    // Handle Aggregations as specified in the document!
-    // 1. "当隐藏语言列时，素材的【花费、展示、点击】按照内容id (content_id)聚合，CTR重新按照聚合后的点击/展示计算"
-    // 2. "当隐藏尺寸列该列隐藏时，【花费、展示、点击】按照素材id (material_id)聚合"
-    // Let's implement real aggregation algorithm!
     if (!showLangCol) {
-      // Group by contentId
       const grouped: Record<string, MaterialSpend> = {};
-      rows.forEach(item => {
+      rows.forEach((item) => {
         if (!grouped[item.contentId]) {
-          grouped[item.contentId] = { ...item };
+          grouped[item.contentId] = { ...item, associatedSets: [...item.associatedSets] };
         } else {
           grouped[item.contentId].spend += item.spend;
           grouped[item.contentId].impressions += item.impressions;
           grouped[item.contentId].clicks += item.clicks;
+          grouped[item.contentId].associatedSets.push(...item.associatedSets);
         }
       });
       rows = Object.values(grouped);
     } else if (!showSizeCol) {
-      // Group by id (materialId)
       const grouped: Record<string, MaterialSpend> = {};
-      rows.forEach(item => {
+      rows.forEach((item) => {
         if (!grouped[item.id]) {
-          grouped[item.id] = { ...item };
+          grouped[item.id] = { ...item, associatedSets: [...item.associatedSets] };
         } else {
           grouped[item.id].spend += item.spend;
           grouped[item.id].impressions += item.impressions;
           grouped[item.id].clicks += item.clicks;
+          grouped[item.id].associatedSets.push(...item.associatedSets);
         }
       });
       rows = Object.values(grouped);
     }
 
-    // Sort rows
+    const totalSpend = rows.reduce((sum, row) => sum + row.spend, 0);
     rows.sort((a, b) => {
-      let valA: any = a[sortKey as keyof MaterialSpend];
-      let valB: any = b[sortKey as keyof MaterialSpend];
-      
-      // Calculate special values
-      if (sortKey === 'ctr') {
-        valA = a.impressions > 0 ? (a.clicks / a.impressions) : 0;
-        valB = b.impressions > 0 ? (b.clicks / b.impressions) : 0;
-      } else if (sortKey === 'spendRatio') {
-        valA = a.spend;
-        valB = b.spend;
-      }
-
+      const valA = getSortValue(a, sortKey, totalSpend);
+      const valB = getSortValue(b, sortKey, totalSpend);
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-
     return rows;
-  }, [
-    selectedChannel, selectedLanguage, filterOutsideLaunch, launchStart, launchEnd,
-    activeTypeTab, setQuery, materialIdQuery, materialNameQuery, showLangCol, showSizeCol, sortKey, sortDirection
-  ]);
+  }, [activeTypeTab, allSpends, campaignQuery, materialIdQuery, materialNameQuery, selectedChannel, selectedLanguage, selectedPlatform, setQuery, showLangCol, showSizeCol, sortDirection, sortKey]);
 
-  // Total sums of entire periods
-  const globalTotalSpend = useMemo(() => {
-    return INITIAL_SPENDS.reduce((sum, x) => sum + x.spend, 0);
-  }, []);
+  const totalSpend = useMemo(() => filteredMaterials.reduce((sum, row) => sum + row.spend, 0), [filteredMaterials]);
+  const totalPages = Math.max(1, Math.ceil(filteredMaterials.length / pageSize));
+  const pagedMaterials = filteredMaterials.slice((page - 1) * pageSize, page * pageSize);
 
-  const totalSummary = useMemo(() => {
-    let newMaterialSpend = 0;
-    let totalImpressions = 0;
-    let totalClicks = 0;
-    let totalFilteredSpend = 0;
+  useEffect(() => {
+    setPage(1);
+  }, [activeTypeTab, campaignQuery, materialIdQuery, materialNameQuery, pageSize, selectedChannel, selectedLanguage, selectedPlatform, setQuery, showLangCol, showSizeCol]);
 
-    filteredMaterials.forEach(m => {
-      if (m.isNew) newMaterialSpend += m.spend;
-      totalImpressions += m.impressions;
-      totalClicks += m.clicks;
-      totalFilteredSpend += m.spend;
+  const toggleSort = (key: string) => {
+    setSortKey(key);
+    setSortDirection((current) => (sortKey === key && current === 'asc' ? 'desc' : 'asc'));
+  };
+
+  const toggleColumnVisible = (id: string) => {
+    setColumns((current) => current.map((column) => (column.id === id ? { ...column, visible: !column.visible } : column)));
+  };
+
+  const moveColumn = (from: number, to: number) => {
+    setColumns((current) => {
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
     });
+  };
 
-    return {
-      newMaterialSpend,
-      newMaterialSpendRatio: totalFilteredSpend > 0 ? (newMaterialSpend / totalFilteredSpend) * 100 : 0,
-      totalImpressions,
-      totalClicks,
-      totalFilteredSpend
-    };
-  }, [filteredMaterials]);
+  const renderCell = (columnId: string, material: MaterialSpend) => {
+    const pct = totalSpend > 0 ? (material.spend / totalSpend) * 100 : 0;
+    const ctr = material.impressions > 0 ? (material.clicks / material.impressions) * 100 : 0;
+
+    switch (columnId) {
+      case 'id':
+        return <span className="font-mono text-[11px] font-black text-slate-500">{material.id}</span>;
+      case 'name':
+        return <span className="block truncate font-bold text-slate-800" title={material.name}>{material.name}</span>;
+      case 'contentId':
+        return <span className="font-mono text-[11px] text-slate-400">{material.contentId}</span>;
+      case 'thumbnail':
+        return (
+          <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+            <img src={material.thumbnail} className="h-full w-full object-cover" alt="" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity hover:opacity-100">
+              <Play className="h-3.5 w-3.5 text-white" />
+            </div>
+          </div>
+        );
+      case 'sets':
+        return (
+          <button
+            type="button"
+            onClick={() => setModalMaterialUses(material)}
+            className="font-black text-indigo-600 hover:text-indigo-800 hover:underline"
+          >
+            {material.associatedSets.length} 个 set
+          </button>
+        );
+      case 'firstImpressionTime':
+        return <span className="font-mono text-[11px] text-slate-500">{material.firstImpressionTime}</span>;
+      case 'spend':
+        return <span className="font-mono font-black">${material.spend.toLocaleString()}</span>;
+      case 'spendRatio':
+        return <span className="font-mono font-black text-pink-600">{pct.toFixed(2)}%</span>;
+      case 'impressions':
+        return <span className="font-mono">{material.impressions.toLocaleString()}</span>;
+      case 'clicks':
+        return <span className="font-mono">{material.clicks.toLocaleString()}</span>;
+      case 'ctr':
+        return <span className="font-mono font-black">{ctr.toFixed(2)}%</span>;
+      case 'language':
+        return <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-600">{material.language}</span>;
+      case 'size':
+        return <span className="font-mono text-[11px] text-slate-500">{material.size}</span>;
+      case 'owner':
+        return material.owner;
+      case 'designer':
+        return material.designer;
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* 👑 Section Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 flex items-center">
-            <span className="w-1.5 h-6 bg-pink-500 rounded-full mr-3"></span>
-            消耗数据看板
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            监控投放创意素材消耗明细，支持筛选、聚合、排序与关联创意组查看。
-          </p>
-        </div>
-      </div>
+    <div className="space-y-3 pb-6">
+      <AnalyticsFilterBar>
+        <AnalyticsDateRangeField
+          start={spendStart}
+          end={spendEnd}
+          onChange={({ start, end }) => {
+            setSpendStart(start);
+            setSpendEnd(end);
+          }}
+        />
+        <AnalyticsDateRangeField
+          mode="launch"
+          start={launchStart}
+          end={launchEnd}
+          onChange={({ start, end }) => {
+            setLaunchStart(start);
+            setLaunchEnd(end);
+          }}
+        />
+        <AnalyticsSelectField placeholder="渠道" value={selectedChannel} onChange={setSelectedChannel} options={channels.map((channel) => ({ value: channel, label: channel }))} className="w-[140px]" />
+        <AnalyticsSelectField placeholder="Platform" value={selectedPlatform} onChange={setSelectedPlatform} options={platforms.map((platform) => ({ value: platform, label: platform }))} className="w-[130px]" />
+        <AnalyticsSelectField placeholder="语言" value={selectedLanguage} onChange={setSelectedLanguage} options={languages.map((language) => ({ value: language, label: language }))} className="w-[120px]" />
+        <AnalyticsSearchField placeholder="Campaign" value={campaignQuery} onChange={setCampaignQuery} className="w-[170px]" />
+        <AnalyticsSearchField placeholder="Set 名称" value={setQuery} onChange={setSetQuery} className="w-[170px]" />
+        <AnalyticsSelectField
+          placeholder="素材类型"
+          value={activeTypeTab === 'all' ? '' : activeTypeTab}
+          onChange={(value) => setActiveTypeTab((value || 'all') as 'all' | MaterialType)}
+          options={[
+            { value: 'video', label: '视频' },
+            { value: 'playable', label: '试玩' },
+            { value: 'image', label: '图片' },
+          ]}
+          className="w-[130px]"
+        />
+        <AnalyticsSearchField placeholder="素材名称 / ID" value={materialNameQuery || materialIdQuery} onChange={(value) => {
+          setMaterialNameQuery(value);
+          setMaterialIdQuery(value);
+        }} className="w-[190px]" />
+      </AnalyticsFilterBar>
 
-      {/* 🔍 Global Filter Area */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-6 shadow-sm">
-        {/* Launch Time + Toggle Checkbox */}
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-bold text-slate-700">投放时间</span>
-          <DateRangePicker
-            start={launchStart}
-            end={launchEnd}
-            onChange={({ start, end }) => {
-              setLaunchStart(start);
-              setLaunchEnd(end);
-            }}
-            compact
-          />
-          <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={filterOutsideLaunch}
-              onChange={e => setFilterOutsideLaunch(e.target.checked)}
-              className="rounded border-slate-300 text-pink-500 w-3.5 h-3.5 focus:ring-0"
-            />
-            <span className="text-[10px] font-bold text-slate-500">过滤投放时间之外的数据</span>
-          </label>
-        </div>
-
-        {/* Spend Period */}
-        <div className="flex flex-col gap-2 border-l-0 md:border-l border-slate-100 md:px-4">
-          <span className="text-xs font-bold text-slate-700">花费周期</span>
-          <DateRangePicker
-            start={spendStart}
-            end={spendEnd}
-            onChange={({ start, end }) => {
-              setSpendStart(start);
-              setSpendEnd(end);
-            }}
-            align="right"
-            compact
-          />
-        </div>
-
-        {/* Channel Selection */}
-        <div className="flex flex-col gap-2 border-l-0 md:border-l border-slate-100 md:px-4">
-          <span className="text-xs font-bold text-slate-700">渠道</span>
-          <select
-            value={selectedChannel}
-            onChange={e => setSelectedChannel(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg px-2.5 py-2 focus:outline-none mt-0.5"
-          >
-            <option value="All">全部渠道 (All)</option>
-            <option value="Applovin">AppLovin (AL)</option>
-            <option value="Google">Google Ads</option>
-            <option value="Facebook">Facebook</option>
-            <option value="Adjoe">Adjoe</option>
-            <option value="Moloco">Moloco</option>
-            <option value="Unity">Unity</option>
-          </select>
-        </div>
-
-        {/* Language Selection */}
-        <div className="flex flex-col gap-2 border-l-0 md:border-l border-slate-100 md:pl-4">
-          <span className="text-xs font-bold text-slate-700">语言 (Language)</span>
-          <select
-            value={selectedLanguage}
-            onChange={e => setSelectedLanguage(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg px-2.5 py-2 focus:outline-none mt-0.5"
-          >
-            <option value="All">All Languages</option>
-            <option value="EN">英语 (EN)</option>
-            <option value="JA">日语 (JA)</option>
-            <option value="KO">韩语 (KO)</option>
-            <option value="DE">德语 (DE)</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
-          {/* Upper Table Filters (set name, material id, material name) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+          <div className="text-xs font-bold text-slate-400">
+            共 <span className="font-black text-slate-700">{filteredMaterials.length}</span> 条素材消耗
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            >
+              {[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size} 行/页</option>)}
+            </select>
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="搜索 Set 名称..."
-                value={setQuery}
-                onChange={e => setSetQuery(e.target.value)}
-                className="bg-slate-50 border border-slate-200 pl-9 pr-3 py-2 text-xs font-semibold rounded-xl focus:outline-none w-full"
-              />
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="搜索素材 ID..."
-                value={materialIdQuery}
-                onChange={e => setMaterialIdQuery(e.target.value)}
-                className="bg-slate-50 border border-slate-200 pl-9 pr-3 py-2 text-xs font-semibold rounded-xl focus:outline-none w-full"
-              />
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="搜索素材名称..."
-                value={materialNameQuery}
-                onChange={e => setMaterialNameQuery(e.target.value)}
-                className="bg-slate-50 border border-slate-200 pl-9 pr-3 py-2 text-xs font-semibold rounded-xl focus:outline-none w-full"
-              />
+              <button
+                type="button"
+                onClick={() => setShowConfig((value) => !value)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:border-indigo-200 hover:bg-slate-50"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                字段配置
+              </button>
+              <ColumnConfigDropdown columns={columns} onClose={() => setShowConfig(false)} onDrag={moveColumn} onToggle={toggleColumnVisible} open={showConfig} />
             </div>
           </div>
+        </div>
 
-          <div className="h-px bg-slate-200 my-1"></div>
-
-          {/* Type filters tabs + Custom display switch toggles */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Playables, Videos, Images type tab */}
-            <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
-              {[
-                { id: 'all', label: '全部' },
-                { id: 'video', label: '视频 (Videos)' },
-                { id: 'playable', label: '试玩 (Playables)' },
-                { id: 'image', label: '图片 (Images)' }
-              ].map(type => (
-                <button
-                  key={type.id}
-                  onClick={() => setActiveTypeTab(type.id as any)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTypeTab === type.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                >
-                  {type.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom aggregation columns switches */}
-            <div className="flex flex-wrap items-center gap-3.5 bg-slate-50 p-2 rounded-xl border border-slate-150">
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">列聚合与显示控制:</span>
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showLangCol}
-                  onChange={e => setShowLangCol(e.target.checked)}
-                  className="rounded text-pink-500 focus:ring-0 w-3.5 h-3.5"
-                />
-                <span className="text-xs font-bold text-slate-600">语言 (Language聚合)</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showSizeCol}
-                  onChange={e => setShowSizeCol(e.target.checked)}
-                  className="rounded text-pink-500 focus:ring-0 w-3.5 h-3.5"
-                />
-                <span className="text-xs font-bold text-slate-600">尺寸列聚合</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showOwnerCol}
-                  onChange={e => setShowOwnerCol(e.target.checked)}
-                  className="rounded text-pink-500 focus:ring-0 w-3.5 h-3.5"
-                />
-                <span className="text-xs font-bold text-slate-600">负责人</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showDesignerCol}
-                  onChange={e => setShowDesignerCol(e.target.checked)}
-                  className="rounded text-pink-500 focus:ring-0 w-3.5 h-3.5"
-                />
-                <span className="text-xs font-bold text-slate-600">制作人</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Main List Table (Freezed headers) */}
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left border-collapse table-fixed min-w-[1400px]">
-              <thead className="bg-slate-900 text-white text-[11px] font-bold uppercase sticky top-0 z-20 shadow-md">
-                <tr>
-                  <th className="py-3 px-4 w-24">素材ID</th>
-                  <th className="py-3 px-4 w-44">素材名称</th>
-                  <th className="py-3 px-4 w-32 justify-between">
-                    <span>素材内容ID [E.id]</span>
+        <div className="max-h-[calc(100vh-245px)] overflow-auto">
+          <table className="w-full min-w-[1500px] table-fixed border-collapse text-left">
+            <thead className="sticky top-0 z-20 bg-slate-100 text-[11px] font-black text-slate-600">
+              <tr>
+                {visibleColumns.map((column) => (
+                  <th key={column.id} className="border-b border-r border-slate-200 px-3 py-2 align-middle last:border-r-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(column.id)}
+                      onMouseEnter={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setTooltip({ left: rect.left + rect.width / 2, top: rect.top - 10, text: metricHelp[column.id] });
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
+                      className="flex w-full items-center justify-between gap-1 text-left leading-tight"
+                    >
+                      <span className="whitespace-normal">{column.name}</span>
+                      <ArrowUpDown className={`h-3 w-3 shrink-0 ${sortKey === column.id ? 'text-indigo-500' : 'text-slate-300'}`} />
+                    </button>
                   </th>
-                  <th className="py-3 px-4 w-28">素材预览</th>
-                  <th className="py-3 px-4 w-48">Creative Set</th>
-                  <th className="py-3 px-4 w-32">首次展示时间</th>
-                  <th className="py-3 px-4 w-28 text-right cursor-pointer" onClick={() => { setSortKey('spend'); setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc'); }}>
-                    花费 <ArrowUpDown className="w-3 h-3 inline-block ml-1" />
-                  </th>
-                  <th className="py-3 px-4 w-28 text-right cursor-pointer text-pink-300" onClick={() => { setSortKey('spendRatio'); setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc'); }}>
-                    花费占比 (%) <ArrowUpDown className="w-3 h-3 inline-block ml-1" />
-                  </th>
-                  <th className="py-3 px-4 w-28 text-right">展示量</th>
-                  <th className="py-3 px-4 w-28 text-right">点击</th>
-                  <th className="py-3 px-4 w-24 text-right cursor-pointer" onClick={() => { setSortKey('ctr'); setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc'); }}>
-                    CTR (%) <ArrowUpDown className="w-3 h-3 inline-block ml-1" />
-                  </th>
-                  {showLangCol && <th className="py-3 px-4 w-20">语言</th>}
-                  {showSizeCol && <th className="py-3 px-4 w-24">尺寸</th>}
-                  {showOwnerCol && <th className="py-3 px-4 w-24">需求负责人</th>}
-                  {showDesignerCol && <th className="py-3 px-4 w-24">制作人员</th>}
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+              {pagedMaterials.map((material) => (
+                <tr key={`${material.id}-${material.contentId}`} className="hover:bg-slate-50">
+                  {visibleColumns.map((column) => (
+                    <td key={column.id} className="truncate border-r border-slate-100 px-3 py-2 last:border-r-0">
+                      {renderCell(column.id, material)}
+                    </td>
+                  ))}
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
-                {filteredMaterials.map(m => {
-                  const pct = globalTotalSpend > 0 ? (m.spend / globalTotalSpend) * 100 : 0;
-                  const ctr = m.impressions > 0 ? (m.clicks / m.impressions) * 100 : 0;
-                  const firstSet = m.associatedSets[0];
-
-                  // Highlight in blue if date falls into launching ranges and checked
-                  const launchDateInside = m.launchTime >= launchStart && m.launchTime <= launchEnd;
-                  const highlightBlue = !filterOutsideLaunch && launchDateInside;
-
-                  return (
-                    <tr key={m.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-[10px] text-slate-500">{m.id}</td>
-                      <td className={`py-3 px-4 truncate ${highlightBlue ? 'text-blue-600 font-bold' : ''}`} title={m.name}>
-                        {m.name}
-                      </td>
-                      <td className="py-3 px-4 truncate font-mono text-slate-400">{m.contentId}</td>
-                      <td className="py-3 px-4">
-                        <div className="w-10 h-10 bg-slate-200 border border-slate-300 rounded overflow-hidden flex items-center justify-center relative group">
-                          <img src={m.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Play className="w-3.5 h-3.5 text-white" />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        {firstSet ? (
-                          <button
-                            onClick={() => setModalMaterialUses(m)}
-                            className="text-left text-primary hover:underline hover:text-indigo-600 block font-black truncate max-w-[180px]"
-                            title={firstSet.setName}
-                          >
-                            {firstSet.setName}
-                          </button>
-                        ) : (
-                          <span className="text-slate-400 italic">No usage sets</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-slate-400 font-medium font-mono text-[10px]">{m.firstImpressionTime}</td>
-                      <td className="py-3 px-4 text-right font-mono">${m.spend.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right text-pink-600 font-mono">{pct.toFixed(2)}%</td>
-                      <td className="py-3 px-4 text-right font-mono">{m.impressions.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right font-mono">{m.clicks.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right font-mono font-black text-slate-900">{ctr.toFixed(2)}%</td>
-                      
-                      {showLangCol && (
-                        <td className="py-3 px-4">
-                          <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold border border-slate-200">{m.language}</span>
-                        </td>
-                      )}
-                      
-                      {showSizeCol && <td className="py-3 px-4 font-mono text-slate-500">{m.size}</td>}
-                      {showOwnerCol && <td className="py-3 px-4 text-slate-600">{m.owner}</td>}
-                      {showDesignerCol && <td className="py-3 px-4 text-slate-600">{m.designer}</td>}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Fixed bottom summary row on table section */}
-          {filteredMaterials.length > 0 && (
-            <div className="bg-slate-900 text-white rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs font-bold leading-none">
-              <div className="flex justify-between border-b md:border-b-0 border-slate-800 pb-2 md:pb-0 md:border-r md:pr-4">
-                <span className="text-slate-450 mr-2 uppercase tracking-wide">新素材投放花费/总花费:</span>
-                <span className="font-mono text-sky-400">${totalSummary.newMaterialSpend.toLocaleString()} / ${totalSummary.totalFilteredSpend.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between border-b md:border-b-0 border-slate-800 pb-2 md:pb-0 md:border-r md:pr-4">
-                <span className="text-slate-450 mr-2 uppercase tracking-wide">新素材花费占比:</span>
-                <span className="font-mono text-pink-400">{totalSummary.newMaterialSpendRatio.toFixed(1)}%</span>
-              </div>
-              <div className="flex justify-between border-b md:border-b-0 border-slate-800 pb-2 md:pb-0 md:border-r md:pr-4">
-                <span className="text-slate-450 mr-2 uppercase tracking-wide">汇总展示:</span>
-                <span className="font-mono text-slate-300">{totalSummary.totalImpressions.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-450 mr-2 uppercase tracking-wide">汇总点击:</span>
-                <span className="font-mono text-slate-300">{totalSummary.totalClicks.toLocaleString()}</span>
-              </div>
-            </div>
-          )}
+              ))}
+            </tbody>
+          </table>
         </div>
 
-      {/* 👑 Display material's associated sets Popup Modal */}
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-3 py-2">
+          <span className="text-xs font-bold text-slate-400">{page} / {totalPages}</span>
+          <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 disabled:opacity-30">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button type="button" disabled={page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 disabled:opacity-30">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {tooltip && (
+        <div
+          className="pointer-events-none fixed z-[80] max-w-xs -translate-x-1/2 -translate-y-full rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium leading-relaxed text-white shadow-xl"
+          style={{ left: tooltip.left, top: tooltip.top }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+
       {modalMaterialUses && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6 relative gap-4 flex flex-col shadow-2xl">
-            <button onClick={() => setModalMaterialUses(null)} className="absolute right-5 top-5 p-1 text-slate-450 hover:text-slate-600 bg-slate-100 rounded-lg">
-              <X className="w-5 h-5" />
-            </button>
-
-            <div>
-              <span className="text-[10px] uppercase font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full inline-block">Material In Sets Report</span>
-              <h3 className="text-sm font-black text-slate-800 mt-2">素材关联创意组：{modalMaterialUses.name}</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                素材ID: {modalMaterialUses.id} • 内容ID: {modalMaterialUses.contentId}
-              </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+              <div>
+                <h3 className="max-w-2xl truncate text-sm font-black text-slate-800">{modalMaterialUses.name}</h3>
+                <p className="mt-1 text-xs font-bold text-slate-400">被 {modalMaterialUses.associatedSets.length} 个 Set 使用</p>
+              </div>
+              <button onClick={() => setModalMaterialUses(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
             </div>
-
-            <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-left font-medium text-xs">
-                <thead className="bg-slate-100 text-slate-500 font-bold text-[10px]">
+            <div className="max-h-[62vh] overflow-auto px-5 py-4">
+              <table className="w-full table-fixed border-collapse text-left text-xs">
+                <thead className="bg-slate-100 text-slate-600">
                   <tr>
-                    <th className="py-2.5 px-3">Set名称</th>
-                    <th className="py-2.5 px-3 w-28">状态 (可筛选)</th>
-                    <th className="py-2.5 px-3 w-32 cursor-pointer">创建日期 (可排)</th>
-                    <th className="py-2.5 px-3 w-28 text-right cursor-pointer">周期花费 (可排)</th>
+                    <th className="border border-slate-200 px-3 py-3 text-left font-black">Ad Set 名称</th>
+                    <th className="w-32 border border-slate-200 px-3 py-3 text-center font-black">首次投放</th>
+                    <th className="w-28 border border-slate-200 px-3 py-3 text-right font-black">Campaign数</th>
+                    <th className="w-32 border border-slate-200 px-3 py-3 text-right font-black">总消耗</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-600">
-                  {modalMaterialUses.associatedSets.map((set, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="py-3 px-3 font-bold text-slate-800 truncate max-w-[220px]">{set.setName}</td>
-                      <td className="py-3 px-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${set.status === 'Live' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
-                          {set.status}
-                        </span>
+                <tbody>
+                  {modalMaterialUses.associatedSets.map((set) => (
+                    <tr key={set.setName} className="hover:bg-slate-50">
+                      <td className="border border-slate-100 px-3 py-3">
+                        <div className="font-black text-slate-800">{set.setName}</div>
+                        <div className="mt-1 text-[11px] font-bold text-slate-400">Campaign: {set.campaign}</div>
                       </td>
-                      <td className="py-3 px-3 font-mono text-slate-400">{set.createdAt}</td>
-                      <td className="py-3 px-3 text-right font-bold text-indigo-600 font-mono">${set.spend.toLocaleString()}</td>
+                      <td className="border border-slate-100 px-3 py-3 text-center font-mono text-slate-500">{set.firstLaunch}</td>
+                      <td className="border border-slate-100 px-3 py-3 text-right font-mono">{set.campaignCount}</td>
+                      <td className="border border-slate-100 px-3 py-3 text-right font-mono font-black">${set.spend.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -668,7 +543,6 @@ export const ConsumptionDataPage: React.FC = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

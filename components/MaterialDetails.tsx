@@ -2,9 +2,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { generateMaterialDetails } from '../services/mockData';
-import { Filter, Settings, ChevronDown, ChevronUp, Plus, Trash2, X, Check, Calendar, Clock, Search, Globe, Layers } from 'lucide-react';
+import { Filter, Settings, ChevronDown, ChevronUp, Plus, Trash2, X, Check, Search } from 'lucide-react';
 import { MaterialDetailRow } from '../types';
-import DateRangePicker from './DateRangePicker';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -22,23 +22,17 @@ interface FilterCondition {
 
 const MaterialDetails: React.FC = () => {
   // --- Dual Date Filters State ---
-  const [launchStart, setLaunchStart] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(1); 
-    return d.toISOString().slice(0, 10);
-  });
-  const [launchEnd, setLaunchEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [launchStart, setLaunchStart] = useState<string>('');
+  const [launchEnd, setLaunchEnd] = useState<string>('');
 
   const [spendStart, setSpendStart] = useState<string>(() => {
-     const d = new Date();
-     d.setDate(d.getDate() - 30);
-     return d.toISOString().slice(0, 10);
+     return getRecentUtcRange(30).start;
   });
-  const [spendEnd, setSpendEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [spendEnd, setSpendEnd] = useState<string>(() => getRecentUtcRange(30).end);
 
   // Language Filter
   const [language, setLanguage] = useState<'all' | 'en' | 'localized'>('all');
-  const [channel, setChannel] = useState<string>('all');
+  const [channel, setChannel] = useState<string>('');
 
   const [rawData, setRawData] = useState<MaterialDetailRow[]>([]);
 
@@ -47,7 +41,7 @@ const MaterialDetails: React.FC = () => {
 
   // Refresh data when date ranges change
   useEffect(() => {
-    setRawData(generateMaterialDetails(launchStart, launchEnd, spendStart, spendEnd, language, channel));
+    setRawData(generateMaterialDetails(launchStart, launchEnd, spendStart, spendEnd, language, channel || 'all'));
   }, [launchStart, launchEnd, spendStart, spendEnd, language, channel]);
   
   // -- Column Configuration --
@@ -138,28 +132,6 @@ const MaterialDetails: React.FC = () => {
     setFilters(filters.map(f => f.id === id ? { ...f, ...updates } : f));
   };
 
-  const setQuickRange = (type: 'launch' | 'spend', days: number | 'month') => {
-     const end = new Date();
-     let start = new Date();
-     
-     if (days === 'month') {
-        start = new Date(end.getFullYear(), end.getMonth(), 1);
-     } else {
-        start.setDate(end.getDate() - days);
-     }
-
-     const sStr = start.toISOString().slice(0, 10);
-     const eStr = end.toISOString().slice(0, 10);
-
-     if (type === 'launch') {
-        setLaunchStart(sStr);
-        setLaunchEnd(eStr);
-     } else {
-        setSpendStart(sStr);
-        setSpendEnd(eStr);
-     }
-  };
-
   // -- Derived Data --
 
   const processedData = useMemo(() => {
@@ -229,131 +201,49 @@ const MaterialDetails: React.FC = () => {
     <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden relative">
       
       {/* Top Filter Bar (Dual Ranges) */}
-      <div className="px-6 py-4 border-b border-slate-100 bg-white z-20 space-y-4">
-        
-        <div className="flex flex-col xl:flex-row gap-4 justify-between">
-            {/* Left: Launch Time Filter */}
-            <div className="flex flex-col gap-2 min-w-0">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                    <span className="whitespace-nowrap">投放开始时间</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <DateRangePicker
-                        start={launchStart}
-                        end={launchEnd}
-                        onChange={({ start, end }) => {
-                            setLaunchStart(start);
-                            setLaunchEnd(end);
-                        }}
-                        compact
-                        className="min-w-[240px]"
-                    />
-                    {/* Quick Selects */}
-                    <div className="flex bg-slate-50 p-0.5 rounded-lg border border-slate-100 hidden sm:flex">
-                        {[
-                            { label: '本月', val: 'month' },
-                            { label: '近30天', val: 30 },
-                            { label: '近90天', val: 90 },
-                        ].map((item) => (
-                            <button 
-                                key={item.label}
-                                onClick={() => setQuickRange('launch', item.val as any)}
-                                className="px-2 py-1 rounded text-[10px] font-bold transition-all text-slate-400 hover:text-indigo-600 hover:bg-white hover:shadow-sm whitespace-nowrap"
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            {/* Middle: Language Filter */}
-            <div className="flex flex-col gap-2 xl:border-l border-slate-100 xl:px-4 min-w-[140px]">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Globe className="w-3.5 h-3.5 text-sky-600" />
-                    <span className="whitespace-nowrap">语言</span>
-                </div>
-                <div className="flex bg-slate-50 p-1 rounded-lg w-full">
-                    {[
-                        { id: 'all', label: '全部' },
-                        { id: 'en', label: '英语' },
-                        { id: 'localized', label: '本地' },
-                    ].map((opt) => (
-                        <button
-                            key={opt.id}
-                            onClick={() => setLanguage(opt.id as any)}
-                            className={`flex-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
-                                language === opt.id 
-                                ? 'bg-white text-sky-600 shadow-sm' 
-                                : 'text-slate-500 hover:text-sky-600'
-                            }`}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Middle: Channel Filter */}
-            <div className="flex flex-col gap-2 xl:border-l border-slate-100 xl:px-4 min-w-[140px]">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Layers className="w-3.5 h-3.5 text-orange-600" />
-                    <span className="whitespace-nowrap">渠道</span>
-                </div>
-                <div className="h-[32px]">
-                   <select 
-                     value={channel} 
-                     onChange={e => setChannel(e.target.value)}
-                     className="w-full h-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg focus:ring-primary focus:border-primary block px-2.5"
-                   >
-                     <option value="all">全部渠道</option>
-                     <option value="applovin">AppLovin</option>
-                     <option value="unity">Unity</option>
-                     <option value="google">Google</option>
-                     <option value="facebook">Facebook</option>
-                     <option value="tiktok">TikTok</option>
-                   </select>
-                </div>
-            </div>
-
-            {/* Right: Spend Period Filter */}
-            <div className="flex flex-col gap-2 min-w-0 xl:border-l border-slate-100 xl:pl-4">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="whitespace-nowrap">花费周期</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <DateRangePicker
-                        start={spendStart}
-                        end={spendEnd}
-                        onChange={({ start, end }) => {
-                            setSpendStart(start);
-                            setSpendEnd(end);
-                        }}
-                        align="right"
-                        compact
-                        className="min-w-[240px]"
-                    />
-                    {/* Quick Selects */}
-                    <div className="flex bg-slate-50 p-0.5 rounded-lg border border-slate-100 hidden sm:flex">
-                         {[
-                            { label: '本月', val: 'month' },
-                            { label: '近7天', val: 7 },
-                            { label: '近30天', val: 30 },
-                        ].map((item) => (
-                            <button 
-                                key={item.label}
-                                onClick={() => setQuickRange('spend', item.val as any)}
-                                className="px-2 py-1 rounded text-[10px] font-bold transition-all text-slate-400 hover:text-emerald-600 hover:bg-white hover:shadow-sm whitespace-nowrap"
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </div>
+      <div className="border-b border-slate-100 bg-white px-6 py-4 z-20 space-y-4">
+        <AnalyticsFilterBar>
+          <AnalyticsDateRangeField
+            mode="launch"
+            start={launchStart}
+            end={launchEnd}
+            onChange={({ start, end }) => {
+              setLaunchStart(start);
+              setLaunchEnd(end);
+            }}
+          />
+          <AnalyticsDateRangeField
+            start={spendStart}
+            end={spendEnd}
+            onChange={({ start, end }) => {
+              setSpendStart(start);
+              setSpendEnd(end);
+            }}
+          />
+          <AnalyticsSelectField
+            placeholder="语言"
+            value={language === 'all' ? '' : language}
+            onChange={(value) => setLanguage((value || 'all') as 'all' | 'en' | 'localized')}
+            options={[
+              { value: 'en', label: '英语' },
+              { value: 'localized', label: '本地' },
+            ]}
+            className="w-[180px]"
+          />
+          <AnalyticsSelectField
+            placeholder="渠道"
+            value={channel}
+            onChange={setChannel}
+            options={[
+              { value: 'applovin', label: 'AppLovin' },
+              { value: 'unity', label: 'Unity' },
+              { value: 'google', label: 'Google' },
+              { value: 'facebook', label: 'Facebook' },
+              { value: 'tiktok', label: 'TikTok' },
+            ]}
+            className="w-[180px]"
+          />
+        </AnalyticsFilterBar>
 
         {/* Toolbar Row 2: Search & Configs */}
         <div className="flex items-center justify-between pt-2">

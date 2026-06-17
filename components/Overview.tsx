@@ -4,11 +4,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { generateOverviewData, generateTopMaterials, OverviewMetric, mockKeywordAnalysis } from '../services/mockData';
 import { analyzeMaterials } from '../services/geminiService';
 import { AdMaterial, KeywordAnalysisData } from '../types';
-import { Calendar, Check, ChevronLeft, ChevronRight, Clock, Database, Layers, LoaderCircle, Minus, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Database, LoaderCircle, Minus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, BarChart, Bar, CartesianGrid } from 'recharts';
-import DateRangePicker from './DateRangePicker';
-
-type QuickRange = number | 'month' | 'lastMonth' | 'lastTwoMonths';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
 
 const seriesPalette = [
   '#475569',
@@ -80,7 +78,7 @@ const materialSeries = [
 ];
 const topMaterialSeries = materialSeries.slice(0, 20);
 
-type MaterialTypeKey = 'video' | 'playable';
+type MaterialTypeKey = 'video' | 'playable' | 'image';
 type LanguageKey = 'en' | 'de' | 'fr' | 'it' | 'ja' | 'ko' | 'tw' | 'es' | 'pt';
 type StackMode = 'normal' | 'percent';
 
@@ -106,6 +104,21 @@ const languageOptions: { key: LanguageKey; label: string; scale: number }[] = [
 const materialTypeOptions: { key: MaterialTypeKey; label: string; scale: number }[] = [
   { key: 'video', label: '视频', scale: 1 },
   { key: 'playable', label: '试玩', scale: 0.62 },
+  { key: 'image', label: '图片', scale: 0.42 },
+];
+
+const campaignOptions = [
+  { key: 'all', label: 'ALL Campaign' },
+  { key: 'camp-merge-042', label: 'Campaign Merge 042' },
+  { key: 'camp-playable-118', label: 'Campaign Playable 118' },
+  { key: 'camp-local-207', label: 'Campaign Local 207' },
+];
+
+const adSetOptions = [
+  { key: 'all', label: 'ALL Set' },
+  { key: 'set-us-android', label: 'US Android Set' },
+  { key: 'set-ios-core', label: 'iOS Core Set' },
+  { key: 'set-local-exp', label: 'Local Exp Set' },
 ];
 
 const formatDateAxis = (value: string) => value.slice(5);
@@ -566,23 +579,19 @@ const MiniChart = ({ metric, color, type }: { metric: OverviewMetric, color: str
 
 const Overview: React.FC = () => {
   // Launch Time Filters (Cohort) - Date Range
-  const [launchStart, setLaunchStart] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(1); // 1st of current month
-    return d.toISOString().slice(0, 10);
-  });
-  const [launchEnd, setLaunchEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [launchStart, setLaunchStart] = useState<string>('');
+  const [launchEnd, setLaunchEnd] = useState<string>('');
 
   // Spend Period Filters (Trend/Observation) - Date Range
   const [spendStart, setSpendStart] = useState<string>(() => {
-     const d = new Date();
-     d.setDate(d.getDate() - 30);
-     return d.toISOString().slice(0, 10);
+     return getRecentUtcRange(30).start;
   });
-  const [spendEnd, setSpendEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [spendEnd, setSpendEnd] = useState<string>(() => getRecentUtcRange(30).end);
 
   // Channel Filter
-  const [channel, setChannel] = useState<string>('all');
+  const [channel, setChannel] = useState<string>('');
+  const [campaign, setCampaign] = useState<string>('');
+  const [adSet, setAdSet] = useState<string>('');
   
   const [materials, setMaterials] = useState<AdMaterial[]>([]);
   
@@ -595,7 +604,7 @@ const Overview: React.FC = () => {
 
   const [cpa7Min, setCpa7Min] = useState<number>(0);
   const [cpa7Max, setCpa7Max] = useState<number>(400);
-  const [selectedTypes, setSelectedTypes] = useState<MaterialTypeKey[]>(['video', 'playable']);
+  const [selectedTypes, setSelectedTypes] = useState<MaterialTypeKey[]>(materialTypeOptions.map((option) => option.key));
   const [selectedLanguages, setSelectedLanguages] = useState<LanguageKey[]>(languageOptions.map((option) => option.key));
   const [topShareVisible, setTopShareVisible] = useState<string[]>(channelSeries.map((item) => item.key));
   const [stackVisible, setStackVisible] = useState<string[]>(topMaterialSeries);
@@ -609,11 +618,11 @@ const Overview: React.FC = () => {
   
   useEffect(() => {
     // Fetch materials (Global context usually implies 'all' for materials list if filter is removed)
-    setMaterials(generateTopMaterials(launchStart, launchEnd, channel));
+    setMaterials(generateTopMaterials(launchStart, launchEnd, channel || 'all'));
     
     // Fetch KPI Data (Total and Localized)
-    setMetricsAll(generateOverviewData(launchStart, launchEnd, spendStart, spendEnd, 'all', channel));
-    setMetricsLoc(generateOverviewData(launchStart, launchEnd, spendStart, spendEnd, 'localized', channel));
+    setMetricsAll(generateOverviewData(launchStart, launchEnd, spendStart, spendEnd, 'all', channel || 'all'));
+    setMetricsLoc(generateOverviewData(launchStart, launchEnd, spendStart, spendEnd, 'localized', channel || 'all'));
     
     setAnalysisData(mockKeywordAnalysis);
   }, [launchStart, launchEnd, spendStart, spendEnd, channel]);
@@ -623,35 +632,6 @@ const Overview: React.FC = () => {
     const result = await analyzeMaterials(materials);
     setAnalysisData(result);
     setIsAnalyzing(false);
-  };
-
-  // Helper for Quick Select (Generic for both filters)
-  const setQuickRange = (type: 'launch' | 'spend', days: QuickRange) => {
-     const end = new Date();
-     let start = new Date();
-     
-     if (days === 'month') {
-        start = new Date(end.getFullYear(), end.getMonth(), 1);
-     } else if (days === 'lastMonth') {
-        start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
-        end.setDate(0);
-     } else if (days === 'lastTwoMonths') {
-        start = new Date(end.getFullYear(), end.getMonth() - 2, 1);
-        end.setDate(0);
-     } else {
-        start.setDate(end.getDate() - days);
-     }
-
-     const sStr = start.toISOString().slice(0, 10);
-     const eStr = end.toISOString().slice(0, 10);
-
-     if (type === 'launch') {
-        setLaunchStart(sStr);
-        setLaunchEnd(eStr);
-     } else {
-        setSpendStart(sStr);
-        setSpendEnd(eStr);
-     }
   };
 
   const overviewKpis = [
@@ -717,6 +697,19 @@ const Overview: React.FC = () => {
     current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
   const toggleVisibleValue = (current: string[], key: string) =>
     current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+  const selectedTypePreset =
+    selectedTypes.length === materialTypeOptions.length
+      ? ''
+      : selectedTypes.length === 1
+        ? selectedTypes[0]
+        : 'custom';
+  const handleTopMaterialTypeChange = (value: string) => {
+    if (value === '') {
+      setSelectedTypes(materialTypeOptions.map((option) => option.key));
+      return;
+    }
+    if (value !== 'custom') setSelectedTypes([value as MaterialTypeKey]);
+  };
   const cpa7LegendOptions = topMaterialSeries.map((key, index) => ({
     key,
     label: key,
@@ -749,102 +742,62 @@ const Overview: React.FC = () => {
 
   return (
     <div className="space-y-5 pb-10">
-      <div className="grid grid-cols-1 gap-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:grid-cols-[1fr_1.45fr_1fr]">
-        <div className="flex min-w-0 flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs font-black tracking-tight text-slate-800">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50">
-                <Calendar className="h-4 w-4 text-indigo-600" />
-              </div>
-              <span>发布周期</span>
-            </div>
-            <div className="flex rounded-lg bg-slate-100 p-1">
-              {[
-                { label: '本月', val: 'month' },
-                { label: '近30天', val: 30 },
-                { label: '近90天', val: 90 },
-                { label: '上月', val: 'lastMonth' },
-                { label: '上2个月', val: 'lastTwoMonths' },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => setQuickRange('launch', item.val as QuickRange)}
-                  className="whitespace-nowrap rounded-md px-2 py-1 text-[9.5px] font-bold text-slate-500 transition-all hover:bg-white hover:text-indigo-600 hover:shadow-sm"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <DateRangePicker
-            start={launchStart}
-            end={launchEnd}
-            onChange={({ start, end }) => {
-              setLaunchStart(start);
-              setLaunchEnd(end);
-            }}
-            buttonClassName="h-[38px]"
-          />
-        </div>
-
-        <div className="flex flex-col gap-3 border-slate-100 xl:border-l xl:border-r xl:px-5">
-          <div className="flex items-center gap-2 text-xs font-black tracking-tight text-slate-800">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-50">
-              <Layers className="h-4 w-4 text-orange-600" />
-            </div>
-            <span>渠道</span>
-          </div>
-          <select
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-            className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-black text-slate-700 focus:border-primary focus:ring-primary"
-          >
-            <option value="all">ALL</option>
-            <option value="applovin">Applovin</option>
-            <option value="google">Google</option>
-            <option value="facebook">Facebook</option>
-            <option value="unity">Unity</option>
-          </select>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs font-black tracking-tight text-slate-800">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
-                <Clock className="h-4 w-4 text-emerald-600" />
-              </div>
-              <span>花费周期</span>
-            </div>
-            <div className="flex rounded-lg bg-slate-100 p-1">
-              {[
-                { label: '本月', val: 'month' },
-                { label: '近30天', val: 30 },
-                { label: '近90天', val: 90 },
-                { label: '上月', val: 'lastMonth' },
-                { label: '上2个月', val: 'lastTwoMonths' },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => setQuickRange('spend', item.val as QuickRange)}
-                  className="whitespace-nowrap rounded-md px-2 py-1 text-[9.5px] font-bold text-slate-500 transition-all hover:bg-white hover:text-emerald-600 hover:shadow-sm"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <DateRangePicker
-            start={spendStart}
-            end={spendEnd}
-            onChange={({ start, end }) => {
-              setSpendStart(start);
-              setSpendEnd(end);
-            }}
-            align="right"
-            buttonClassName="h-[38px]"
-          />
-        </div>
-      </div>
+      <AnalyticsFilterBar>
+        <AnalyticsDateRangeField
+          mode="launch"
+          start={launchStart}
+          end={launchEnd}
+          onChange={({ start, end }) => {
+            setLaunchStart(start);
+            setLaunchEnd(end);
+          }}
+        />
+        <AnalyticsDateRangeField
+          start={spendStart}
+          end={spendEnd}
+          onChange={({ start, end }) => {
+            setSpendStart(start);
+            setSpendEnd(end);
+          }}
+        />
+        <AnalyticsSelectField
+          placeholder="Campaign"
+          value={campaign}
+          onChange={setCampaign}
+          options={campaignOptions.filter((option) => option.key !== 'all').map((option) => ({ value: option.key, label: option.label }))}
+          className="w-[220px]"
+        />
+        <AnalyticsSelectField
+          placeholder="Set"
+          value={adSet}
+          onChange={setAdSet}
+          options={adSetOptions.filter((option) => option.key !== 'all').map((option) => ({ value: option.key, label: option.label }))}
+          className="w-[200px]"
+        />
+        <AnalyticsSelectField
+          placeholder="渠道"
+          value={channel}
+          onChange={setChannel}
+          options={[
+            { value: 'applovin', label: 'Applovin' },
+            { value: 'google', label: 'Google' },
+            { value: 'facebook', label: 'Facebook' },
+            { value: 'unity', label: 'Unity' },
+          ]}
+          className="w-[180px]"
+        />
+        <AnalyticsSelectField
+          placeholder="素材类型"
+          value={selectedTypePreset}
+          onChange={handleTopMaterialTypeChange}
+          options={[
+            { value: 'playable', label: '试玩' },
+            { value: 'video', label: '视频' },
+            { value: 'image', label: '图片' },
+          ]}
+          className="w-[180px]"
+        />
+      </AnalyticsFilterBar>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {overviewKpis.map((item) => (

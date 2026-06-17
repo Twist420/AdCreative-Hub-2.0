@@ -7,29 +7,23 @@ import {
   LineChart, Line, Legend
 } from 'recharts';
 import { 
-  Calendar, TrendingUp, DollarSign, Target, Users, 
-  Clock, ChevronDown, ChevronUp, Globe, Award, Zap 
+  TrendingUp, DollarSign, Target, Users, 
+  ChevronDown, ChevronUp, Award, Zap 
 } from 'lucide-react';
-import DateRangePicker from './DateRangePicker';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
 
 const PersonnelDataPage: React.FC = () => {
   // --- Date & Language Filters ---
-  const [launchStart, setLaunchStart] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(1); 
-    return d.toISOString().slice(0, 10);
-  });
-  const [launchEnd, setLaunchEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [launchStart, setLaunchStart] = useState<string>('');
+  const [launchEnd, setLaunchEnd] = useState<string>('');
 
   const [spendStart, setSpendStart] = useState<string>(() => {
-     const d = new Date();
-     d.setDate(d.getDate() - 30);
-     return d.toISOString().slice(0, 10);
+     return getRecentUtcRange(30).start;
   });
-  const [spendEnd, setSpendEnd] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [spendEnd, setSpendEnd] = useState<string>(() => getRecentUtcRange(30).end);
 
   const [language, setLanguage] = useState<'all' | 'en' | 'localized'>('all');
-  const [channel, setChannel] = useState<string>('all');
+  const [channel, setChannel] = useState<string>('');
 
   const [data, setData] = useState<PersonnelData[]>([]);
   const [historyData, setHistoryData] = useState<any[]>([]);
@@ -43,31 +37,12 @@ const PersonnelDataPage: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<{ key: keyof PersonnelData | null, direction: 'asc' | 'desc' }>({ key: 'successCost', direction: 'desc' });
 
   useEffect(() => {
-    setData(generatePersonnelData(launchStart, launchEnd, spendStart, spendEnd, language, channel));
-    setHistoryData(generatePersonnelHistory(launchStart, launchEnd, spendStart, spendEnd, language, channel));
+    setData(generatePersonnelData(launchStart, launchEnd, spendStart, spendEnd, language, channel || 'all'));
+    setHistoryData(generatePersonnelHistory(launchStart, launchEnd, spendStart, spendEnd, language, channel || 'all'));
   }, [launchStart, launchEnd, spendStart, spendEnd, language, channel]);
 
   const toggleLineVisibility = (name: string) => {
     setVisibleLines(prev => ({ ...prev, [name]: !prev[name] }));
-  };
-
-  const setQuickRange = (type: 'launch' | 'spend', days: number | 'month') => {
-    const end = new Date();
-    let start = new Date();
-    if (days === 'month') {
-       start = new Date(end.getFullYear(), end.getMonth(), 1);
-    } else {
-       start.setDate(end.getDate() - days);
-    }
-    const sStr = start.toISOString().slice(0, 10);
-    const eStr = end.toISOString().slice(0, 10);
-    if (type === 'launch') {
-       setLaunchStart(sStr);
-       setLaunchEnd(eStr);
-    } else {
-       setSpendStart(sStr);
-       setSpendEnd(eStr);
-    }
   };
 
   const formatXAxis = (val: string) => {
@@ -120,54 +95,47 @@ const PersonnelDataPage: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       {/* 1. Header & Filters */}
-      <div className="px-6 py-5 bg-white rounded-2xl shadow-sm border border-slate-100 space-y-4">
-        <div className="flex flex-col xl:flex-row gap-4 justify-between">
-            <div className="flex flex-col gap-2 min-w-0">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                    <span className="whitespace-nowrap">投放开始时间</span>
-                </div>
-                <DateRangePicker
-                    start={launchStart}
-                    end={launchEnd}
-                    onChange={({ start, end }) => {
-                        setLaunchStart(start);
-                        setLaunchEnd(end);
-                    }}
-                    compact
-                />
-            </div>
-
-            <div className="flex flex-col gap-2 xl:border-l border-slate-100 xl:px-4 min-w-[140px]">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Globe className="w-3.5 h-3.5 text-sky-600" />
-                    <span className="whitespace-nowrap">语言</span>
-                </div>
-                <div className="flex bg-slate-50 p-1 rounded-lg w-full">
-                    {[{ id: 'all', label: '全部' }, { id: 'en', label: '英语' }, { id: 'localized', label: '本地' }].map((opt) => (
-                        <button key={opt.id} onClick={() => setLanguage(opt.id as any)} className={`flex-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${language === opt.id ? 'bg-white text-sky-600 shadow-sm' : 'text-slate-500 hover:text-sky-600'}`}>{opt.label}</button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="flex flex-col gap-2 min-w-0 xl:border-l border-slate-100 xl:pl-4">
-                <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="whitespace-nowrap">花费周期</span>
-                </div>
-                <DateRangePicker
-                    start={spendStart}
-                    end={spendEnd}
-                    onChange={({ start, end }) => {
-                        setSpendStart(start);
-                        setSpendEnd(end);
-                    }}
-                    align="right"
-                    compact
-                />
-            </div>
-        </div>
-      </div>
+      <AnalyticsFilterBar>
+        <AnalyticsDateRangeField
+          mode="launch"
+          start={launchStart}
+          end={launchEnd}
+          onChange={({ start, end }) => {
+            setLaunchStart(start);
+            setLaunchEnd(end);
+          }}
+        />
+        <AnalyticsDateRangeField
+          start={spendStart}
+          end={spendEnd}
+          onChange={({ start, end }) => {
+            setSpendStart(start);
+            setSpendEnd(end);
+          }}
+        />
+        <AnalyticsSelectField
+          placeholder="语言"
+          value={language === 'all' ? '' : language}
+          onChange={(value) => setLanguage((value || 'all') as 'all' | 'en' | 'localized')}
+          options={[
+            { value: 'en', label: '英语' },
+            { value: 'localized', label: '本地' },
+          ]}
+          className="w-[180px]"
+        />
+        <AnalyticsSelectField
+          placeholder="渠道"
+          value={channel}
+          onChange={setChannel}
+          options={[
+            { value: 'applovin', label: 'AppLovin' },
+            { value: 'unity', label: 'Unity' },
+            { value: 'google', label: 'Google Ads' },
+            { value: 'facebook', label: 'Facebook' },
+          ]}
+          className="w-[180px]"
+        />
+      </AnalyticsFilterBar>
 
       {/* 2. KPI Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

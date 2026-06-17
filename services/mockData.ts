@@ -22,6 +22,24 @@ const seedRandom = (seed: string) => {
   }
 };
 
+const getFallbackDateRange = (days = 30) => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days + 1);
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+};
+
+const normalizeDateRange = (start: string, end: string) => {
+  const fallback = getFallbackDateRange();
+  return {
+    start: start || fallback.start,
+    end: end || fallback.end,
+  };
+};
+
 const getFeedbackStatus = (cpi: number, ir: number, roasD7: number): CreativeFeedbackStatus => {
   if (roasD7 >= 0.85 || (cpi <= 3.2 && ir >= 0.18)) return 'Winner';
   if (roasD7 < 0.35 || cpi >= 8) return 'Failed';
@@ -362,13 +380,14 @@ export const generateOverviewData = (
 };
 
 export const generateTopMaterials = (launchStart: string, launchEnd: string, channel: string = 'all'): AdMaterial[] => {
-  const rng = seedRandom(launchStart + launchEnd + channel); 
+  const launchRange = normalizeDateRange(launchStart, launchEnd);
+  const rng = seedRandom(launchRange.start + launchRange.end + channel); 
   const creators = ['苏雅', '顺子', '雅萱', '苗雪'];
   const data: AdMaterial[] = [];
   const langs = ['EN', 'ZH', 'JP', 'KR', 'DE'];
   const goodCount = Math.floor(rng() * 3) + 8;
-  const sTime = new Date(launchStart).getTime();
-  const eTime = new Date(launchEnd).getTime(); 
+  const sTime = new Date(launchRange.start).getTime();
+  const eTime = new Date(launchRange.end).getTime(); 
   for (let i = 0; i < goodCount; i++) {
     const cost = Math.floor(rng() * 50000) + 10000;
     const liveCost = Math.floor(cost * (0.6 + rng() * 0.3)); 
@@ -517,15 +536,16 @@ export const generateMaterialDetails = (
   language: string = 'all',
   channel: string = 'all'
 ): MaterialDetailRow[] => {
-  const rng = seedRandom(launchStart + launchEnd + spendStart + spendEnd + language + channel);
+  const launchRange = normalizeDateRange(launchStart, launchEnd);
+  const rng = seedRandom(launchRange.start + launchRange.end + spendStart + spendEnd + language + channel);
   const directions = ['拼接-新A', '3D-剧情', '口播-真人', '实录-混剪'];
   const owners = ['mx', 'sy', 'sz', 'yx'];
   let allowedLangs = ['en', 'zh', 'jp', 'kr'];
   if (language === 'en') allowedLangs = ['en'];
   if (language === 'localized') allowedLangs = ['zh', 'jp', 'kr'];
   const rows: MaterialDetailRow[] = [];
-  const sLaunch = new Date(launchStart).getTime();
-  const eLaunch = new Date(launchEnd).getTime();
+  const sLaunch = new Date(launchRange.start).getTime();
+  const eLaunch = new Date(launchRange.end).getTime();
   const launchDuration = Math.max(1, (eLaunch - sLaunch) / (1000 * 3600 * 24));
   const count = Math.min(100, Math.floor(launchDuration / 2) + 10); 
   const sSpend = new Date(spendStart).getTime();
