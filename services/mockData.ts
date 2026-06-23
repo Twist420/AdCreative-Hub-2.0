@@ -678,51 +678,54 @@ export const generatePersonnelHistory = (
 };
 
 export const generateBenchmarkData = (): BenchmarkRule[] => {
-  const channels = ['Facebook', 'Google', 'TikTok', 'AppLovin', 'Unity'];
-  const now = new Date();
-  
   return [
     {
-      id: '1',
-      channel: 'Facebook',
+      id: 'all_android',
+      channel: 'All',
+      platform: 'Android',
       status: 'active',
-      effectiveTime: '2026-03-01 00:00',
-      cpi: 2.5,
-      cpa7: 15.0,
-      roi7: 12.5,
-      payRate: 8.5,
-      paidUsers: 500,
-      newUsersPaid: 1200,
-      newUsersRecovery: 1500,
-      modifiedTime: '2026-02-28 14:00'
+      effectiveTime: '2026-06-11 00:00',
+      cpi: 30.0,
+      cpa7: 300.0,
+      roi7: 5.0,
+      payRate: 10.0,
+      paidUsers: 5,
+      arppu7: 20.0,
+      newUsersPaid: 20,
+      newUsersRecovery: 50,
+      modifiedTime: '2026-06-11 00:00'
     },
     {
-      id: '2',
-      channel: 'Google',
+      id: 'all_ios',
+      channel: 'All',
+      platform: 'iOS',
       status: 'active',
-      effectiveTime: '2026-03-01 00:00',
-      cpi: 3.2,
-      cpa7: 18.5,
-      roi7: 10.2,
-      payRate: 7.8,
-      paidUsers: 450,
-      newUsersPaid: 1100,
-      newUsersRecovery: 1400,
-      modifiedTime: '2026-02-28 15:30'
+      effectiveTime: '2026-06-11 00:00',
+      cpi: 30.0,
+      cpa7: 450.0,
+      roi7: 5.0,
+      payRate: 10.0,
+      paidUsers: 5,
+      arppu7: 30.0,
+      newUsersPaid: 20,
+      newUsersRecovery: 50,
+      modifiedTime: '2026-06-11 00:00'
     },
     {
-      id: '3',
-      channel: 'TikTok',
+      id: 'applovin_int_all',
+      channel: 'applovin_int',
+      platform: '全部',
       status: 'active',
-      effectiveTime: '2026-03-02 12:00',
-      cpi: 1.8,
-      cpa7: 12.0,
-      roi7: 15.5,
-      payRate: 9.2,
-      paidUsers: 600,
-      newUsersPaid: 1500,
-      newUsersRecovery: 1800,
-      modifiedTime: '2026-03-01 10:00'
+      effectiveTime: '2026-06-03 00:00',
+      cpi: 30.0,
+      cpa7: 300.0,
+      roi7: 5.0,
+      payRate: 10.0,
+      paidUsers: 5,
+      arppu7: null,
+      newUsersPaid: 20,
+      newUsersRecovery: 50,
+      modifiedTime: '2026-06-03 00:00'
     }
   ];
 };

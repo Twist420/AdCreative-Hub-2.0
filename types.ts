@@ -377,6 +377,7 @@ export interface LibraryItem {
 export interface BenchmarkRule {
   id: string;
   channel: string;
+  platform: 'Android' | 'iOS' | '全部';
   status: 'active' | 'expired';
   effectiveTime: string; // ISO string or formatted YYYY-MM-DD HH:00
   cpi: number;
@@ -384,6 +385,7 @@ export interface BenchmarkRule {
   roi7: number; // percentage
   payRate: number; // percentage
   paidUsers: number;
+  arppu7?: number | null;
   newUsersPaid: number;
   newUsersRecovery: number;
   modifiedTime: string;

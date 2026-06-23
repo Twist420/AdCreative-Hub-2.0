@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Copy, Search, Calendar, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Plus, Copy, Clock, CheckCircle2 } from 'lucide-react';
 import { BenchmarkRule } from '../types';
 import { generateBenchmarkData } from '../services/mockData';
 
@@ -7,7 +7,8 @@ const Benchmark: React.FC = () => {
   const [rules, setRules] = useState<BenchmarkRule[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<Partial<BenchmarkRule> | null>(null);
-  const [channels] = useState(['Facebook', 'Google', 'TikTok', 'AppLovin', 'Unity', 'IronSource']);
+  const [channels] = useState(['All', 'applovin_int', 'Facebook', 'Google', 'TikTok', 'Unity', 'IronSource']);
+  const [platforms] = useState<BenchmarkRule['platform'][]>(['Android', 'iOS', '全部']);
 
   useEffect(() => {
     const data = generateBenchmarkData();
@@ -19,15 +20,16 @@ const Benchmark: React.FC = () => {
     const interval = setInterval(() => {
       const now = new Date();
       setRules(prevRules => {
-        // Group by channel to find the latest effective rule that is <= now
+        // Group by channel + platform to find the latest effective rule that is <= now
         const channelGroups: { [key: string]: BenchmarkRule[] } = {};
         prevRules.forEach(rule => {
-          if (!channelGroups[rule.channel]) channelGroups[rule.channel] = [];
-          channelGroups[rule.channel].push(rule);
+          const groupKey = `${rule.channel}__${rule.platform}`;
+          if (!channelGroups[groupKey]) channelGroups[groupKey] = [];
+          channelGroups[groupKey].push(rule);
         });
 
         return prevRules.map(rule => {
-          const channelRules = channelGroups[rule.channel];
+          const channelRules = channelGroups[`${rule.channel}__${rule.platform}`];
           const effectiveTime = new Date(rule.effectiveTime.replace(' ', 'T'));
           
           // Find the active rule for this channel: the one with the latest effectiveTime that is <= now
@@ -49,12 +51,14 @@ const Benchmark: React.FC = () => {
   const handleCreate = () => {
     setEditingRule({
       channel: channels[0],
+      platform: platforms[0],
       effectiveTime: '',
       cpi: 0,
       cpa7: 0,
       roi7: 0,
       payRate: 0,
       paidUsers: 0,
+      arppu7: 0,
       newUsersPaid: 0,
       newUsersRecovery: 0
     });
@@ -76,7 +80,7 @@ const Benchmark: React.FC = () => {
 
     // Validation
     const requiredFields: (keyof BenchmarkRule)[] = [
-      'channel', 'effectiveTime', 'cpi', 'cpa7', 'roi7', 'payRate', 
+      'channel', 'platform', 'effectiveTime', 'cpi', 'cpa7', 'roi7', 'payRate',
       'paidUsers', 'newUsersPaid', 'newUsersRecovery'
     ];
     
@@ -138,6 +142,7 @@ const Benchmark: React.FC = () => {
             <thead>
               <tr className="bg-slate-50 border-bottom border-slate-100">
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">渠道</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Platform</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">状态</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">生效时间</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">CPI</th>
@@ -145,6 +150,7 @@ const Benchmark: React.FC = () => {
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">ROI7</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">付费率</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">付费用户</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">ARPPU7</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">新增(付费)</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">新增(回收)</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">修改时间</th>
@@ -160,6 +166,9 @@ const Benchmark: React.FC = () => {
                 <tr key={rule.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-6 py-4">
                     <span className="text-sm font-bold text-slate-900">{rule.channel}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-sm font-medium text-slate-600">{rule.platform}</span>
                   </td>
                   <td className="px-6 py-4">
                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
@@ -188,6 +197,9 @@ const Benchmark: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className="text-xs font-mono text-slate-600">{rule.paidUsers}</span>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className="text-xs font-mono text-slate-600">{rule.arppu7 == null ? '$—' : `$${rule.arppu7.toFixed(2)}`}</span>
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className="text-xs font-mono text-slate-600">{rule.newUsersPaid}</span>
@@ -226,7 +238,7 @@ const Benchmark: React.FC = () => {
             </div>
             
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-3 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">渠道</label>
                   <select 
@@ -235,6 +247,16 @@ const Benchmark: React.FC = () => {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                   >
                     {channels.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Platform</label>
+                  <select
+                    value={editingRule?.platform}
+                    onChange={(e) => setEditingRule({...editingRule, platform: e.target.value as BenchmarkRule['platform']})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                  >
+                    {platforms.map(platform => <option key={platform} value={platform}>{platform}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -298,6 +320,19 @@ const Benchmark: React.FC = () => {
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">ARPPU7</label>
+                  <input
+                    type="number" step="0.01"
+                    value={editingRule?.arppu7 ?? ''}
+                    placeholder="可为空"
+                    onChange={(e) => setEditingRule({...editingRule, arppu7: e.target.value === '' ? null : parseFloat(e.target.value)})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">新增(付费标准)</label>
                   <input 

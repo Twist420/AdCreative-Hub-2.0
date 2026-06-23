@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpDown, Check, ChevronLeft, ChevronRight, GripVertical, Play, Settings, X } from 'lucide-react';
 import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsMultiSearchField, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
+import { generateBenchmarkData } from '../services/mockData';
+import { BenchmarkRule } from '../types';
+import { MONTHLY_ANALYTICS_ROWS } from '../services/monthlyAnalyticsData';
 
 type SortDirection = 'asc' | 'desc';
 type MaterialType = 'video' | 'playable' | 'image';
@@ -49,51 +52,46 @@ const directions: SetItem['direction'][] = ['大字报', '原始玩法', '3D玩�
 const materialNames = ['仙子举牌剧情', '克朗复刻买点', '奖励endingcard', '大字报无玩法', '精灵王子变蛇', '剧情开场冲突'];
 
 const buildMockSets = (): SetItem[] =>
-  Array.from({ length: 148 }, (_, index) => {
-    const channel = channels[index % channels.length];
-    const platform = index % 3 === 0 ? 'iOS' : 'Android';
-    const language = languages[index % languages.length];
-    const cp = 3097 + (index * 41) % 900;
-    const date = new Date(Date.UTC(2026, 4, 8 + (index % 38))).toISOString().slice(0, 10);
-    const impressions = 88000 + ((index * 58921) % 980000);
-    const clicks = Math.floor(impressions * (0.014 + (index % 15) * 0.0024));
-    const installs = Math.max(32, Math.floor(clicks * (0.18 + (index % 7) * 0.015)));
-    const spend = 980 + ((index * 1709) % 33000);
-    const paidUsers = Math.max(3, Math.floor(installs * (0.025 + (index % 8) * 0.006)));
-    const totalRev = Math.round(spend * (0.06 + (index % 9) * 0.011));
-    const iapRev = Math.round(totalRev * (0.68 + (index % 5) * 0.04));
-
-    return {
-      id: `set_${String(index + 1).padStart(3, '0')}`,
-      channel,
-      platform,
-      language,
-      campaign: `Panthia_${platform}_${channel}_${String(40 + (index % 15)).padStart(3, '0')}`,
-      setName: `cp${cp}-${String((index % 9) + 1).padStart(2, '0')}-${index % 2 ? 'en' : 'jp'}-m-${materialNames[index % materialNames.length]}-${index % 3 ? 'cpp reward' : 'cpp relax'}`,
-      launchTime: date,
-      direction: directions[index % directions.length],
-      impressions,
-      clicks,
-      installs,
-      spend,
-      d7PaidUsers: paidUsers,
-      d7TotalRev: totalRev,
-      d7IapRev: iapRev,
-      d7Ret: 18 + (index % 24) * 0.9,
-      materials: Array.from({ length: 1 + (index % 4) }, (_, materialIndex) => ({
-        id: `cp${cp}-${String(materialIndex + 1).padStart(2, '0')}`,
-        name: `${materialNames[(index + materialIndex) % materialNames.length]}_${platform}_${channel}`,
-        contentId: `content_${cp}_${materialIndex}`,
-        previewUrl: materialIndex % 3 === 0
-          ? 'https://assets.mixkit.co/videos/preview/mixkit-playing-mobile-game-in-vertical-mode-40118-large.mp4'
-          : 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=400&q=80',
-        spend: Math.round(spend * (0.32 + materialIndex * 0.11)),
-        impressions: Math.round(impressions * (0.28 + materialIndex * 0.08)),
-        clicks: Math.round(clicks * (0.28 + materialIndex * 0.08)),
-        type: materialTypes[(index + materialIndex) % materialTypes.length],
-      })),
-    };
-  });
+  MONTHLY_ANALYTICS_ROWS.map((row, index) => ({
+    id: row.id,
+    channel: row.channel,
+    platform: row.platform,
+    language: row.language,
+    campaign: row.campaignName,
+    setName: row.creativeSet,
+    launchTime: row.launchTime,
+    direction: row.direction,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    installs: row.installs,
+    spend: row.spend,
+    d7PaidUsers: row.d7PaidUsers,
+    d7TotalRev: Math.round(row.spend * row.d7Roas / 100),
+    d7IapRev: row.d7IapRev,
+    d7Ret: row.d7Ret,
+    materials: [
+      {
+        id: row.materialId,
+        name: row.materialName,
+        contentId: row.contentId,
+        previewUrl: row.thumbnail,
+        spend: row.spend,
+        impressions: row.impressions,
+        clicks: row.clicks,
+        type: row.materialType,
+      },
+      {
+        id: `${row.materialId}-b`,
+        name: `${row.materialName}-拓展素材`,
+        contentId: `${row.contentId}_b`,
+        previewUrl: row.thumbnail,
+        spend: Math.round(row.spend * (0.12 + (index % 3) * 0.04)),
+        impressions: Math.round(row.impressions * (0.12 + (index % 3) * 0.04)),
+        clicks: Math.round(row.clicks * (0.12 + (index % 3) * 0.04)),
+        type: materialTypes[(index + 1) % materialTypes.length],
+      },
+    ],
+  }));
 
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'channel', name: '渠道', visible: true },
@@ -175,6 +173,53 @@ const getSortValue = (row: SetItem, key: string) => {
   return row[key as keyof SetItem] as string | number;
 };
 
+const normalizeBenchmarkChannel = (channel: string) => {
+  const normalized = channel.toLowerCase().replace(/\s+/g, '');
+  if (normalized === 'applovin') return 'applovin_int';
+  return normalized;
+};
+
+const normalizeBenchmarkPlatform = (platform: string) => platform.toLowerCase();
+
+const getActiveBenchmarkRules = () => {
+  const now = new Date();
+  return generateBenchmarkData().reduce<Record<string, BenchmarkRule>>((rules, rule) => {
+    const effectiveTime = new Date(rule.effectiveTime.replace(' ', 'T'));
+    if (effectiveTime > now) return rules;
+
+    const key = `${normalizeBenchmarkChannel(rule.channel)}__${normalizeBenchmarkPlatform(rule.platform)}`;
+    const current = rules[key];
+    if (!current || new Date(rule.effectiveTime.replace(' ', 'T')) > new Date(current.effectiveTime.replace(' ', 'T'))) {
+      rules[key] = rule;
+    }
+    return rules;
+  }, {});
+};
+
+const getBenchmarkCellClassName = (metric: string, value: number, benchmark: BenchmarkRule) => {
+  switch (metric) {
+    case 'cpi':
+      return value <= benchmark.cpi ? 'bg-emerald-50 text-emerald-700 font-black' : 'bg-rose-50 text-rose-700 font-black';
+    case 'd7Cpa':
+      return value <= benchmark.cpa7 ? 'bg-emerald-50 text-emerald-700 font-black' : 'bg-rose-50 text-rose-700 font-black';
+    case 'd7Roi':
+      return value >= benchmark.roi7 ? 'bg-emerald-50 text-emerald-700 font-black' : 'bg-rose-50 text-rose-700 font-black';
+    case 'd7PayRate':
+      return value >= benchmark.payRate ? 'bg-emerald-50 text-emerald-700 font-black' : 'bg-rose-50 text-rose-700 font-black';
+    case 'd7PaidUsers':
+      return value >= benchmark.paidUsers ? 'bg-emerald-50 text-emerald-700 font-black' : 'text-slate-700';
+    case 'd7Arppu':
+      if (benchmark.arppu7 == null) return 'text-slate-700';
+      return value >= benchmark.arppu7 ? 'bg-emerald-50 text-emerald-700 font-black' : 'bg-rose-50 text-rose-700 font-black';
+    case 'installs':
+      if (value >= benchmark.newUsersPaid) return 'bg-emerald-50 text-emerald-700 font-black';
+      if (value >= benchmark.newUsersRecovery) return 'bg-amber-50 text-amber-700 font-black';
+      return 'text-slate-700';
+    default:
+      return '';
+  }
+};
+
 const ColumnConfigDropdown = ({
   columns,
   onClose,
@@ -189,11 +234,26 @@ const ColumnConfigDropdown = ({
   open: boolean;
 }) => {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-column-config-trigger="true"]')) return;
+      if (!rootRef.current?.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [onClose, open]);
 
   if (!open) return null;
 
   return (
-    <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/80">
+    <div ref={rootRef} className="absolute right-0 top-[calc(100%+8px)] z-40 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/80">
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
         <span className="text-xs font-black text-slate-700">字段配置</span>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
@@ -206,12 +266,25 @@ const ColumnConfigDropdown = ({
             key={column.id}
             draggable
             onDragStart={() => setDraggingIndex(index)}
-            onDragOver={(event) => event.preventDefault()}
+            onDragEnd={() => {
+              setDraggingIndex(null);
+              setDragOverIndex(null);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOverIndex(index);
+            }}
+            onDragLeave={() => setDragOverIndex((current) => (current === index ? null : current))}
             onDrop={() => {
               if (draggingIndex !== null && draggingIndex !== index) onDrag(draggingIndex, index);
               setDraggingIndex(null);
+              setDragOverIndex(null);
             }}
-            className="flex h-9 cursor-grab items-center gap-2 rounded-lg px-2 text-xs font-bold text-slate-600 hover:bg-slate-50 active:cursor-grabbing"
+            className={`flex h-9 cursor-grab items-center gap-2 rounded-lg px-2 text-xs font-bold text-slate-600 transition-all duration-200 ease-out hover:bg-slate-50 active:cursor-grabbing ${
+              draggingIndex === index ? 'scale-[0.98] bg-indigo-50 text-indigo-700 opacity-70 shadow-sm' : ''
+            } ${
+              dragOverIndex === index && draggingIndex !== index ? 'translate-y-0.5 bg-slate-100 ring-2 ring-indigo-100' : ''
+            }`}
           >
             <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-300" />
             <button
@@ -257,6 +330,17 @@ export const RecoveryDataPage: React.FC = () => {
 
   const allSets = useMemo(() => buildMockSets(), []);
   const visibleColumns = columns.filter((column) => column.visible);
+  const activeBenchmarkRules = useMemo(() => getActiveBenchmarkRules(), []);
+  const resolveBenchmarkRule = (channel: string, platform: SetItem['platform']) => {
+    const normalizedChannel = normalizeBenchmarkChannel(channel || 'All');
+    const normalizedPlatform = normalizeBenchmarkPlatform(platform);
+    return (
+      activeBenchmarkRules[`${normalizedChannel}__${normalizedPlatform}`] ||
+      activeBenchmarkRules[`${normalizedChannel}__${normalizeBenchmarkPlatform('全部')}`] ||
+      activeBenchmarkRules[`${normalizeBenchmarkChannel('All')}__${normalizedPlatform}`] ||
+      activeBenchmarkRules[`${normalizeBenchmarkChannel('All')}__${normalizeBenchmarkPlatform('全部')}`]
+    );
+  };
 
   const toggleMultiSelect = (item: string, list: string[], setter: React.Dispatch<React.SetStateAction<string[]>>) => {
     setter(list.includes(item) ? list.filter((value) => value !== item) : [...list, item]);
@@ -321,6 +405,12 @@ export const RecoveryDataPage: React.FC = () => {
   const renderCell = (columnId: string, row: SetItem) => {
     const metrics = getMetrics(row);
     const topMaterial = [...row.materials].sort((a, b) => b.spend - a.spend)[0];
+    const benchmark = resolveBenchmarkRule(selectedChannel || 'All', row.platform);
+    const benchmarkBadge = (metric: string, value: number, content: React.ReactNode) => (
+      <span className={`block rounded-md px-2 py-1 text-center ${benchmark ? getBenchmarkCellClassName(metric, value, benchmark) : ''}`}>
+        {content}
+      </span>
+    );
 
     switch (columnId) {
       case 'channel':
@@ -355,29 +445,29 @@ export const RecoveryDataPage: React.FC = () => {
       case 'ctr':
         return `${metrics.ctr.toFixed(2)}%`;
       case 'installs':
-        return row.installs.toLocaleString();
+        return benchmarkBadge('installs', row.installs, row.installs.toLocaleString());
       case 'cvr':
         return `${metrics.cvr.toFixed(2)}%`;
       case 'spend':
         return `$${row.spend.toLocaleString()}`;
       case 'cpi':
-        return `$${metrics.cpi.toFixed(2)}`;
+        return benchmarkBadge('cpi', metrics.cpi, `$${metrics.cpi.toFixed(2)}`);
       case 'cpm':
         return `$${metrics.cpm.toFixed(2)}`;
       case 'ir':
         return `${metrics.ir.toFixed(2)}%`;
       case 'd7PaidUsers':
-        return row.d7PaidUsers.toLocaleString();
+        return benchmarkBadge('d7PaidUsers', row.d7PaidUsers, row.d7PaidUsers.toLocaleString());
       case 'd7PayRate':
-        return `${metrics.d7PayRate.toFixed(2)}%`;
+        return benchmarkBadge('d7PayRate', metrics.d7PayRate, `${metrics.d7PayRate.toFixed(2)}%`);
       case 'd7Cpa':
-        return `$${metrics.d7Cpa.toFixed(2)}`;
+        return benchmarkBadge('d7Cpa', metrics.d7Cpa, `$${metrics.d7Cpa.toFixed(2)}`);
       case 'd7TotalRev':
         return `$${row.d7TotalRev.toLocaleString()}`;
       case 'd0Roi':
         return `${metrics.d0Roi.toFixed(2)}%`;
       case 'd7Roi':
-        return `${metrics.d7Roi.toFixed(2)}%`;
+        return benchmarkBadge('d7Roi', metrics.d7Roi, `${metrics.d7Roi.toFixed(2)}%`);
       case 'd7IapRev':
         return `$${row.d7IapRev.toLocaleString()}`;
       case 'd7IapRoi':
@@ -385,7 +475,7 @@ export const RecoveryDataPage: React.FC = () => {
       case 'd7Ret':
         return `${row.d7Ret.toFixed(1)}%`;
       case 'd7Arppu':
-        return `$${metrics.d7Arppu.toFixed(1)}`;
+        return benchmarkBadge('d7Arppu', metrics.d7Arppu, `$${metrics.d7Arppu.toFixed(1)}`);
       default:
         return null;
     }
@@ -440,7 +530,7 @@ export const RecoveryDataPage: React.FC = () => {
               {[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size} 行/页</option>)}
             </select>
             <div className="relative">
-              <button type="button" onClick={() => setShowConfig((value) => !value)} className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:border-indigo-200 hover:bg-slate-50">
+              <button type="button" data-column-config-trigger="true" onClick={() => setShowConfig((value) => !value)} className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:border-indigo-200 hover:bg-slate-50">
                 <Settings className="h-3.5 w-3.5" />
                 字段配置
               </button>

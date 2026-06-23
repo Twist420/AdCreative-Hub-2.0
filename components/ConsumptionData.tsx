@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpDown, Check, ChevronLeft, ChevronRight, GripVertical, Play, Settings, X } from 'lucide-react';
 import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSearchField, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
+import { MONTHLY_ANALYTICS_ROWS } from '../services/monthlyAnalyticsData';
 
 type MaterialType = 'video' | 'playable' | 'image';
 type SortDirection = 'asc' | 'desc';
@@ -11,6 +12,7 @@ interface MaterialSpend {
   contentId: string;
   thumbnail: string;
   type: MaterialType;
+  channel: string;
   platform: 'Android' | 'iOS';
   launchTime: string;
   firstImpressionTime: string;
@@ -68,48 +70,44 @@ const owners = ['唐欣怡', '吉意煊', '马嘉良', '王杰华'];
 const designers = ['王杰华', '唐欣怡', '李思晨', '周明'];
 const types: MaterialType[] = ['video', 'playable', 'image'];
 
-const buildMockSpends = (): MaterialSpend[] =>
-  Array.from({ length: 132 }, (_, index) => {
-    const cp = 3097 + (index * 37) % 900;
-    const variant = String((index % 9) + 1).padStart(2, '0');
-    const language = languages[index % languages.length];
-    const type = types[index % types.length];
-    const channel = channels[index % channels.length];
-    const template = materialTemplates[index % materialTemplates.length];
-    const date = new Date(Date.UTC(2026, 4, 10 + (index % 38)));
-    const day = date.toISOString().slice(0, 10);
-    const setCount = 3 + (index % 10);
-    const spend = 820 + ((index * 1379) % 26000);
-    const impressions = 42000 + ((index * 43871) % 760000);
-    const clicks = Math.floor(impressions * (0.018 + (index % 13) * 0.003));
+const buildMockSpends = (): MaterialSpend[] => {
+  const setsByMaterial = MONTHLY_ANALYTICS_ROWS.reduce<Record<string, typeof MONTHLY_ANALYTICS_ROWS>>((groups, row) => {
+    if (!groups[row.materialId]) groups[row.materialId] = [];
+    groups[row.materialId].push(row);
+    return groups;
+  }, {});
 
+  return MONTHLY_ANALYTICS_ROWS.map((row, index) => {
+    const relatedSets = setsByMaterial[row.materialId] || [row];
     return {
-      id: `cp${cp}-${variant}`,
-      name: `cp${cp}-${variant}-${language.toLowerCase()}-${type === 'playable' ? 'p' : type === 'image' ? 'i' : 'm'}-${template}-9-16`,
-      contentId: `content_${language.toLowerCase()}_${String(1000 + index).padStart(4, '0')}`,
-      thumbnail: thumbnails[index % thumbnails.length],
-      type,
-      platform: platforms[index % platforms.length],
-      launchTime: day,
-      firstImpressionTime: `${day} ${String(2 + (index % 18)).padStart(2, '0')}:00 UTC`,
-      spend,
-      impressions,
-      clicks,
-      language,
-      size: sizes[index % sizes.length],
-      owner: owners[index % owners.length],
-      designer: designers[index % designers.length],
-      isNew: index % 4 !== 0,
-      associatedSets: Array.from({ length: setCount }, (_, setIndex) => ({
-        setName: `【260${(index + setIndex) % 9 + 10}-A动画剧情-B无玩法】 ${2 + (setIndex % 8)}cp+10sw-${setIndex % 2 ? 'reward' : 'relax'} cpp`,
-        campaign: `Campaign ${channel} ${String(40 + (index % 12)).padStart(3, '0')}`,
-        firstLaunch: new Date(Date.UTC(2026, 3 + (setIndex % 2), 8 + ((index + setIndex) % 22))).toISOString().slice(0, 10),
+      id: row.materialId,
+      name: row.materialName,
+      contentId: row.contentId,
+      thumbnail: row.thumbnail,
+      type: row.materialType,
+      channel: row.channel,
+      platform: row.platform,
+      launchTime: row.launchTime,
+      firstImpressionTime: `${row.launchTime} 00:00 UTC`,
+      spend: row.spend,
+      impressions: row.impressions,
+      clicks: row.clicks,
+      language: row.language,
+      size: row.size,
+      owner: row.owner,
+      designer: row.designer,
+      isNew: row.launchTime >= '2026-05-18',
+      associatedSets: relatedSets.slice(0, 12).map((setRow, setIndex) => ({
+        setName: setRow.creativeSet,
+        campaign: setRow.campaignName,
+        firstLaunch: setRow.launchTime,
         campaignCount: 1 + (setIndex % 3),
         status: setIndex % 4 === 0 ? 'Paused' : 'Live',
-        spend: Math.round(spend * (0.18 + setIndex * 0.045)),
+        spend: Math.round(setRow.spend),
       })),
     };
   });
+};
 
 const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'id', name: '素材ID', visible: true },
@@ -117,7 +115,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: 'contentId', name: '素材内容ID', visible: true },
   { id: 'thumbnail', name: '素材预览', visible: true },
   { id: 'sets', name: 'Set数量', visible: true },
-  { id: 'firstImpressionTime', name: '首次展示时间', visible: true },
+  { id: 'firstImpressionTime', name: '投放时间', visible: true },
   { id: 'spend', name: '花费', visible: true },
   { id: 'spendRatio', name: '花费占比', visible: true },
   { id: 'impressions', name: '展示量', visible: true },
@@ -134,7 +132,7 @@ const metricHelp: Record<string, string> = {
   name: '素材名称：素材投放命名，用于识别内容、语言、类型与尺寸。',
   contentId: '素材内容ID：同一内容资产的聚合标识。',
   sets: 'Set数量：使用该素材的 Ad Set 数量，点击查看具体 Set。',
-  firstImpressionTime: '首次展示时间：素材首次产生展示的 UTC 时间。',
+  firstImpressionTime: '投放时间：素材首次投放日期。',
   spend: '花费：当前筛选周期内素材消耗金额。',
   spendRatio: '花费占比 = 素材花费 / 当前结果总花费。',
   impressions: '展示量：素材在投放周期内产生的曝光次数。',
@@ -169,11 +167,26 @@ const ColumnConfigDropdown = ({
   open: boolean;
 }) => {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-column-config-trigger="true"]')) return;
+      if (!rootRef.current?.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [onClose, open]);
 
   if (!open) return null;
 
   return (
-    <div className="absolute right-0 top-[calc(100%+8px)] z-40 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/80">
+    <div ref={rootRef} className="absolute right-0 top-[calc(100%+8px)] z-40 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/80">
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
         <span className="text-xs font-black text-slate-700">字段配置</span>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
@@ -186,12 +199,25 @@ const ColumnConfigDropdown = ({
             key={column.id}
             draggable
             onDragStart={() => setDraggingIndex(index)}
-            onDragOver={(event) => event.preventDefault()}
+            onDragEnd={() => {
+              setDraggingIndex(null);
+              setDragOverIndex(null);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOverIndex(index);
+            }}
+            onDragLeave={() => setDragOverIndex((current) => (current === index ? null : current))}
             onDrop={() => {
               if (draggingIndex !== null && draggingIndex !== index) onDrag(draggingIndex, index);
               setDraggingIndex(null);
+              setDragOverIndex(null);
             }}
-            className="flex h-9 cursor-grab items-center gap-2 rounded-lg px-2 text-xs font-bold text-slate-600 hover:bg-slate-50 active:cursor-grabbing"
+            className={`flex h-9 cursor-grab items-center gap-2 rounded-lg px-2 text-xs font-bold text-slate-600 transition-all duration-200 ease-out hover:bg-slate-50 active:cursor-grabbing ${
+              draggingIndex === index ? 'scale-[0.98] bg-indigo-50 text-indigo-700 opacity-70 shadow-sm' : ''
+            } ${
+              dragOverIndex === index && draggingIndex !== index ? 'translate-y-0.5 bg-slate-100 ring-2 ring-indigo-100' : ''
+            }`}
           >
             <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-300" />
             <button
@@ -241,8 +267,7 @@ export const ConsumptionDataPage: React.FC = () => {
   const filteredMaterials = useMemo(() => {
     let rows = allSpends.filter((item) => {
       if (selectedChannel) {
-        const matchesChannel = item.associatedSets.some((set) => set.campaign.toLowerCase().includes(selectedChannel.toLowerCase()));
-        if (!matchesChannel) return false;
+        if (item.channel !== selectedChannel) return false;
       }
       if (selectedPlatform && item.platform !== selectedPlatform) return false;
       if (selectedLanguage && item.language !== selectedLanguage) return false;
@@ -353,7 +378,7 @@ export const ConsumptionDataPage: React.FC = () => {
           </button>
         );
       case 'firstImpressionTime':
-        return <span className="font-mono text-[11px] text-slate-500">{material.firstImpressionTime}</span>;
+        return <span className="font-mono text-[11px] text-slate-500">{material.launchTime}</span>;
       case 'spend':
         return <span className="font-mono font-black">${material.spend.toLocaleString()}</span>;
       case 'spendRatio':
@@ -435,6 +460,7 @@ export const ConsumptionDataPage: React.FC = () => {
             <div className="relative">
               <button
                 type="button"
+                data-column-config-trigger="true"
                 onClick={() => setShowConfig((value) => !value)}
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:border-indigo-200 hover:bg-slate-50"
               >
