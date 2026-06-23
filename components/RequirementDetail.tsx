@@ -6,7 +6,7 @@ import {
   Share2, Save, ArrowLeft, ArrowRight, Layers, Trash2,
   Monitor, Play, Globe, UserCircle2, BarChart3, Clock,
   MoreVertical, Copy, RotateCcw, Lightbulb, Zap, Scissors, RefreshCw, FilePlus,
-  ChevronLeft, ChevronRight, ChevronUp, CheckCircle2, AlertCircle, XCircle, Star, Search, Info, Edit2, CalendarDays
+  ChevronLeft, ChevronRight, ChevronUp, CheckCircle2, AlertCircle, XCircle, Star, Search, Info, Edit2, CalendarDays, Upload
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
@@ -111,6 +111,12 @@ const getSubVersionFormatName = (req: Requirement, subVer: { version: string; na
   return `${project}-${lang}-${assetId}-${broadDir}-${stage}-${version}-${subName}-${creativeInitials}-${prodInitials}-${channelsStr}`;
 };
 
+const getSubVersionSizedFormatName = (
+  req: Requirement,
+  subVer: { version: string; name: string },
+  dimension: string,
+) => `${getSubVersionFormatName(req, subVer)}-${dimension.replace(/[^0-9]/g, '')}`;
+
 const generateFullName = (req: Requirement, versionOverride?: string, nameOverride?: string, testDirOverride?: string[]) => {
   const project = PROJECTS.find(p => p.name === req.projectName)?.code || 'pan';
   const typePrefix = req.assetType === 'Video' ? 'cp' : req.assetType === 'Image' ? 'tp' : 'sw';
@@ -152,9 +158,9 @@ const generateFullName = (req: Requirement, versionOverride?: string, nameOverri
 };
 
 const MATERIAL_STAGES = [
-  { id: '新', name: '新 (Original)' },
-  { id: '迭', name: '迭 (Iteration)' },
-  { id: '老', name: '老 (Editing)' }
+  { id: '新', name: '新' },
+  { id: '迭', name: '迭' },
+  { id: '老', name: '老' }
 ];
 
 const BROAD_DIRECTIONS = [
@@ -575,6 +581,9 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [availabilityView, setAvailabilityView] = useState<'calendar' | 'gantt'>('calendar');
+  const [selectedPreviewDimension, setSelectedPreviewDimension] = useState<string>('');
+  const [showClipUploadModal, setShowClipUploadModal] = useState(false);
+  const [isClipDragActive, setIsClipDragActive] = useState(false);
 
   useEffect(() => {
     onChange?.(currentReq);
@@ -606,6 +615,16 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
         setToast(null);
       }, 1500);
     });
+  };
+
+  const handleClipUploadFiles = (files: FileList | File[]) => {
+    const fileCount = files.length;
+    if (fileCount > 0) {
+      setToast({ message: `已添加 ${fileCount} 个成片文件，等待上传配置`, type: 'success' });
+      setShowClipUploadModal(false);
+      setIsClipDragActive(false);
+      setTimeout(() => setToast(null), 1800);
+    }
   };
 
   const subVersions = useMemo(() => {
@@ -669,14 +688,144 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
           { dim: '9:16', status: 'Pending', time: '2026-03-04 10:30' },
         ]}
       ]
+    },
+    {
+      platform: 'Facebook',
+      versions: [
+        { version: 'V2', dims: [
+          { dim: '1:1', status: 'Approved', time: '2026-03-03 16:20' },
+          { dim: '4:5', status: 'Approved', time: '2026-03-03 16:20' },
+        ]},
+        { version: 'V1', dims: [
+          { dim: '9:16', status: 'Pending', time: '2026-03-02 17:05' },
+        ]}
+      ]
     }
   ], []);
+
+  const getVersionSortValue = (version: string) => Number(version.replace(/\D/g, '')) || 0;
+
+  const normalizeDimensionLabel = (dimension: string) => {
+    const value = String(dimension || '').trim();
+    const compactMap: Record<string, string> = {
+      '916': '9:16',
+      '169': '16:9',
+      '11': '1:1',
+      '45': '4:5',
+      '54': '5:4',
+    };
+    return compactMap[value] || value.replace('×', ':').replace('x', ':');
+  };
+
+  const getDimensionSortValue = (dimension: string) => {
+    const order = ['9:16', '1:1', '16:9', '4:5', '5:4'];
+    const index = order.indexOf(dimension);
+    return index === -1 ? order.length : index;
+  };
+
+  const previewDimensions = useMemo(() => {
+    const dimensionSet = new Set<string>();
+    (currentReq.dimensions || []).forEach((dimension) => dimensionSet.add(normalizeDimensionLabel(dimension)));
+    uploadHistory.forEach((platformGroup) => {
+      platformGroup.versions.forEach((versionRecord) => {
+        versionRecord.dims.forEach((dimData) => dimensionSet.add(normalizeDimensionLabel(dimData.dim)));
+      });
+    });
+    return Array.from(dimensionSet)
+      .filter(Boolean)
+      .sort((a, b) => getDimensionSortValue(a) - getDimensionSortValue(b));
+  }, [currentReq.dimensions, uploadHistory]);
+
+  useEffect(() => {
+    if (!previewDimensions.length) return;
+    if (!selectedPreviewDimension || !previewDimensions.includes(selectedPreviewDimension)) {
+      setSelectedPreviewDimension(previewDimensions[0]);
+    }
+  }, [previewDimensions, selectedPreviewDimension]);
+
+  const getPreviewAspectRatio = (dimension: string) => {
+    const [width, height] = normalizeDimensionLabel(dimension).split(':').map(Number);
+    if (!width || !height) return '9 / 16';
+    return `${width} / ${height}`;
+  };
+
+  const getPreviewWidthForDimension = (dimension: string) => {
+    const [width, height] = normalizeDimensionLabel(dimension).split(':').map(Number);
+    if (!width || !height) return 158;
+    return Math.max(158, Math.round((280 * width) / height));
+  };
+
+  const getDurationLabel = (duration?: string) => {
+    const value = duration || '0:30';
+    if (/秒$/.test(value)) return value;
+    return `${value} 秒`;
+  };
 
   const allVersions = useMemo(() => {
     const versionsSet = new Set<string>();
     uploadHistory.forEach(p => p.versions.forEach(v => versionsSet.add(v.version)));
-    return Array.from(versionsSet).sort().reverse();
+    return Array.from(versionsSet).sort((a, b) => getVersionSortValue(a) - getVersionSortValue(b));
   }, [uploadHistory]);
+
+  const deliveryRecords = useMemo(() => {
+    const versionMap = new Map<string, {
+      version: string;
+      channelGroups: {
+        platform: string;
+        sizes: { dim: string; reviewStatus: string; deliveryStatus: string; time: string }[];
+      }[];
+    }>();
+
+    uploadHistory.forEach((platformGroup) => {
+      platformGroup.versions.forEach((versionRecord) => {
+        const record = versionMap.get(versionRecord.version) || {
+          version: versionRecord.version,
+          channelGroups: [],
+        };
+        record.channelGroups.push({
+          platform: platformGroup.platform,
+          sizes: versionRecord.dims.map((dimData) => ({
+            dim: dimData.dim,
+            reviewStatus: dimData.status,
+            deliveryStatus:
+              dimData.status === 'Approved'
+                ? 'Delivering'
+                : dimData.status === 'Rejected'
+                  ? 'NotLaunched'
+                  : 'Waiting',
+            time: dimData.time,
+          })),
+        });
+        versionMap.set(versionRecord.version, record);
+      });
+    });
+
+    return Array.from(versionMap.values()).sort((a, b) => getVersionSortValue(a.version) - getVersionSortValue(b.version));
+  }, [uploadHistory]);
+
+  const getReviewStatusText = (status: string) => {
+    if (status === 'Approved') return '已通过';
+    if (status === 'Rejected') return '未过审';
+    return '审核中';
+  };
+
+  const getReviewStatusClass = (status: string) => {
+    if (status === 'Approved') return 'bg-emerald-500 text-emerald-600';
+    if (status === 'Rejected') return 'bg-red-500 text-red-600';
+    return 'bg-amber-500 text-amber-600';
+  };
+
+  const getDeliveryStatusText = (status: string) => {
+    if (status === 'Delivering') return '投放中';
+    if (status === 'NotLaunched') return '未投放';
+    return '待投放';
+  };
+
+  const getDeliveryStatusClass = (status: string) => {
+    if (status === 'Delivering') return 'bg-indigo-50 text-indigo-600 border-indigo-100';
+    if (status === 'NotLaunched') return 'bg-slate-50 text-slate-400 border-slate-100';
+    return 'bg-amber-50 text-amber-600 border-amber-100';
+  };
 
   const handleSave = () => {
     setToast({ message: '✍️ 需求更改已成功保存！', type: 'success' });
@@ -699,7 +848,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const confirmDelete = () => {
     setShowDeleteConfirm(false);
     onDelete?.(currentReq.id);
-    setToast({ message: '🗑️ 需求已被成功删除 (Requirement Deleted)!', type: 'deleted' });
+      setToast({ message: '需求已成功删除', type: 'deleted' });
     setTimeout(() => {
       onClose();
     }, 1200);
@@ -1077,7 +1226,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
 
         <div className="flex items-center gap-6">
           <div className="flex flex-col items-end">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">创意人员 CREATIVE</span>
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">创意人员</span>
             <div className="flex items-center gap-2">
                <span className="text-xs font-black text-slate-700">{currentReq.creativePersonnel}</span>
                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black text-[10px] border border-primary/20">
@@ -1150,14 +1299,14 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
               onClick={() => setActiveTab('clip')}
               className={`pb-3 text-xs font-black transition-all relative ${activeTab === 'clip' ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
             >
-              成片 (FINISHED)
+              成片
               {activeTab === 'clip' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full"></div>}
             </button>
             <button 
               onClick={() => setActiveTab('script')}
               className={`pb-3 text-xs font-black transition-all relative ${activeTab === 'script' ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
             >
-              需求脚本 (SCRIPT)
+              需求脚本
               {activeTab === 'script' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full"></div>}
             </button>
           </div>
@@ -1167,87 +1316,135 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
               <div className="p-6 space-y-8">
                 {/* Version Previews */}
                 <section className="space-y-4">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">成片预览 (VERSIONS)</h3>
-                  <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-                    {allVersions.map((v) => (
-                      <div key={v} className="w-48 shrink-0 space-y-2 group">
-                        <div className="aspect-[9/16] bg-slate-900 rounded-2xl overflow-hidden relative shadow-md border border-slate-200">
-                          <img src={currentReq.previews?.[0] || 'https://picsum.photos/270/480'} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all" />
-                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all bg-black/20">
-                            <Play className="w-10 h-10 text-white fill-white" />
-                          </div>
-                          <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/50 backdrop-blur text-white text-[9px] font-bold rounded uppercase">{v}</div>
-                        </div>
-                        <p className="text-[10px] font-bold text-slate-500 text-center">Version {v.replace('V', '')}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <h3 className="text-xs font-black text-slate-400 tracking-widest">成片预览</h3>
+                      <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-100 bg-white p-1">
+                        {previewDimensions.map((dimension) => (
+                          <button
+                            key={dimension}
+                            type="button"
+                            onClick={() => setSelectedPreviewDimension(dimension)}
+                            className={`rounded-xl px-3 py-1.5 text-[10px] font-black transition-all ${
+                              selectedPreviewDimension === dimension
+                                ? 'bg-primary text-white shadow-sm'
+                                : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
+                            }`}
+                          >
+                            {dimension}
+                          </button>
+                        ))}
                       </div>
-                    ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowClipUploadModal(true)}
+                      className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 text-[11px] font-black text-indigo-600 transition-all hover:border-indigo-200 hover:bg-indigo-100"
+                      title="上传当前需求的成片素材"
+                    >
+                      <Upload className="h-4 w-4" />
+                      上传成片
+                    </button>
+                  </div>
+                  <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+                    {allVersions.map((v) => {
+                      const versionNumber = String(getVersionSortValue(v)).padStart(2, '0');
+                      const subVersion = subVersions.find((item) => item.version === versionNumber) || {
+                        version: versionNumber,
+                        name: `版本${getVersionSortValue(v)}`,
+                      };
+                      const activeDimension = selectedPreviewDimension || previewDimensions[0] || '9:16';
+                      const previewName = getSubVersionSizedFormatName(currentReq, subVersion, activeDimension);
+                      return (
+                        <div
+                          key={v}
+                          className="flex h-[330px] shrink-0 flex-col gap-2 group"
+                          style={{ width: getPreviewWidthForDimension(activeDimension) }}
+                        >
+                          <div
+                            className="h-[280px] bg-slate-900 rounded-2xl overflow-hidden relative shadow-md border border-slate-200"
+                          >
+                            <img src={currentReq.previews?.[0] || 'https://picsum.photos/270/480'} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all" />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all bg-black/20">
+                              <Play className="w-10 h-10 text-white fill-white" />
+                            </div>
+                            <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/50 backdrop-blur text-white text-[9px] font-bold rounded uppercase">{v}</div>
+                            <div className="absolute bottom-2 right-2 rounded-full bg-white/85 px-2 py-0.5 text-[9px] font-black text-slate-700 backdrop-blur">
+                              {getDurationLabel(currentReq.duration)}
+                            </div>
+                          </div>
+                          <p
+                            className="h-10 overflow-hidden break-all text-center font-mono text-[9.5px] font-bold leading-5 text-slate-500 line-clamp-2"
+                            title={previewName}
+                          >
+                            {previewName}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
                 
-                {/* Upload Records */}
+                {/* Delivery Records */}
                 <section className="space-y-6">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">上传记录 (UPLOAD HISTORY)</h3>
-                  {uploadHistory.map((platformGroup) => (
-                    <div key={platformGroup.platform} className="space-y-3">
-                      <div className="flex items-center gap-2 px-2">
-                        <Globe className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-black text-slate-800">{platformGroup.platform}</span>
+                  <h3 className="text-xs font-black text-slate-400 tracking-widest">投放记录</h3>
+                  {deliveryRecords.map((record) => (
+                    <div key={record.version} className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+                      <div className="mb-4 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1 h-5 rounded-full bg-primary"></div>
+                          <span className="text-sm font-black text-slate-900">版本 {record.version.replace('V', '')}</span>
+                        </div>
+                        <span className="rounded-full bg-slate-50 px-3 py-1 text-[10px] font-black text-slate-400">
+                          {record.channelGroups.reduce((sum, channel) => sum + channel.sizes.length, 0)} 条投放尺寸 · {record.channelGroups.length} 个渠道
+                        </span>
                       </div>
-                      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-                        <table className="w-full text-left border-collapse">
-                          <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                              <th className="px-6 py-3 w-32">版本</th>
-                              <th className="px-6 py-3 w-32">尺寸</th>
-                              <th className="px-6 py-3">过审情况</th>
-                              <th className="px-6 py-3">上传时间</th>
-                              <th className="px-6 py-3 text-right">操作</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50 text-[11px]">
-                            {platformGroup.versions.map((v) => (
-                              <React.Fragment key={v.version}>
-                                {v.dims.map((dimData, dimIdx) => (
-                                  <tr key={`${v.version}-${dimData.dim}`} className="hover:bg-slate-50/50 transition-all group">
-                                    <td className="px-6 py-4">
-                                      {dimIdx === 0 && (
-                                        <div className="flex items-center gap-2">
-                                          <div className="w-1 h-4 bg-primary rounded-full"></div>
-                                          <span className="font-black text-slate-900 text-xs">Version {v.version.replace('V', '')}</span>
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <div className="flex items-center gap-2">
-                                        <Monitor className="w-3.5 h-3.5 text-slate-400" />
-                                        <span className="font-bold text-slate-600">{dimData.dim}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <div className="flex items-center gap-2">
-                                        <div className={`w-1.5 h-1.5 rounded-full ${
-                                          dimData.status === 'Approved' ? 'bg-emerald-500' : 
-                                          dimData.status === 'Rejected' ? 'bg-red-500' : 'bg-amber-500'
-                                        }`}></div>
-                                        <span className={`font-bold ${
-                                          dimData.status === 'Approved' ? 'text-emerald-600' : 
-                                          dimData.status === 'Rejected' ? 'text-red-600' : 'text-amber-600'
-                                        }`}>
-                                          {dimData.status === 'Approved' ? '已通过' : 
-                                           dimData.status === 'Rejected' ? '未过审' : '审核中'}
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-slate-400 font-medium">{dimData.time}</td>
-                                    <td className="px-6 py-4 text-right">
-                                       <button className="text-primary font-black hover:underline">详情</button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
+
+                      <div className="rounded-2xl border border-slate-100 bg-white">
+                        <div className="grid grid-cols-[1.05fr_0.8fr_0.9fr_0.9fr_1.1fr] border-b border-slate-100 bg-slate-50 px-4 py-3 text-[10px] font-black text-slate-400">
+                          <span>投放渠道</span>
+                          <span>尺寸</span>
+                          <span>审核情况</span>
+                          <span>投放情况</span>
+                          <span>同步时间</span>
+                        </div>
+                        <div className="divide-y divide-slate-50">
+                          {record.channelGroups.map((channel) =>
+                            channel.sizes.map((sizeItem, sizeIndex) => {
+                              const reviewClass = getReviewStatusClass(sizeItem.reviewStatus);
+                              const [dotClass, textClass] = reviewClass.split(' ');
+                              return (
+                                <div
+                                  key={`${record.version}-${channel.platform}-${sizeItem.dim}`}
+                                  className="grid grid-cols-[1.05fr_0.8fr_0.9fr_0.9fr_1.1fr] items-center px-4 py-3 text-[11px] font-bold"
+                                >
+                                  <span className="flex items-center gap-2 text-slate-800">
+                                    {sizeIndex === 0 ? (
+                                      <>
+                                        <Globe className="h-3.5 w-3.5 text-primary" />
+                                        {channel.platform}
+                                      </>
+                                    ) : (
+                                      <span className="pl-5 text-slate-300">同渠道</span>
+                                    )}
+                                  </span>
+                                  <span className="inline-flex items-center gap-2 text-slate-700">
+                                    <Monitor className="h-3.5 w-3.5 text-slate-400" />
+                                    {sizeItem.dim}
+                                  </span>
+                                  <span className={`inline-flex items-center gap-1.5 ${textClass}`}>
+                                    <i className={`h-1.5 w-1.5 rounded-full ${dotClass}`}></i>
+                                    {getReviewStatusText(sizeItem.reviewStatus)}
+                                  </span>
+                                  <span className={`mr-auto rounded-full border px-2 py-1 text-[10px] font-black ${getDeliveryStatusClass(sizeItem.deliveryStatus)}`}>
+                                    {getDeliveryStatusText(sizeItem.deliveryStatus)}
+                                  </span>
+                                  <span className="text-slate-400">{sizeItem.time}</span>
+                                </div>
+                              );
+                            }),
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1919,6 +2116,86 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
         </div>
       )}
 
+      {showClipUploadModal && (
+        <div className="fixed inset-0 z-[290] flex items-center justify-center bg-slate-950/55 p-6 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-6 py-5">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">上传成片</h3>
+                <p className="mt-1 text-[10px] font-bold text-slate-400">
+                  支持拖拽上传，也可以点击选择视频或图片文件。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowClipUploadModal(false);
+                  setIsClipDragActive(false);
+                }}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 transition-all hover:bg-slate-200 hover:text-slate-600"
+                title="关闭"
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <label
+                className={`flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-[28px] border-2 border-dashed px-6 py-8 text-center transition-all ${
+                  isClipDragActive
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-slate-50/70 text-slate-500 hover:border-indigo-200 hover:bg-indigo-50/60'
+                }`}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setIsClipDragActive(true);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setIsClipDragActive(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (event.currentTarget === event.target) {
+                    setIsClipDragActive(false);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleClipUploadFiles(event.dataTransfer.files);
+                }}
+              >
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-white text-indigo-600 shadow-sm">
+                  <Upload className="h-7 w-7" />
+                </div>
+                <div className="text-sm font-black text-slate-800">
+                  拖拽成片文件到这里
+                </div>
+                <div className="mt-2 text-[11px] font-bold text-slate-400">
+                  或点击选择文件，支持视频和图片，多文件上传
+                </div>
+                <input
+                  type="file"
+                  accept="video/*,image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    if (event.target.files) {
+                      handleClipUploadFiles(event.target.files);
+                    }
+                    event.currentTarget.value = '';
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sub-versions list Modal */}
       {showSubVersionsModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6 md:p-8 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -1933,96 +2210,81 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                   <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                     小版本名称列表 <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100/50 px-2 py-0.5 rounded-lg">{subVersions.length} 个版本</span>
                   </h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">点击右侧按钮复制各创意文件名</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">按版本和尺寸分别复制创意文件名</p>
                 </div>
               </div>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allNames = subVersions.map(sub => getSubVersionFormatName(currentReq, sub)).join('\n');
-                    navigator.clipboard.writeText(allNames).then(() => {
-                      setToast({ message: '📋 已成功一键复制全部 5 个版本！', type: 'success' });
-                      setTimeout(() => setToast(null), 1500);
-                    });
-                  }}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black tracking-tight transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/10 cursor-pointer select-none border-none"
-                  title="一键复制全部 5 个版本"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>一键复制全部 ({subVersions.length})</span>
-                </button>
-                <button 
-                  onClick={() => setShowSubVersionsModal(false)}
-                  className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-all cursor-pointer border-none"
-                >
-                  <X className="w-4.5 h-4.5" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowSubVersionsModal(false)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 transition-all hover:bg-slate-200 hover:text-slate-600"
+                title="关闭"
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
             </div>
 
             {/* Modal Body / Scroll List */}
             <div className="flex-1 overflow-y-auto p-6 space-y-3 custom-scrollbar">
               {subVersions.map((sub, idx) => {
-                const subVerName = getSubVersionFormatName(currentReq, sub);
-                const isCopied = copiedText === subVerName;
+                const dimensionsForCopy = previewDimensions.length > 0 ? previewDimensions : ['9:16'];
                 return (
                   <div 
                     key={idx} 
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 hover:bg-indigo-50/20 border border-slate-150 hover:border-indigo-150 p-4 rounded-2xl transition-all group relative border-l-4 border-l-slate-300 hover:border-l-indigo-500"
+                    className="flex flex-col gap-3 bg-slate-50 hover:bg-indigo-50/20 border border-slate-150 hover:border-indigo-150 p-4 rounded-2xl transition-all group relative border-l-4 border-l-slate-300 hover:border-l-indigo-500"
                   >
-                    <div className="flex-1 min-w-0 pr-1">
-                      <div className="flex items-center gap-2 mb-1.5">
+                    <div className="min-w-0 pr-1">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="px-2 py-0.5 bg-indigo-50/80 border border-indigo-100 text-indigo-700 text-[9px] font-black rounded-lg uppercase tracking-wide">
-                          Version {sub.version}
+                          版本 {Number(sub.version)}
                         </span>
                         <span className="text-[11px] font-black text-slate-600 truncate" title={sub.name}>
                           {sub.name}
                         </span>
                       </div>
-                      <div 
-                        className="font-mono text-[10.5px] font-bold text-slate-700 select-all break-all bg-white border border-slate-205 rounded-xl px-3 py-2 shadow-4xs group-hover:border-indigo-100 transition-all cursor-text leading-relaxed" 
-                        title={subVerName}
+                      <div
+                        className="mt-2 font-mono text-[10.5px] font-bold text-slate-700 select-all break-all bg-white border border-slate-205 rounded-xl px-3 py-2 shadow-4xs group-hover:border-indigo-100 transition-all cursor-text leading-relaxed"
+                        title={getSubVersionFormatName(currentReq, sub)}
                       >
-                        {subVerName}
+                        {getSubVersionFormatName(currentReq, sub)}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleCopyText(subVerName)}
-                      className={`px-3.5 py-2 rounded-xl text-[10px] font-black flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer select-none transition-all sm:shrink-0 border self-end sm:self-center h-9 ${
-                        isCopied 
-                          ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600' 
-                          : 'bg-white hover:bg-slate-50 text-indigo-600 border-slate-200 hover:border-indigo-100/50 hover:text-indigo-700'
-                      }`}
-                    >
-                      {isCopied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>已复制</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>复制名称</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      {dimensionsForCopy.map((dimension) => {
+                        const compactDimension = dimension.replace(/[^0-9]/g, '');
+                        const dimensionLabel = dimension.includes(':') ? dimension : dimension.replace(/^(\d+)(\d{2})$/, '$1:$2');
+                        const sizedName = getSubVersionSizedFormatName(currentReq, sub, dimension);
+                        const isCopied = copiedText === sizedName;
+                        return (
+                          <button
+                            key={`${sub.version}-${dimension}`}
+                            type="button"
+                            onClick={() => handleCopyText(sizedName)}
+                            title={sizedName}
+                            className={`h-8 w-auto min-w-[88px] rounded-xl px-3 text-[10px] font-black inline-flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer select-none transition-all border ${
+                              isCopied
+                                ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600'
+                                : 'bg-white hover:bg-slate-50 text-indigo-600 border-slate-200 hover:border-indigo-100/50 hover:text-indigo-700'
+                            }`}
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>已复制 {dimensionLabel}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>复制 {dimensionLabel}</span>
+                              </>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4.5 border-t border-slate-100 flex justify-end shrink-0 bg-slate-50/50 rounded-b-[24px]">
-              <button 
-                onClick={() => setShowSubVersionsModal(false)}
-                className="px-6 py-2 bg-slate-200/80 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition-all cursor-pointer border-none shadow-3xs"
-              >
-                关闭
-              </button>
             </div>
           </div>
         </div>

@@ -135,7 +135,7 @@ export const generateRequirements = (): Requirement[] => {
   const deliveryStatuses: RequirementDeliveryStatus[] = ['Delivering', 'Paused'];
   const priorities: RequirementPriority[] = ['Low', 'Mid', 'High', 'Highest'];
   const creators = ['唐欣怡', '吉意煊', '马嘉良'];
-  const producers = ['张欢', '吴楠', '宋爽'];
+  const producers = ['张欢', '吴楠', '曲冬丽', '刘洋', '孙崇洋', '张永进'];
   const materialStages: ('新' | '老' | '迭')[] = ['新', '老', '迭'];
   const broadDirections: ('大字报' | '原始玩法' | '3D玩法')[] = ['大字报', '原始玩法', '3D玩法'];
   const languages = ['en', 'zh', 'jp', 'kr'];
@@ -146,6 +146,22 @@ export const generateRequirements = (): Requirement[] => {
     const idNum = 3376 - i;
     const subId = i % 3 === 0 ? '02' : '01';
     const typeVal: CreativeForm = i % 3 === 0 ? 'Playable' : i % 3 === 1 ? 'Video' : 'Image';
+    const producerStart = Math.floor(rng() * producers.length);
+    const productionPersonnel = Array.from(
+      new Set([
+        producers[producerStart],
+        ...(i % 4 === 0 ? [producers[(producerStart + 1) % producers.length]] : []),
+        ...(i % 7 === 0 ? [producers[(producerStart + 2) % producers.length]] : []),
+      ]),
+    );
+    const channelStart = Math.floor(rng() * channels.length);
+    const syncedChannels = Array.from(
+      new Set([
+        channels[channelStart],
+        ...(i % 3 === 0 ? [channels[(channelStart + 1) % channels.length]] : []),
+        ...(i % 5 === 0 ? [channels[(channelStart + 2) % channels.length]] : []),
+      ]),
+    );
     return {
       id: `cp${idNum}-${subId}`,
       name: i % 2 === 0 ? '新玩法A段神好奇物合' : '精灵王子变 (蛇)',
@@ -157,9 +173,9 @@ export const generateRequirements = (): Requirement[] => {
       broadDirection: broadDirections[Math.floor(rng() * broadDirections.length)],
       materialStage: materialStages[Math.floor(rng() * materialStages.length)],
       creativePersonnel: creators[Math.floor(rng() * creators.length)],
-      productionPersonnel: [producers[Math.floor(rng() * producers.length)]],
+      productionPersonnel,
       language: languages[Math.floor(rng() * languages.length)],
-      channels: [channels[Math.floor(rng() * channels.length)]],
+      channels: syncedChannels,
       testDirections: ['前贴', '奖励'],
       dimensions: ['9:16'],
       testStatus: typeVal === 'Playable' ? testStatuses[Math.floor(rng() * testStatuses.length)] : undefined,

@@ -132,7 +132,7 @@ const LANDING_OPTIONS: SelectableOption[] = [
   { id: '9:16', name: '9:16 竖版视频', type: '视频落版', duration: '主规格', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=480&h=640&fit=crop' },
   { id: '1:1', name: '1:1 信息流方版', type: '视频落版', duration: '补充', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=480&h=640&fit=crop' },
   { id: '16:9', name: '16:9 横版视频', type: '视频落版', duration: '补充', status: 'Insufficient Data', previewUrl: 'https://images.unsplash.com/photo-1516245834210-c4c142787335?w=480&h=640&fit=crop' },
-  { id: '4:5', name: '4:5 Feed 版', type: '视频落版', duration: '补充', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=480&h=640&fit=crop' }
+  { id: '4:5', name: '4:5 信息流版', type: '视频落版', duration: '补充', status: 'Recommended', previewUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=480&h=640&fit=crop' }
 ];
 
 const pickerMatchTerms = (terms: string[]) => (item: SelectableOption) => {
@@ -243,6 +243,12 @@ const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string): Ver
 const isFinishedReferenceId = (id: string) => id.startsWith('FIN-') || id.startsWith('fc-');
 const getSelectableOption = (id: string, options: SelectableOption[]) => options.find(option => option.id === id);
 const getReferenceOption = (id: string) => getSelectableOption(id, ASSET_OPTIONS) || getSelectableOption(id, FINISHED_OPTIONS);
+const getPickerStatusLabel = (status: string) => {
+  if (status === 'Recommended') return '推荐';
+  if (status === 'Insufficient Data') return '数据不足';
+  if (status === 'Pending Data') return '待观察';
+  return status;
+};
 const getReferenceSource = (id: string): 'asset' | 'finished' => (
   isFinishedReferenceId(id) ? 'finished' : 'asset'
 );
@@ -1541,7 +1547,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <h4 className="line-clamp-2 text-xs font-black text-slate-800">{asset.name}</h4>
-                          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[8px] font-black ${asset.status === 'Recommended' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{asset.status}</span>
+                          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[8px] font-black ${asset.status === 'Recommended' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{getPickerStatusLabel(asset.status)}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-400">
                           <span>{asset.id}</span>

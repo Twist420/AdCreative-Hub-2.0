@@ -13,6 +13,7 @@ import {
   CreativeDirectionType,
   FinishedCreativePerformance,
   AssetVersionItem,
+  CHANNELS,
 } from "../types";
 import {
   generateRequirements,
@@ -22,8 +23,6 @@ import {
 import {
   Plus,
   Search,
-  LayoutGrid,
-  List,
   ChevronDown,
   Trash2,
   ExternalLink,
@@ -151,6 +150,104 @@ const PersonBadge: React.FC<{
         {displayName}
       </span>
     </span>
+  );
+};
+
+const PersonAvatarStack: React.FC<{
+  people?: string[];
+  size?: "sm" | "md";
+  maxVisible?: number;
+  className?: string;
+}> = ({ people = [], size = "sm", maxVisible = 4, className = "" }) => {
+  const names = people.filter(Boolean);
+  const visibleNames = names.slice(0, maxVisible);
+  const sizeClass = size === "md" ? "h-8 w-8" : "h-7 w-7";
+
+  if (names.length === 0) {
+    return <span className={`text-[10px] font-black text-slate-300 ${className}`}>-</span>;
+  }
+
+  if (names.length === 1) {
+    return (
+      <span className={`group/person relative inline-flex min-w-0 items-center justify-center gap-1.5 ${className}`}>
+        <img
+          src={getPersonAvatarUrl(names[0])}
+          alt={names[0]}
+          className={`${sizeClass} shrink-0 rounded-full border border-slate-200 bg-slate-50 object-cover shadow-3xs`}
+          referrerPolicy="no-referrer"
+        />
+        <span className="max-w-[56px] truncate text-[10px] font-extrabold text-slate-600">
+          {names[0]}
+        </span>
+        <span className="pointer-events-none absolute left-1/2 top-full z-[120] mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-lg group-hover/person:block">
+          {names[0]}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <div className={`group/person relative flex items-center -space-x-2 ${className}`}>
+      {visibleNames.map((name) => (
+        <img
+          key={name}
+          src={getPersonAvatarUrl(name)}
+          alt={name}
+          className={`${sizeClass} rounded-full border-2 border-white bg-slate-50 object-cover shadow-3xs`}
+          referrerPolicy="no-referrer"
+        />
+      ))}
+      {names.length > visibleNames.length && (
+        <span
+          className={`${sizeClass} inline-flex items-center justify-center rounded-full border-2 border-white bg-slate-100 text-[9px] font-black text-slate-500 shadow-3xs`}
+        >
+          +{names.length - visibleNames.length}
+        </span>
+      )}
+      <span className="pointer-events-none absolute left-1/2 top-full z-[120] mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-lg group-hover/person:block">
+        {names.join("、")}
+      </span>
+    </div>
+  );
+};
+
+const getChannelDisplayName = (channelId: string) => {
+  const channel = CHANNELS.find((item) => item.id === channelId);
+  return (channel?.name || channelId).replace(/\s*\([^)]*\)/g, "");
+};
+
+const DeliveryChannelsCell: React.FC<{ channels?: string[]; maxVisible?: number }> = ({
+  channels = [],
+  maxVisible = 2,
+}) => {
+  const normalizedChannels = channels.length > 0 ? channels : ["all"];
+  const labels = normalizedChannels.map(getChannelDisplayName);
+  const visibleLabels = labels.slice(0, maxVisible);
+  const hiddenCount = labels.length - visibleLabels.length;
+
+  return (
+    <div
+      className="group/channel relative mx-auto flex max-w-[180px] items-center justify-center gap-1 overflow-visible"
+    >
+      <div className="flex max-w-[180px] items-center justify-center gap-1 overflow-hidden">
+        {visibleLabels.map((label) => (
+          <span
+            key={label}
+            className="max-w-[72px] truncate rounded-full border border-slate-150 bg-slate-50 px-2.5 py-1 text-[9px] font-black text-slate-500"
+          >
+            {label}
+          </span>
+        ))}
+        {hiddenCount > 0 && (
+          <span className="rounded-full border border-slate-150 bg-white px-2 py-1 text-[9px] font-black text-slate-400">
+            ...
+          </span>
+        )}
+      </div>
+      <span className="pointer-events-none absolute left-1/2 top-full z-[120] mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-lg group-hover/channel:block">
+        {labels.join("、")}
+      </span>
+    </div>
   );
 };
 
@@ -527,6 +624,26 @@ const INITIAL_REQUIREMENT_FILTERS = {
   scheduleRisk: "全部",
 };
 
+const FILTER_ALL = "全部";
+const FILTER_SEPARATOR = "|";
+
+const decodeFilterValue = (value: string) =>
+  !value || value === FILTER_ALL
+    ? []
+    : value.split(FILTER_SEPARATOR).filter(Boolean);
+
+const encodeFilterValue = (values: string[]) => {
+  const normalizedValues = Array.from(new Set(values.filter((value) => value && value !== FILTER_ALL)));
+  return normalizedValues.length > 0 ? normalizedValues.join(FILTER_SEPARATOR) : FILTER_ALL;
+};
+
+const filterMatches = (filterValue: string, actualValue?: string) => {
+  const selectedValues = decodeFilterValue(filterValue);
+  return selectedValues.length === 0 || selectedValues.includes(actualValue || "");
+};
+
+const filterIsActive = (filterValue: string) => decodeFilterValue(filterValue).length > 0;
+
 const RequirementCenter: React.FC<RequirementCenterProps> = ({
   subView,
   onSubViewChange,
@@ -536,16 +653,18 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   >("coordinated");
   const combinedSubView = subView || localSubView;
   const setCombinedSubView = onSubViewChange || setLocalSubView;
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [requirements, setRequirements] = useState<Requirement[]>(() => {
     const raw = generateRequirements();
     const activeProducersList = PRODUCERS.filter(p => p.status === "在职").map(p => p.name);
     const difficultyOptions: ("S" | "A" | "B" | "C")[] = ["S", "A", "B", "C"];
     return raw.map((r, i) => {
-      const prodName =
-        r.productionPersonnel && r.productionPersonnel[0]
-          ? r.productionPersonnel[0]
-          : activeProducersList[i % activeProducersList.length];
+      const activeProductionPersonnel = (r.productionPersonnel || []).filter((person) =>
+        activeProducersList.includes(person),
+      );
+      const productionPersonnel =
+        activeProductionPersonnel.length > 0
+          ? activeProductionPersonnel
+          : [activeProducersList[i % activeProducersList.length]];
       const diff =
         r.difficulty || difficultyOptions[i % difficultyOptions.length];
 
@@ -559,12 +678,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       return {
         ...r,
         difficulty: diff,
-        productionPersonnel: [prodName],
+        productionPersonnel,
         startDate: (r as any).startDate || startDateStr,
         endDate: (r as any).endDate || endDateStr,
       };
     });
   });
+  const [openRequirementFilterKey, setOpenRequirementFilterKey] = useState<string | null>(null);
+  const requirementFilterRef = useRef<HTMLDivElement>(null);
   const [schedules, setSchedules] =
     useState<CreativeSchedule[]>(generateSchedules());
   const todayDateString = formatCalendarDate(new Date());
@@ -787,14 +908,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         ),
       );
     }
-    if (filters.creativePersonnel !== "全部") {
-      list = list.filter((s) => s.owner === filters.creativePersonnel);
+    if (filterIsActive(filters.creativePersonnel)) {
+      list = list.filter((s) => filterMatches(filters.creativePersonnel, s.owner));
     }
-    if (filters.assetType !== "全部") {
-      list = list.filter((s) => s.form === filters.assetType);
+    if (filterIsActive(filters.assetType)) {
+      list = list.filter((s) => filterMatches(filters.assetType, s.form));
     }
-    if (filters.broadDirection !== "全部") {
-      list = list.filter((s) => s.broadDirection === filters.broadDirection);
+    if (filterIsActive(filters.broadDirection)) {
+      list = list.filter((s) => filterMatches(filters.broadDirection, s.broadDirection));
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -1301,6 +1422,47 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     },
   ];
 
+  const getFilterOptionLabel = (opt: string) => {
+    const optionLabels: Record<string, string> = {
+      Video: "视频",
+      Image: "图片",
+      Playable: "试玩",
+      Low: "低",
+      Mid: "中",
+      High: "高",
+      Highest: "最高",
+      Draft: "草稿",
+      Pending: "待审核",
+      Approved: "审核通过",
+      Modification: "需求修改",
+      Unscheduled: "未排期",
+      Scheduled: "已排期",
+      InProgress: "进行中",
+      Completed: "已完成",
+    };
+    return optionLabels[opt] || opt;
+  };
+
+  const getFilterDisplayText = (value: string) => {
+    const selectedValues = decodeFilterValue(value);
+    if (selectedValues.length === 0) return FILTER_ALL;
+    if (selectedValues.length === 1) return getFilterOptionLabel(selectedValues[0]);
+    return `${selectedValues.length} 项`;
+  };
+
+  const toggleRequirementFilterOption = (key: string, option: string) => {
+    setFilters((prev) => {
+      if (option === FILTER_ALL) {
+        return { ...prev, [key]: FILTER_ALL };
+      }
+      const currentValues = decodeFilterValue(prev[key as keyof typeof prev]);
+      const nextValues = currentValues.includes(option)
+        ? currentValues.filter((value) => value !== option)
+        : [...currentValues, option];
+      return { ...prev, [key]: encodeFilterValue(nextValues) };
+    });
+  };
+
   const [showAddWeekPopup, setShowAddWeekPopup] = useState(false);
   const [newWeekRange, setNewWeekRange] = useState("");
   const [newWeekStart, setNewWeekStart] = useState("");
@@ -1629,6 +1791,19 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   }, []);
 
   useEffect(() => {
+    const handleRequirementFilterClickOutside = (event: MouseEvent) => {
+      if (
+        requirementFilterRef.current &&
+        !requirementFilterRef.current.contains(event.target as Node)
+      ) {
+        setOpenRequirementFilterKey(null);
+      }
+    };
+    document.addEventListener("mousedown", handleRequirementFilterClickOutside);
+    return () => document.removeEventListener("mousedown", handleRequirementFilterClickOutside);
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current);
@@ -1658,28 +1833,18 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.localizationBatchId?.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchStage =
-        filters.materialStage === "全部" ||
-        r.materialStage === filters.materialStage;
-      const matchDirection =
-        filters.broadDirection === "全部" ||
-        r.broadDirection === filters.broadDirection;
-      const matchCreative =
-        filters.creativePersonnel === "全部" ||
-        r.creativePersonnel === filters.creativePersonnel;
-      const matchPriority =
-        filters.priority === "全部" || r.priority === filters.priority;
-      const matchReqStatus =
-        filters.reqStatus === "全部" || r.reqStatus === filters.reqStatus;
-      const matchProdStatus =
-        filters.prodStatus === "全部" || r.prodStatus === filters.prodStatus;
-      const matchAssetType =
-        filters.assetType === "全部" || r.assetType === filters.assetType;
+      const matchStage = filterMatches(filters.materialStage, r.materialStage);
+      const matchDirection = filterMatches(filters.broadDirection, r.broadDirection);
+      const matchCreative = filterMatches(filters.creativePersonnel, r.creativePersonnel);
+      const matchPriority = filterMatches(filters.priority, r.priority);
+      const matchReqStatus = filterMatches(filters.reqStatus, r.reqStatus);
+      const matchProdStatus = filterMatches(filters.prodStatus, r.prodStatus);
+      const matchAssetType = filterMatches(filters.assetType, r.assetType);
       const requirementRisk = r.isLocalization ? undefined : riskMap.get(r.id);
       const matchScheduleRisk =
-        filters.scheduleRisk === "全部" ||
-        (filters.scheduleRisk === "有风险" && Boolean(requirementRisk)) ||
-        (filters.scheduleRisk === "严重风险" &&
+        !filterIsActive(filters.scheduleRisk) ||
+        (decodeFilterValue(filters.scheduleRisk).includes("有风险") && Boolean(requirementRisk)) ||
+        (decodeFilterValue(filters.scheduleRisk).includes("严重风险") &&
           requirementRisk?.severity === "danger");
       const matchCreatedRange =
         rangesOverlap(
@@ -1821,39 +1986,40 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       label: string;
       onRemove: () => void;
     }> = [];
-    if (filters.creativePersonnel !== "全部") {
+    if (filterIsActive(filters.creativePersonnel)) {
       chips.push({
         key: "creativePersonnel",
-        label: `创意人员：${filters.creativePersonnel}`,
+        label: `创意人员：${decodeFilterValue(filters.creativePersonnel).join("、")}`,
         onRemove: () => setFilters((prev) => ({ ...prev, creativePersonnel: "全部" })),
       });
     }
-    if (filters.assetType !== "全部") {
-      const assetTypeLabel =
-        filters.assetType === "Video"
+    if (filterIsActive(filters.assetType)) {
+      const assetTypeLabel = decodeFilterValue(filters.assetType).map((assetType) =>
+        assetType === "Video"
           ? "视频"
-          : filters.assetType === "Playable"
+          : assetType === "Playable"
             ? "试玩"
-            : filters.assetType === "Image"
+            : assetType === "Image"
               ? "图片"
-              : filters.assetType;
+              : assetType,
+      ).join("、");
       chips.push({
         key: "assetType",
         label: `制作类型：${assetTypeLabel}`,
         onRemove: () => setFilters((prev) => ({ ...prev, assetType: "全部" })),
       });
     }
-    if (filters.broadDirection !== "全部") {
+    if (filterIsActive(filters.broadDirection)) {
       chips.push({
         key: "broadDirection",
-        label: `大方向：${filters.broadDirection}`,
+        label: `大方向：${decodeFilterValue(filters.broadDirection).join("、")}`,
         onRemove: () => setFilters((prev) => ({ ...prev, broadDirection: "全部" })),
       });
     }
-    if (filters.scheduleRisk !== "全部") {
+    if (filterIsActive(filters.scheduleRisk)) {
       chips.push({
         key: "scheduleRisk",
-        label: `排期风险：${filters.scheduleRisk}`,
+        label: `排期风险：${decodeFilterValue(filters.scheduleRisk).join("、")}`,
         onRemove: () => setFilters((prev) => ({ ...prev, scheduleRisk: "全部" })),
       });
     }
@@ -2102,24 +2268,24 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       }
 
       if (
-        filters.creativePersonnel !== "全部" &&
-        schedule.owner !== filters.creativePersonnel
+        filterIsActive(filters.creativePersonnel) &&
+        !filterMatches(filters.creativePersonnel, schedule.owner)
       ) {
         return false;
       }
 
-      if (filters.assetType !== "全部" && schedule.form !== filters.assetType) {
+      if (filterIsActive(filters.assetType) && !filterMatches(filters.assetType, schedule.form)) {
         return false;
       }
 
       if (
-        filters.broadDirection !== "全部" &&
-        schedule.broadDirection !== filters.broadDirection
+        filterIsActive(filters.broadDirection) &&
+        !filterMatches(filters.broadDirection, schedule.broadDirection)
       ) {
         return false;
       }
 
-      if (filters.scheduleRisk !== "全部") {
+      if (filterIsActive(filters.scheduleRisk)) {
         return false;
       }
 
@@ -2279,7 +2445,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
             r.id.toLowerCase().includes(scheduleSearchQuery.toLowerCase()),
         );
 
-      const matchWeek = filters.materialStage === "全部" || true; // Placeholder for week filter if needed
+      const matchWeek = !filterIsActive(filters.materialStage) || true; // Placeholder for week filter if needed
       const matchPriority =
         scheduleFilters.priority === "全部" ||
         s.priority === scheduleFilters.priority;
@@ -2700,14 +2866,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <label
                             key={item.key}
                             className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-[10px] font-black shadow-3xs transition-all ${
-                              item.value !== "全部"
+                              filterIsActive(item.value)
                                 ? "border-indigo-150 bg-indigo-50 text-indigo-700"
                                 : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
                             }`}
                           >
                             <span className="text-slate-400">{item.label}</span>
                             <select
-                              value={item.value}
+                              value={decodeFilterValue(item.value).length === 1 ? item.value : "全部"}
                               onChange={(e) =>
                                 setFilters((prev) => ({
                                   ...prev,
@@ -2727,7 +2893,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                         <label
                           className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-[10px] font-black shadow-3xs transition-all ${
-                            filters.creativePersonnel !== "全部"
+                            filterIsActive(filters.creativePersonnel)
                               ? "border-indigo-150 bg-indigo-50 text-indigo-700"
                               : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
                           }`}
@@ -2735,7 +2901,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <User className="h-3.5 w-3.5 text-slate-350" />
                           <span className="text-slate-400">创意人员</span>
                           <select
-                            value={filters.creativePersonnel}
+                            value={decodeFilterValue(filters.creativePersonnel).length === 1 ? filters.creativePersonnel : "全部"}
                             onChange={(e) =>
                               setFilters((prev) => ({
                                 ...prev,
@@ -3831,7 +3997,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                   >
                     <Plus className="w-4 h-4 text-slate-400 group-hover:text-primary group-hover:scale-105 transition-all" />
                     <span className="text-[11px] font-bold text-slate-500 group-hover:text-primary transition-colors">
-                      创建新的创意排期方向 (ADD NEW DIRECTION)
+                      创建新的创意排期方向
                     </span>
                   </div>
                 </div>
@@ -3841,23 +4007,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                 {/* 顶部工具栏 (Flat list search/filter) */}
                 <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    {/* 左侧：视图切换与搜索 */}
+                    {/* 左侧：搜索 */}
                     <div className="flex items-center gap-4">
-                      <div className="flex bg-slate-100 p-1 rounded-xl">
-                        <button
-                          onClick={() => setViewMode("list")}
-                          className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${viewMode === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-                        >
-                          <List className="w-3.5 h-3.5" /> 列表
-                        </button>
-                        <button
-                          onClick={() => setViewMode("grid")}
-                          className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${viewMode === "grid" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-                        >
-                          <LayoutGrid className="w-3.5 h-3.5" /> 网格
-                        </button>
-                      </div>
-
                       <div className="relative group">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-primary transition-colors" />
                         <input
@@ -3876,14 +4027,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         onClick={() => setShowScheduleSelector(true)}
                         className="px-4 py-2 bg-primary text-white text-[11px] font-bold rounded-xl hover:bg-slate-900 transition-all flex items-center gap-2"
                       >
-                        <Plus className="w-4 h-4" /> 新增需求 (New Request)
+                        <Plus className="w-4 h-4" /> 新增需求
                       </button>
                     </div>
                   </div>
 
                   {/* 快捷筛选行 */}
                   <div className="border-t border-slate-50 pt-4">
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    <div ref={requirementFilterRef} className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                       <span className="mr-1 shrink-0 text-[11px] font-black text-slate-400">
                         快速过滤:
                       </span>
@@ -3891,57 +4042,71 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       {filterConfigs.map((config) => {
                         const currentValue =
                           filters[config.key as keyof typeof filters];
-                        const isActive = currentValue !== "全部";
-                        const getOptionLabel = (opt: string) => {
-                          const optionLabels: Record<string, string> = {
-                            Video: "视频",
-                            Image: "图片",
-                            Playable: "试玩",
-                            Low: "低 Low",
-                            Mid: "中 Mid",
-                            High: "高 High",
-                            Highest: "最高 Highest",
-                            Draft: "草稿 Draft",
-                            Pending: "待审核 Pending",
-                            Approved: "审核通过 Approved",
-                            Modification: "需求修改",
-                            Unscheduled: "未排期",
-                            Scheduled: "已排期",
-                            InProgress: "进行中",
-                            Completed: "已完成",
-                          };
-                          return optionLabels[opt] || opt;
-                        };
+                        const selectedValues = decodeFilterValue(currentValue);
+                        const isActive = selectedValues.length > 0;
+                        const isOpen = openRequirementFilterKey === config.key;
 
                         return (
-                          <label
+                          <div
                             key={config.key}
-                            className={`inline-flex h-9 min-w-[136px] items-center gap-2 rounded-xl border px-3 shadow-3xs transition-all ${
-                              isActive
-                                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                                : "border-slate-150 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white"
-                            }`}
+                            className="relative"
                           >
-                            <span className="shrink-0 text-[10px] font-black text-slate-400">
-                              {config.label}:
-                            </span>
-                            <select
-                              value={currentValue}
-                              onChange={(e) =>
-                                setFilters((prev) => ({
-                                  ...prev,
-                                  [config.key]: e.target.value,
-                                }))
-                              }
-                              className="min-w-0 flex-1 bg-transparent p-0 text-[11px] font-black text-inherit outline-none focus:ring-0"
+                            <button
+                              type="button"
+                              onClick={() => setOpenRequirementFilterKey((prev) => prev === config.key ? null : config.key)}
+                              className={`inline-flex h-9 min-w-[152px] items-center justify-between gap-2 rounded-xl border px-3 shadow-3xs transition-all ${
+                                isActive
+                                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                  : "border-slate-150 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white"
+                              }`}
                             >
-                              {config.options.map((opt) => (
-                                <option key={opt} value={opt}>
-                                  {getOptionLabel(opt)}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="shrink-0 text-[10px] font-black text-slate-400">
+                                  {config.label}:
+                                </span>
+                                <span className="max-w-[76px] truncate text-[11px] font-black">
+                                  {getFilterDisplayText(currentValue)}
+                                </span>
+                              </span>
+                              <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                            </button>
+
+                            {isOpen && (
+                              <div className="absolute left-0 top-full z-[120] mt-2 w-52 rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRequirementFilterOption(config.key, FILTER_ALL)}
+                                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                    !isActive ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <span>全部</span>
+                                  {!isActive && <span className="text-indigo-600">✓</span>}
+                                </button>
+                                <div className="my-1 h-px bg-slate-100" />
+                                {config.options.filter((opt) => opt !== FILTER_ALL).map((opt) => {
+                                  const checked = selectedValues.includes(opt);
+                                  return (
+                                    <button
+                                      key={opt}
+                                      type="button"
+                                      onClick={() => toggleRequirementFilterOption(config.key, opt)}
+                                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                        checked ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                                      }`}
+                                    >
+                                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[9px] ${
+                                        checked ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 bg-white text-transparent"
+                                      }`}>
+                                        ✓
+                                      </span>
+                                      <span className="truncate">{getFilterOptionLabel(opt)}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
 
@@ -3973,6 +4138,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         type="button"
                         onClick={() => {
                           setFilters({ ...INITIAL_REQUIREMENT_FILTERS });
+                          setOpenRequirementFilterKey(null);
                           setCreatedRangeStart("");
                           setCreatedRangeEnd("");
                           setCompletedRangeStart("");
@@ -4040,31 +4206,37 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         </div>
                       </div>
                     </div>
-                  ) : viewMode === "list" ? (
+                  ) : (
                     <div className="h-full overflow-auto no-scrollbar">
-                      <table className="w-full text-left border-collapse">
+                      <table className="w-full min-w-[1540px] text-left border-collapse">
                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-100">
                           <tr className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                            <th className="px-4 py-3 font-sans">编号</th>
-                            <th className="px-4 py-3 font-sans">预览</th>
-                            <th className="px-4 py-3 font-sans">需求名称</th>
-                            <th className="px-4 py-3 text-center font-sans">
+                            <th className="px-4 py-3 font-sans whitespace-nowrap w-[150px]">编号</th>
+                            <th className="px-4 py-3 font-sans whitespace-nowrap w-[120px]">预览</th>
+                            <th className="px-4 py-3 font-sans whitespace-nowrap min-w-[220px]">需求名称</th>
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[110px]">
                               优先级
                             </th>
-                            <th className="px-4 py-3 font-sans">创意人员</th>
-                            <th className="px-4 py-3 text-center font-sans">
+                            <th className="px-4 py-3 font-sans whitespace-nowrap w-[120px]">创意人员</th>
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[110px]">
+                              制作人员
+                            </th>
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[170px]">
+                              投放渠道
+                            </th>
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[130px]">
                               需求状态
                             </th>
-                            <th className="px-4 py-3 text-center font-sans">
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[130px]">
                               制作状态
                             </th>
-                            <th className="px-4 py-3 text-center font-sans">
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[120px]">
                               测试状态
                             </th>
-                            <th className="px-4 py-3 text-center font-sans">
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[130px]">
                               投放状态
                             </th>
-                            <th className="px-4 py-3 text-right font-sans">
+                            <th className="px-4 py-3 text-right font-sans whitespace-nowrap w-[80px]">
                               操作
                             </th>
                           </tr>
@@ -4253,6 +4425,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 <PersonBadge name={req.creativePersonnel} />
                               </td>
 
+                              <td className="px-4 py-3">
+                                <div className="flex justify-center">
+                                  <PersonAvatarStack people={req.productionPersonnel} />
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-3">
+                                <DeliveryChannelsCell channels={req.channels} />
+                              </td>
+
                               {/* 需求状态 */}
                               <td
                                 className="px-4 py-3"
@@ -4349,7 +4531,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               >
                                 <div className="flex justify-center font-sans">
                                   <span
-                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border font-bold ${getDeliveryStatusStyle(req.deliveryStatus)}`}
+                                    className={`inline-flex min-w-[82px] items-center justify-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-lg border font-bold ${getDeliveryStatusStyle(req.deliveryStatus)}`}
                                     title="投放状态由三方投放数据同步，需求界面不可手动修改"
                                   >
                                     {req.deliveryStatus === "Delivering" ? (
@@ -4385,65 +4567,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           })}
                         </tbody>
                       </table>
-                    </div>
-                  ) : (
-                    <div className="h-full overflow-auto p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 no-scrollbar">
-                      {filteredRequirements.map((req) => (
-                        <div
-                          key={req.id}
-                          onClick={() => setSelectedReq(req)}
-                          className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-primary/20 transition-all cursor-pointer flex flex-col group overflow-hidden"
-                        >
-                          <div className="aspect-video relative overflow-hidden bg-slate-100">
-                            <img
-                              src={
-                                req.previews?.[0] ||
-                                "https://picsum.photos/400/225"
-                              }
-                              className="w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
-                            />
-                            <div className="absolute top-2 right-2">
-                              <span
-                                className={`px-2 py-0.5 rounded-full border text-[10px] font-bold bg-white/90 backdrop-blur ${getStatusStyle(req.reqStatus)}`}
-                              >
-                                {req.reqStatus === "Approved"
-                                  ? "通过"
-                                  : req.reqStatus === "Pending"
-                                    ? "待定"
-                                    : req.reqStatus === "Modification"
-                                      ? "修改"
-                                      : "草稿"}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="p-4 flex flex-col gap-2">
-                            <div className="flex justify-between items-start">
-                              <span className="text-[10px] text-slate-400 font-bold">
-                                {req.id}
-                              </span>
-                              <div className="flex gap-0.5">
-                                {[1, 2, 3].map((s) => (
-                                  <Star
-                                    key={s}
-                                    className={`w-2.5 h-2.5 ${s <= req.rating ? "fill-amber-400 text-amber-400" : "text-slate-200"}`}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                            <p className="text-xs font-black text-slate-805 line-clamp-2 leading-snug mt-1 flex-1">
-                              {req.name}
-                            </p>
-                            <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 font-mono border-t border-slate-100 pt-2">
-                              <span className="bg-indigo-50 text-indigo-650 px-1.5 py-0.5 rounded font-black origin-left scale-90 uppercase">
-                                {req.difficulty}级
-                              </span>
-                              <span className="text-slate-400">
-                                {req.startDate}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
                     </div>
                   )}
                 </div>
@@ -5473,7 +5596,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       <Plus className="w-6 h-6" />
                     </div>
                     <p className="text-xs font-black mt-3 group-hover:text-primary transition-colors tracking-tight">
-                      创建排期周期 (ADD NEW WEEK)
+                      创建排期周期
                     </p>
                   </div>
                 </div>
@@ -6445,7 +6568,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       </div>
                     ) : (
                       <div className="overflow-x-auto no-scrollbar">
-                        <table className="w-full min-w-[1180px] text-left border-collapse text-xs">
+                        <table className="w-full min-w-[1480px] text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-55 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 select-none">
 	                              <th className="px-5 py-3.5 pl-8 w-[120px] whitespace-nowrap">编号</th>
@@ -6455,12 +6578,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 	                                优先级
 	                              </th>
 	                              <th className="px-5 py-3.5 w-[140px] whitespace-nowrap">创意人员</th>
+	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">制作人员</th>
+	                              <th className="px-5 py-3.5 text-center w-[170px] whitespace-nowrap">投放渠道</th>
 	                              <th className="px-5 py-3.5 text-center w-[150px] whitespace-nowrap">需求状态</th>
 	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">制作状态</th>
 	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">
 	                                测试状态
 	                              </th>
-	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">
+	                              <th className="px-5 py-3.5 text-center w-[140px] whitespace-nowrap">
 	                                投放状态
 	                              </th>
                               <th className="px-5 py-3.5 text-right pr-8 w-[80px] whitespace-nowrap">
@@ -6586,38 +6711,34 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       }
                                       className={`w-24 whitespace-nowrap px-2 py-1 rounded-lg text-[10px] font-bold focus:ring-0 border border-transparent hover:border-slate-200 cursor-pointer text-center transition-all ${getPriorityStyle(req.priority)}`}
                                     >
-                                      <option value="Low">低 Low</option>
-                                      <option value="Mid">中 Mid</option>
-                                      <option value="High">高 High</option>
+                                      <option value="Low">低</option>
+                                      <option value="Mid">中</option>
+                                      <option value="High">高</option>
                                       <option value="Highest">
-                                        最高 Highest
+                                        最高
                                       </option>
                                     </select>
                                   </div>
                                 </td>
 
-                                {/* Personnel */}
+                                {/* Creative Personnel */}
                                 <td className="px-5 py-3.5 whitespace-nowrap">
-                                  <div className="flex flex-col gap-0.5 font-sans">
-                                    <PersonBadge
-                                      name={req.creativePersonnel}
-                                      size="sm"
-                                    />
-	                                  <span className="text-[9.5px] text-slate-400 font-semibold italic whitespace-nowrap">
-	                                    <span className="mr-1">制作人员:</span>
-                                      {(req.productionPersonnel || ["-"]).map(
-                                        (person) => (
-                                          <PersonBadge
-                                            key={person}
-                                            name={person}
-                                            size="xs"
-                                            muted
-                                            className="mr-1"
-                                          />
-                                        ),
-                                      )}
-                                    </span>
+                                  <PersonBadge
+                                    name={req.creativePersonnel}
+                                    size="sm"
+                                  />
+                                </td>
+
+                                {/* Production Personnel */}
+                                <td className="px-5 py-3.5">
+                                  <div className="flex justify-center">
+                                    <PersonAvatarStack people={req.productionPersonnel} />
                                   </div>
+                                </td>
+
+                                {/* Delivery Channels */}
+                                <td className="px-5 py-3.5">
+                                  <DeliveryChannelsCell channels={req.channels} />
                                 </td>
 
                                 {/* reqStatus */}
@@ -6635,15 +6756,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     }
                                     className={`min-w-[128px] whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-black cursor-pointer border-none shadow-3xs ${getStatusStyle(req.reqStatus)}`}
                                   >
-	                                    <option value="Draft">草稿 Draft</option>
+	                                    <option value="Draft">草稿</option>
 	                                    <option value="Pending">
-	                                      待审核 Pending
+	                                      待审核
 	                                    </option>
 	                                    <option value="Approved">
-	                                      审核通过 Approved
+	                                      审核通过
 	                                    </option>
 	                                    <option value="Modification">
-	                                      需求修改 Modification
+	                                      需求修改
 	                                    </option>
                                   </select>
                                 </td>

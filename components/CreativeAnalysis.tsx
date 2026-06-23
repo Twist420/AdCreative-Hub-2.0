@@ -264,9 +264,9 @@ interface MiniMetricChartProps {
 const MiniMetricChart: React.FC<MiniMetricChartProps> = ({ data, metric, color, syncId, dimensionLabel, onBarClick }) => {
   const chartConfig = useMemo(() => {
     switch(metric) {
-      case 'cost': return { title: '总花费 (Cost)', dataKey: 'totalCost' };
-      case 'avgCost': return { title: '平均花费 (Avg)', dataKey: 'avgCost' };
-      case 'quantity': return { title: '数量 (Count)', dataKey: 'count' };
+      case 'cost': return { title: '总花费', dataKey: 'totalCost' };
+      case 'avgCost': return { title: '平均花费', dataKey: 'avgCost' };
+      case 'quantity': return { title: '数量', dataKey: 'count' };
     }
   }, [metric]);
 

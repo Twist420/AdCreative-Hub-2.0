@@ -89,7 +89,7 @@ const PersonnelDataPage: React.FC = () => {
     { key: 'successCost', label: '成功素材花费', unit: '$' },
     { key: 'successCostShare', label: '成功素材花费占比', unit: '%' },
     { key: 'successRate', label: '成功率', unit: '%' },
-    { key: 'costHigh', label: 'High Cost 数量', unit: '' },
+    { key: 'costHigh', label: '高成本数量', unit: '' },
   ];
 
   return (
@@ -155,7 +155,7 @@ const PersonnelDataPage: React.FC = () => {
                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center"><Target className="w-6 h-6" /></div>
                 </div>
                 <div className="mt-4">
-                   <h4 className="text-slate-400 text-xs font-bold uppercase">素材成功率 (Avg)</h4>
+                   <h4 className="text-slate-400 text-xs font-bold uppercase">平均素材成功率</h4>
                    <p className="text-2xl font-bold text-slate-800">{(summary?.avgSuccessRate || 0).toFixed(1)}%</p>
                 </div>
             </div>
@@ -164,7 +164,7 @@ const PersonnelDataPage: React.FC = () => {
                    <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center"><Zap className="w-6 h-6" /></div>
                 </div>
                 <div className="mt-4">
-                   <h4 className="text-slate-400 text-xs font-bold uppercase">High Cost 总量</h4>
+                   <h4 className="text-slate-400 text-xs font-bold uppercase">高成本总量</h4>
                    <p className="text-2xl font-bold text-slate-800">{summary?.totalHighCostCount || 0}</p>
                 </div>
             </div>
@@ -251,7 +251,7 @@ const PersonnelDataPage: React.FC = () => {
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100">
               <tr>
-                {[{ label: '人员', key: 'name' }, { label: '成功花费', key: 'successCost' }, { label: '成功率', key: 'successRate' }, { label: 'High Cost 数量', key: 'costHigh' }, { label: '花费占比', key: 'successCostShare' }, { label: '效率分', key: 'efficiencyScore' }].map((col) => (
+                {[{ label: '人员', key: 'name' }, { label: '成功花费', key: 'successCost' }, { label: '成功率', key: 'successRate' }, { label: '高成本数量', key: 'costHigh' }, { label: '花费占比', key: 'successCostShare' }, { label: '效率分', key: 'efficiencyScore' }].map((col) => (
                     <th key={col.key} className="px-6 py-4 whitespace-nowrap cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort(col.key as keyof PersonnelData)}>
                         <div className="flex items-center gap-1 uppercase tracking-wider text-[10px]">
                             {col.label}
