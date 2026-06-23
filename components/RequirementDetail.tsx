@@ -1,8 +1,7 @@
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
-  X, ChevronDown, Check, Plus, PlusCircle, Layout, 
-  Settings, Image as ImageIcon, Video, FileText, User, 
+  X, ChevronDown, Check, Plus, User, 
   Share2, Save, ArrowLeft, ArrowRight, Layers, Trash2,
   Monitor, Play, Globe, UserCircle2, BarChart3, Clock,
   MoreVertical, Copy, RotateCcw, Lightbulb, Zap, Scissors, RefreshCw, FilePlus,
@@ -11,7 +10,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Requirement, RequirementReqStatus, RequirementProdStatus, ScriptSection,
-  RequirementStageType, ProductionTask, PROJECTS, CHANNELS, TEST_DIRECTIONS
+  RequirementStageType, ProductionTask, PROJECTS, CHANNELS
 } from '../types';
 import RequirementScriptWorkbench from './RequirementScriptWorkbench';
 
@@ -64,6 +63,12 @@ const CREATIVE_ALIASES: Record<string, string> = {
   '宋爽': 'ss',
   '苏雅': 'sy',
   '顺子': 'sz'
+};
+
+const getAssetTypeLabel = (assetType: Requirement['assetType']) => {
+  if (assetType === 'Image') return '图片';
+  if (assetType === 'Playable') return '试玩';
+  return '视频';
 };
 
 const getFolderFormatName = (req: Requirement) => {
@@ -348,10 +353,15 @@ const deriveRequirementFromTasks = (req: Requirement, tasks: ProductionTask[]): 
 };
 
 const LANGUAGES = [
-  { id: 'en', name: 'English (en)' },
-  { id: 'zh', name: 'Chinese (zh)' },
-  { id: 'jp', name: 'Japanese (jp)' },
-  { id: 'kr', name: 'Korean (kr)' }
+  { id: 'en', name: 'en（英语）' },
+  { id: 'de', name: 'de（德语）' },
+  { id: 'fr', name: 'fr（法语）' },
+  { id: 'it', name: 'it（意语）' },
+  { id: 'jp', name: 'jp（日语）' },
+  { id: 'kr', name: 'kr（韩语）' },
+  { id: 'tw', name: 'tw（繁中）' },
+  { id: 'es', name: 'es（西语）' },
+  { id: 'pt', name: 'pt（葡语）' }
 ];
 
 const DIMENSIONS_LIST = [
@@ -363,6 +373,7 @@ const DIMENSIONS_LIST = [
 interface ProductionScheduleContextItem {
   id: string;
   requirementId: string;
+  displayRequirementId?: string;
   requirementName: string;
   priority?: string;
   role: string;
@@ -371,6 +382,39 @@ interface ProductionScheduleContextItem {
   startDate: string;
   endDate: string;
 }
+
+const parseRequirementVersionId = (id: string) => {
+  const match = id.match(/^([a-z]+\d+)-(\d{2})(?:$|-)/i);
+  if (!match) return null;
+  return {
+    majorId: match[1],
+    version: Number.parseInt(match[2], 10),
+  };
+};
+
+const getRequirementMajorId = (req: Pick<Requirement, 'id' | 'assetIndex' | 'assetType'>) => {
+  const parsed = parseRequirementVersionId(req.id);
+  if (parsed) return parsed.majorId;
+  const prefix = req.assetType === 'Image' ? 'tp' : req.assetType === 'Playable' ? 'sw' : 'cp';
+  return `${prefix}${req.assetIndex}`;
+};
+
+const formatScheduledRequirementId = (requirement: Requirement, task?: ProductionTask) => {
+  if (task?.version) return requirement.id;
+  const subVersions = requirement.subVersions || [];
+  if (subVersions.length <= 1) return requirement.id;
+
+  const versionNumbers = subVersions
+    .map(item => Number.parseInt(item.version, 10))
+    .filter(value => Number.isFinite(value));
+  const majorId = getRequirementMajorId(requirement);
+
+  if (versionNumbers.length > 0) {
+    return `${majorId}（${Math.min(...versionNumbers)}-${Math.max(...versionNumbers)}）`;
+  }
+
+  return `${majorId}（${subVersions.length}个）`;
+};
 
 const formatDateInput = (date: Date) => {
   const year = date.getFullYear();
@@ -389,6 +433,41 @@ const addDaysToDateString = (dateStr: string, days: number) => {
   const base = new Date(`${dateStr}T00:00:00`);
   base.setDate(base.getDate() + days);
   return formatDateInput(base);
+};
+
+interface AvailabilityCalendarDay {
+  dayNum: number;
+  dateString: string;
+  isToday: boolean;
+  isWeekend: boolean;
+  isCurrentMonth: boolean;
+}
+
+const getAvailabilityMonthWeeks = (year: number, month: number, todayDateString: string) => {
+  const weeks: Array<{ days: AvailabilityCalendarDay[] }> = [];
+  const firstDayOfMonth = new Date(year, month - 1, 1);
+  const dayOfWeek = firstDayOfMonth.getDay();
+  const startOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const currentDate = new Date(year, month - 1, 1 - startOffset);
+
+  for (let weekIndex = 0; weekIndex < 6; weekIndex += 1) {
+    const days: AvailabilityCalendarDay[] = [];
+    for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+      const dateString = formatDateInput(currentDate);
+      const dayOfWeekValue = currentDate.getDay();
+      days.push({
+        dayNum: currentDate.getDate(),
+        dateString,
+        isToday: dateString === todayDateString,
+        isWeekend: dayOfWeekValue === 0 || dayOfWeekValue === 6,
+        isCurrentMonth: currentDate.getMonth() + 1 === month,
+      });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    weeks.push({ days });
+  }
+
+  return weeks;
 };
 
 const rangesOverlap = (
@@ -465,26 +544,27 @@ const getScheduleGapHints = (
   return gaps;
 };
 
-const Dropdown = ({ label, value, options, onChange, isMulti = false }: {
+const Dropdown = ({ label, value, options, onChange, isMulti = false, className = '' }: {
   label: string,
   value: string | string[],
   options: { id: string, name: string }[],
   onChange: (val: any) => void,
-  isMulti?: boolean
+  isMulti?: boolean,
+  className?: string
 }) => {
   const displayValue = isMulti 
     ? ((value as string[]).length === 0 ? '未选择' : (value as string[]).map(id => options.find(o => o.id === id)?.name || id).join(', '))
     : (options.find(o => o.id === value)?.name || value);
 
   return (
-    <div className="flex flex-col gap-1.5 relative group">
+    <div className={`flex flex-col gap-1.5 relative group ${className}`}>
       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">{label}</span>
       <div className="relative">
         <button className="text-[11px] font-bold text-slate-700 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 hover:border-primary/30 transition-all w-full text-left flex items-center justify-between">
           <span className="truncate">{displayValue}</span>
           <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
         </button>
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-100 rounded-xl shadow-xl z-[60] hidden group-hover:block p-2 max-h-48 overflow-y-auto no-scrollbar">
+        <div className="absolute left-0 right-0 top-[calc(100%-1px)] bg-white border border-slate-100 rounded-xl shadow-xl z-[60] hidden group-hover:block p-2 max-h-48 overflow-y-auto no-scrollbar">
           {options.map(opt => {
             const isSelected = isMulti ? (value as string[]).includes(opt.id) : value === opt.id;
             return (
@@ -513,6 +593,28 @@ const Dropdown = ({ label, value, options, onChange, isMulti = false }: {
       </div>
     </div>
   );
+};
+
+const InlineInput = ({ label, value, onChange, className = '', placeholder }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+}) => (
+  <div className={`flex flex-col gap-1.5 ${className}`}>
+    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">{label}</span>
+    <input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      className="h-[34px] w-full rounded-xl border border-slate-100 bg-slate-50 px-3 text-[11px] font-bold text-slate-700 outline-none transition-all placeholder:text-slate-300 hover:border-primary/30 focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10"
+    />
+  </div>
+);
+
+const openNativeDatePicker = (event: React.MouseEvent<HTMLInputElement>) => {
+  (event.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
 };
 
 interface RequirementDetailProps {
@@ -581,9 +683,28 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [availabilityView, setAvailabilityView] = useState<'calendar' | 'gantt'>('calendar');
+  const todayForAvailability = new Date();
+  const [availabilityCalendarYear, setAvailabilityCalendarYear] = useState(todayForAvailability.getFullYear());
+  const [availabilityCalendarMonth, setAvailabilityCalendarMonth] = useState(todayForAvailability.getMonth() + 1);
+  const [availabilityProducerFilter, setAvailabilityProducerFilter] = useState<string[]>([]);
+  const [isAvailabilityProducerMenuOpen, setIsAvailabilityProducerMenuOpen] = useState(false);
+  const availabilityProducerFilterRef = useRef<HTMLDivElement>(null);
   const [selectedPreviewDimension, setSelectedPreviewDimension] = useState<string>('');
   const [showClipUploadModal, setShowClipUploadModal] = useState(false);
   const [isClipDragActive, setIsClipDragActive] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        availabilityProducerFilterRef.current &&
+        !availabilityProducerFilterRef.current.contains(event.target as Node)
+      ) {
+        setIsAvailabilityProducerMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     onChange?.(currentReq);
@@ -994,6 +1115,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
         .map((item) => ({
           id: `${currentReq.id}:draft:${item.id}`,
           requirementId: currentReq.id,
+          displayRequirementId: formatScheduledRequirementId(currentReq, item),
           requirementName: `${currentReq.name}${item.version ? ` / v${item.version}` : ''}`,
           priority: currentReq.priority,
           role: getScheduleRolePreset(item.role, item.type).role,
@@ -1174,9 +1296,60 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
       }));
   }, [currentRequirementScheduleItems, productionScheduleContext, scheduleHorizonEnd, todayDateString]);
 
+  const filteredAvailabilityRows = useMemo(
+    () =>
+      availabilityProducerFilter.length > 0
+        ? availabilityRows.filter(person => availabilityProducerFilter.includes(person.name))
+        : availabilityRows,
+    [availabilityProducerFilter, availabilityRows],
+  );
+
+  const filteredAvailabilityTasks = useMemo(
+    () =>
+      filteredAvailabilityRows.flatMap(person =>
+        person.tasks.map(task => ({
+          ...task,
+          producerGroup: person.group,
+        })),
+      ),
+    [filteredAvailabilityRows],
+  );
+
+  const availabilityCalendarWeeks = useMemo(
+    () => getAvailabilityMonthWeeks(availabilityCalendarYear, availabilityCalendarMonth, todayDateString),
+    [availabilityCalendarMonth, availabilityCalendarYear, todayDateString],
+  );
+
+  const availabilityGanttStart = useMemo(
+    () => addDaysToDateString(todayDateString, -3),
+    [todayDateString],
+  );
+
+  const availabilityGanttEnd = useMemo(
+    () => addDaysToDateString(availabilityGanttStart, 30),
+    [availabilityGanttStart],
+  );
+
+  const availabilityGanttDays = useMemo(
+    () =>
+      Array.from({ length: 31 }, (_, index) => {
+        const dateString = addDaysToDateString(availabilityGanttStart, index);
+        const date = new Date(`${dateString}T00:00:00`);
+        const dayOfWeek = date.getDay();
+        return {
+          dateString,
+          day: date.getDate(),
+          month: date.getMonth() + 1,
+          isToday: dateString === todayDateString,
+          isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
+        };
+      }),
+    [availabilityGanttStart, todayDateString],
+  );
+
   const ganttTotalDays = Math.max(
     1,
-    ((parseDateValue(scheduleHorizonEnd) || 0) - (parseDateValue(todayDateString) || 0)) / 86400000 + 1,
+    ((parseDateValue(availabilityGanttEnd) || 0) - (parseDateValue(availabilityGanttStart) || 0)) / 86400000 + 1,
   );
 
   const fullName = generateFullName(currentReq);
@@ -1185,42 +1358,40 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
     <div className="h-full flex flex-col bg-white">
       {/* Top Area */}
       <div className="px-8 py-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
-        <div className="flex flex-col gap-2 max-w-[75%]">
-          <div className="flex items-center gap-3 flex-wrap">
-             <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shrink-0">
+        <div className="flex min-w-0 max-w-[78%] flex-col gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+             <span className="px-3.5 py-1.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shrink-0 shadow-3xs">
                 {currentReq.projectName}
              </span>
-             
+             <span className="px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-700 text-[10px] font-black shrink-0">
+                {getAssetTypeLabel(currentReq.assetType)}
+             </span>
              <button
                type="button"
                onClick={() => setShowSubVersionsModal(true)}
-               className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-xl text-[11px] font-black text-indigo-700 transition-all flex items-center gap-1.5 shadow-3xs cursor-pointer select-none"
-               title="点击查看所有小版本"
+               className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-xl text-[11px] font-black text-indigo-700 transition-all flex items-center gap-1.5 shadow-3xs cursor-pointer select-none"
+               title="点击查看并复制所有小版本名称"
              >
                <span>📂</span>
-               <span>{subVersions.length} 个小版本</span>
-               <span className="text-[9px] bg-indigo-200/50 text-indigo-800 font-bold px-1 rounded">查看 & 复制</span>
+               <span>{subVersions.length} 个小版本名称查看、复制</span>
              </button>
           </div>
           
-          <div className="flex items-center gap-2 mt-1 max-w-full">
-             <h1 className="text-lg md:text-xl font-black text-slate-800 tracking-tight font-mono select-all break-all" title={getFolderFormatName(currentReq)}>
-               {getFolderFormatName(currentReq)}
-             </h1>
+          <div className="flex max-w-full items-stretch gap-2">
+             <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl bg-slate-50/70 px-3.5 py-2.5">
+               <span className="shrink-0 text-[11px] font-black text-slate-400">父文件夹名称：</span>
+               <h1 className="min-w-0 truncate font-mono text-base font-black tracking-tight text-slate-800 md:text-lg" title={getFolderFormatName(currentReq)}>
+                 {getFolderFormatName(currentReq)}
+               </h1>
+             </div>
              <button 
                type="button"
                onClick={() => handleCopyText(getFolderFormatName(currentReq))}
-               className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-400 hover:text-indigo-600 transition-all cursor-pointer shrink-0 flex items-center justify-center shadow-4xs"
+               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 shadow-4xs transition-all hover:bg-slate-50 hover:text-indigo-600"
                title="复制父文件夹名称"
              >
-               <Copy className="w-3.5 h-3.5" />
+               <Copy className="w-4 h-4" />
              </button>
-          </div>
-
-          <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-            <span className="flex items-center gap-1.5"><Layout className="w-3 h-3" /> {currentReq.assetType}</span>
-            <span className="flex items-center gap-1.5"><Settings className="w-3 h-3" /> {currentReq.materialStage}阶段</span>
-            <span className="flex items-center gap-1.5"><Globe className="w-3 h-3" /> {currentReq.language}</span>
           </div>
         </div>
 
@@ -1245,12 +1416,13 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
 
       {/* Global Config Area */}
       <div className="px-8 py-5 bg-white border-b border-slate-100 shadow-sm shrink-0">
-        <div className="grid grid-cols-6 gap-6">
+        <div className="flex flex-wrap items-end gap-3">
           <Dropdown 
             label="素材阶段" 
             value={currentReq.materialStage} 
             options={MATERIAL_STAGES} 
             onChange={(val) => setCurrentReq({...currentReq, materialStage: val})} 
+            className="w-[104px]"
           />
           <Dropdown 
             label="素材大方向" 
@@ -1260,12 +1432,14 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
               const newChannels = val === '大字报' ? ['apl'] : currentReq.channels;
               setCurrentReq({...currentReq, broadDirection: val, channels: newChannels});
             }} 
+            className="w-[172px]"
           />
           <Dropdown 
             label="语言" 
             value={currentReq.language} 
             options={LANGUAGES} 
             onChange={(val) => setCurrentReq({...currentReq, language: val})} 
+            className="w-[116px]"
           />
           <Dropdown 
             label="投放渠道" 
@@ -1273,6 +1447,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
             options={CHANNELS} 
             isMulti 
             onChange={(val) => setCurrentReq({...currentReq, channels: val})} 
+            className="w-[240px]"
           />
           <Dropdown 
             label="尺寸" 
@@ -1280,13 +1455,20 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
             options={DIMENSIONS_LIST} 
             isMulti 
             onChange={(val) => setCurrentReq({...currentReq, dimensions: val})} 
+            className="w-[164px]"
           />
-          <Dropdown 
+          <InlineInput
             label="验证方向" 
-            value={currentReq.testDirections} 
-            options={TEST_DIRECTIONS.map(d => ({ id: d, name: d }))} 
-            isMulti 
-            onChange={(val) => setCurrentReq({...currentReq, testDirections: val})} 
+            value={(currentReq.testDirections || []).join('、')}
+            placeholder="输入验证方向"
+            onChange={(val) => setCurrentReq({
+              ...currentReq,
+              testDirections: val
+                .split(/[、,，/]/)
+                .map(item => item.trim())
+                .filter(Boolean),
+            })}
+            className="w-[260px]"
           />
         </div>
       </div>
@@ -1743,6 +1925,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                                 <input
                                   type="date"
                                   value={task.startDate || ''}
+                                  onClick={openNativeDatePicker}
                                   onChange={(event) => updateProductionTask(task.id, { startDate: event.target.value })}
                                   className="h-7 min-w-0 bg-transparent text-center text-[11px] font-bold text-slate-600 outline-none"
                                 />
@@ -1750,6 +1933,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                                 <input
                                   type="date"
                                   value={task.endDate || ''}
+                                  onClick={openNativeDatePicker}
                                   onChange={(event) => updateProductionTask(task.id, { endDate: event.target.value })}
                                   className="h-7 min-w-0 bg-transparent text-center text-[11px] font-bold text-slate-600 outline-none"
                                 />
@@ -1842,7 +2026,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                                             title={`${item.requirementName} / ${item.role} / ${formatShortDateRange(item.startDate, item.endDate)}`}
                                           >
                                             <span className="shrink-0">{formatShortDateRange(item.startDate, item.endDate)}</span>
-                                            <span className="max-w-[120px] truncate">{item.requirementId}</span>
+                                            <span className="max-w-[120px] truncate">{item.displayRequirementId || item.requirementId}</span>
                                           </span>
                                         );
                                       })}
@@ -1929,7 +2113,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
 
       {showAvailabilityModal && (
         <div className="fixed inset-0 z-[320] flex items-center justify-center bg-slate-950/55 p-6 backdrop-blur-xs">
-          <div className="flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+          <div className="flex h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
             <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-6 py-5">
               <div>
                 <h3 className="text-base font-black text-slate-900">人员排期情况</h3>
@@ -1938,6 +2122,75 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <div ref={availabilityProducerFilterRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsAvailabilityProducerMenuOpen(prev => !prev)}
+                    className={`inline-flex h-9 min-w-[116px] items-center justify-between gap-2 rounded-2xl border px-3 text-[11px] font-black shadow-3xs transition-all ${
+                      availabilityProducerFilter.length > 0
+                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-150 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+                    }`}
+                  >
+                    <span className="truncate">
+                      {availabilityProducerFilter.length === 0
+                        ? '全部人员'
+                        : availabilityProducerFilter.length === 1
+                          ? availabilityProducerFilter[0]
+                          : `${availabilityProducerFilter.length} 人`}
+                    </span>
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                        isAvailabilityProducerMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isAvailabilityProducerMenuOpen && (
+                    <div className="absolute left-0 top-full z-[340] mt-2 max-h-72 w-40 overflow-y-auto rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAvailabilityProducerFilter([]);
+                          setIsAvailabilityProducerMenuOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                          availabilityProducerFilter.length === 0 ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>全部人员</span>
+                        {availabilityProducerFilter.length === 0 && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                      <div className="my-1 h-px bg-slate-100" />
+                      {availabilityRows.map(person => {
+                        const isSelected = availabilityProducerFilter.includes(person.name);
+                        return (
+                          <button
+                            key={person.id}
+                            type="button"
+                            onClick={() => {
+                              setAvailabilityProducerFilter(prev =>
+                                prev.includes(person.name)
+                                  ? prev.filter(name => name !== person.name)
+                                  : [...prev, person.name],
+                              );
+                            }}
+                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                              isSelected ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[9px] ${
+                              isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-200 bg-white text-transparent'
+                            }`}>
+                              ✓
+                            </span>
+                            <span className="truncate">{person.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {[
                   { id: 'calendar', label: '日历图' },
                   { id: 'gantt', label: '甘特图' },
@@ -1965,110 +2218,315 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-slate-50/70 p-6">
+            <div className="min-h-0 flex-1 overflow-auto bg-slate-50/70 p-6">
               {availabilityView === 'calendar' ? (
-                <div className="grid grid-cols-2 gap-4">
-                  {availabilityRows.map(person => (
-                    <div key={person.id} className="rounded-3xl border border-slate-150 bg-white p-4 shadow-3xs">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-[12px] font-black text-slate-800">{person.name}</div>
-                          <div className="mt-0.5 text-[9px] font-bold text-slate-400">{person.group}</div>
-                        </div>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-[9px] font-black ${
-                            person.tasks.length ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
-                          }`}
-                        >
-                          {person.tasks.length ? `${person.tasks.length} 个任务` : '空闲'}
-                        </span>
+                <div className="min-h-full rounded-2xl border border-slate-150 bg-white">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date();
+                          setAvailabilityCalendarYear(today.getFullYear());
+                          setAvailabilityCalendarMonth(today.getMonth() + 1);
+                        }}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black text-slate-600 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+                      >
+                        今天
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (availabilityCalendarMonth === 1) {
+                            setAvailabilityCalendarYear(prev => prev - 1);
+                            setAvailabilityCalendarMonth(12);
+                          } else {
+                            setAvailabilityCalendarMonth(prev => prev - 1);
+                          }
+                        }}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (availabilityCalendarMonth === 12) {
+                            setAvailabilityCalendarYear(prev => prev + 1);
+                            setAvailabilityCalendarMonth(1);
+                          } else {
+                            setAvailabilityCalendarMonth(prev => prev + 1);
+                          }
+                        }}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                      <div className="ml-2 text-sm font-black text-slate-800">
+                        {availabilityCalendarYear}年{availabilityCalendarMonth}月
                       </div>
+                    </div>
 
-                      {person.tasks.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-emerald-100 bg-emerald-50 px-4 py-5 text-center text-[10px] font-black text-emerald-600">
-                          未来两周暂无排期
+                    <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 text-[10px] font-black">
+                      <span className="rounded-lg px-3 py-1.5 text-slate-400">日</span>
+                      <span className="rounded-lg px-3 py-1.5 text-slate-400">周</span>
+                      <span className="rounded-lg bg-white px-3 py-1.5 text-indigo-600 shadow-xs">月</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-7 border-b border-slate-100 text-[10px] font-black text-slate-500">
+                    {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map(weekday => (
+                      <div key={weekday} className="px-3 py-2">
+                        {weekday}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    {availabilityCalendarWeeks.map(week => {
+                      const weekStart = week.days[0].dateString;
+                      const weekEnd = week.days[6].dateString;
+                      const weekTasks = filteredAvailabilityTasks
+                        .filter(task => rangesOverlap(task.startDate, task.endDate, weekStart, weekEnd))
+                        .sort((a, b) => (parseDateValue(a.startDate) || 0) - (parseDateValue(b.startDate) || 0))
+                        .slice(0, 5);
+
+                      return (
+                        <div key={weekStart} className="relative grid min-h-[148px] grid-cols-7 overflow-visible border-b border-slate-100">
+                          {week.days.map(day => {
+                            const dayTasksCount = filteredAvailabilityTasks.filter(task =>
+                              rangesOverlap(task.startDate, task.endDate, day.dateString, day.dateString),
+                            ).length;
+                        return (
+                          <div
+                            key={day.dateString}
+                            className={`min-h-[148px] border-r border-slate-100 p-2 ${
+                              day.isCurrentMonth ? 'bg-white' : 'bg-slate-50/60'
+                            } ${day.isWeekend ? 'bg-slate-50' : ''}`}
+                          >
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <span
+                                className={`flex h-5 min-w-5 items-center justify-center rounded-full text-[11px] font-black ${
+                                  day.isToday
+                                    ? 'bg-indigo-600 text-white'
+                                    : day.isCurrentMonth
+                                      ? 'text-slate-700'
+                                      : 'text-slate-300'
+                                }`}
+                              >
+                                {day.dayNum === 1 && day.isCurrentMonth ? `${availabilityCalendarMonth}月1日` : day.dayNum}
+                              </span>
+                              {dayTasksCount > 0 && (
+                                <span className="text-[9px] font-bold text-slate-300">{dayTasksCount} 条</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                          })}
+
+                          <div className="pointer-events-none absolute inset-x-0 top-9 z-10">
+                            {weekTasks.map((task, laneIndex) => {
+                              const taskStartTime = parseDateValue(task.startDate) || parseDateValue(weekStart) || 0;
+                              const taskEndTime = parseDateValue(task.endDate) || taskStartTime;
+                              const weekStartTime = parseDateValue(weekStart) || taskStartTime;
+                              const weekEndTime = parseDateValue(weekEnd) || taskEndTime;
+                              const clippedStart = Math.max(taskStartTime, weekStartTime);
+                              const clippedEnd = Math.min(taskEndTime, weekEndTime);
+                              const startIndex = Math.max(0, Math.floor((clippedStart - weekStartTime) / 86400000));
+                              const spanDays = Math.max(1, Math.floor((clippedEnd - clippedStart) / 86400000) + 1);
+                              const left = (startIndex / 7) * 100;
+                              const width = (spanDays / 7) * 100;
+                              const startsInWeek = taskStartTime >= weekStartTime;
+                              const endsInWeek = taskEndTime <= weekEndTime;
+                              const tone =
+                                task.status === '已完成'
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : task.role.includes('平面')
+                                    ? 'bg-lime-100 text-lime-800'
+                                    : 'bg-sky-100 text-sky-800';
+
+                              return (
+                                <div
+                                  key={`${weekStart}-${task.id}`}
+                                  className={`absolute flex h-6 items-center truncate px-2 text-left text-[10px] font-black shadow-3xs ${tone} ${
+                                    startsInWeek ? 'rounded-l-md' : 'rounded-l-none'
+                                  } ${endsInWeek ? 'rounded-r-md' : 'rounded-r-none'}`}
+                                  style={{
+                                    left: `calc(${left}% + 8px)`,
+                                    top: `${laneIndex * 26}px`,
+                                    width: `calc(${width}% - 16px)`,
+                                  }}
+                                  title={`${task.displayRequirementId || task.requirementId} / ${task.requirementName} / ${task.producer}`}
+                                >
+                                  {task.displayRequirementId || task.requirementId}
+                                  <span className="ml-1 font-bold opacity-70">{task.producer}</span>
+                                  <span className="ml-1 font-bold opacity-70">{task.role}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {person.tasks.map(item => {
-                            const rolePreset = getScheduleRolePreset(item.role);
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="min-h-full overflow-auto rounded-2xl border border-slate-150 bg-white">
+                  <div className="flex min-w-max border-b border-slate-100 bg-slate-50/80">
+                    <div className="grid w-[360px] shrink-0 grid-cols-[132px_72px_86px_70px] border-r border-slate-150 text-[10px] font-black text-slate-400">
+                      <div className="flex h-12 items-center border-r border-slate-100 px-3">人员</div>
+                      <div className="flex h-12 items-center border-r border-slate-100 px-3">岗位</div>
+                      <div className="flex h-12 items-center border-r border-slate-100 px-3">需求编号</div>
+                      <div className="flex h-12 items-center px-3">状态</div>
+                    </div>
+                    <div className="shrink-0" style={{ width: `${availabilityGanttDays.length * 52}px` }}>
+                      <div
+                        className="grid h-12"
+                        style={{ gridTemplateColumns: `repeat(${availabilityGanttDays.length}, 52px)` }}
+                      >
+                        {availabilityGanttDays.map(day => (
+                          <div
+                            key={day.dateString}
+                            className={`relative flex items-center justify-center border-r border-slate-150 text-[10px] font-black ${
+                              day.isToday
+                                ? 'text-indigo-600'
+                                : day.isWeekend
+                                  ? 'bg-slate-100 text-slate-350'
+                                  : 'text-slate-400'
+                            }`}
+                          >
+                            {day.day === 1 ? `${day.month}/1` : day.day}
+                            {day.isToday && <span className="absolute bottom-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="min-w-max">
+                    {filteredAvailabilityRows.map(person => (
+                      <div key={person.id} className="border-b border-slate-100 last:border-b-0 bg-white">
+                        <div className="flex h-10 items-center gap-2 border-b border-slate-100 bg-white px-3">
+                          <ChevronDown className="h-3.5 w-3.5 text-slate-350" />
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-[9px] font-black text-white">
+                            {person.name.slice(0, 1)}
+                          </span>
+                          <span className="text-xs font-black text-slate-800">{person.name}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-400">
+                            {person.group}
+                          </span>
+                          <span className="ml-auto text-[9px] font-black text-slate-350">{person.tasks.length} 项</span>
+                        </div>
+
+                        {person.tasks.length === 0 ? (
+                          <div className="flex">
+                            <div className="grid h-11 w-[360px] shrink-0 grid-cols-[132px_72px_86px_70px] border-r border-slate-150 text-[10px] font-bold text-slate-350">
+                              <div className="flex items-center border-r border-slate-100 px-3">暂无排期</div>
+                              <div className="border-r border-slate-100" />
+                              <div className="border-r border-slate-100" />
+                              <div />
+                            </div>
+                            <div className="shrink-0" style={{ width: `${availabilityGanttDays.length * 52}px` }}>
+                              <div
+                                className="grid h-11"
+                                style={{ gridTemplateColumns: `repeat(${availabilityGanttDays.length}, 52px)` }}
+                              >
+                                {availabilityGanttDays.map(day => (
+                                  <div
+                                    key={`${person.id}-empty-${day.dateString}`}
+                                    className={`border-r border-slate-100 ${
+                                      day.isWeekend
+                                        ? 'bg-[repeating-linear-gradient(135deg,#f8fafc_0,#f8fafc_4px,#eef2f7_4px,#eef2f7_6px)]'
+                                        : ''
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          person.tasks.map((task, index) => {
+                            const dayWidth = 52;
+                            const ganttStartTime = parseDateValue(availabilityGanttStart) || 0;
+                            const taskStartTime = parseDateValue(task.startDate) || ganttStartTime;
+                            const taskEndTime = parseDateValue(task.endDate) || taskStartTime;
+                            const startIndex = Math.max(0, Math.floor((taskStartTime - ganttStartTime) / 86400000));
+                            const endIndex = Math.min(
+                              availabilityGanttDays.length - 1,
+                              Math.floor((taskEndTime - ganttStartTime) / 86400000),
+                            );
+                            const barLeft = startIndex * dayWidth + 8;
+                            const barWidth = Math.max((endIndex - startIndex + 1) * dayWidth - 16, 92);
+                            const workDays = Math.max(1, Math.round((taskEndTime - taskStartTime) / 86400000) + 1);
+                            const rolePreset = getScheduleRolePreset(task.role);
+                            const barClass =
+                              task.status === '已完成'
+                                ? 'bg-slate-500 text-white'
+                                : task.status === '制作中'
+                                  ? 'bg-sky-400 text-white'
+                                  : 'bg-sky-200 text-sky-900';
                             return (
-                              <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`rounded-lg px-2 py-0.5 text-[8px] font-black ${rolePreset.className}`}>
-                                        {rolePreset.role}
-                                      </span>
-                                      <span className="truncate text-[10px] font-black text-slate-700">
-                                        {item.requirementId}
-                                      </span>
-                                    </div>
-                                    <p className="mt-1 truncate text-[9px] font-bold text-slate-400">
-                                      {item.requirementName}
-                                    </p>
+                              <div key={task.id} className="flex">
+                                <div className="grid h-10 w-[360px] shrink-0 grid-cols-[132px_72px_86px_70px] border-r border-slate-150 text-[10px] font-bold text-slate-500">
+                                  <div className="flex min-w-0 items-center border-r border-slate-100 px-3">
+                                    {index === 0 ? (
+                                      <span className="truncate text-slate-700">{person.name}</span>
+                                    ) : (
+                                      <span className="text-slate-250">同人员</span>
+                                    )}
                                   </div>
-                                  <div className="shrink-0 text-right">
-                                    <div className="text-[10px] font-black text-slate-700">
-                                      {formatShortDateRange(item.startDate, item.endDate)}
+                                  <div className="flex items-center border-r border-slate-100 px-3">
+                                    <span className={`rounded-lg px-2 py-0.5 text-[9px] font-black ${rolePreset.className}`}>
+                                      {rolePreset.role}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center border-r border-slate-100 px-3 font-mono text-indigo-600">
+                                    {task.displayRequirementId || task.requirementId}
+                                  </div>
+                                  <div className="flex items-center px-3">
+                                    <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[9px] font-black text-slate-500">
+                                      {task.status}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0" style={{ width: `${availabilityGanttDays.length * 52}px` }}>
+                                  <div
+                                    className="relative grid h-10"
+                                    style={{ gridTemplateColumns: `repeat(${availabilityGanttDays.length}, 52px)` }}
+                                  >
+                                    {availabilityGanttDays.map(day => (
+                                      <div
+                                        key={`${task.id}-${day.dateString}`}
+                                        className={`border-r border-slate-100 ${
+                                          day.isWeekend
+                                            ? 'bg-[repeating-linear-gradient(135deg,#f8fafc_0,#f8fafc_4px,#eef2f7_4px,#eef2f7_6px)]'
+                                            : ''
+                                        }`}
+                                      />
+                                    ))}
+                                    {availabilityGanttDays.find(day => day.isToday) && (
+                                      <div
+                                        className="pointer-events-none absolute top-0 h-full w-px bg-indigo-500/80"
+                                        style={{
+                                          left: `${availabilityGanttDays.findIndex(day => day.isToday) * dayWidth + dayWidth / 2}px`,
+                                        }}
+                                      />
+                                    )}
+                                    <div
+                                      className={`absolute top-1.5 flex h-7 items-center justify-between gap-2 rounded-md px-2 text-[9px] font-black shadow-sm ${barClass}`}
+                                      style={{ left: `${barLeft}px`, width: `${barWidth}px` }}
+                                      title={`${task.requirementName} / ${task.startDate} ~ ${task.endDate}`}
+                                    >
+                                      <span className="truncate">{task.requirementName}</span>
+                                      <span className="shrink-0">{workDays} 工作日</span>
                                     </div>
-                                    <div className="mt-0.5 text-[8px] font-bold text-slate-400">{item.status}</div>
                                   </div>
                                 </div>
                               </div>
                             );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-3xl border border-slate-150 bg-white p-4 shadow-3xs">
-                  <div className="mb-4 grid grid-cols-[84px_1fr] gap-3 text-[9px] font-black uppercase tracking-widest text-slate-350">
-                    <span>人员</span>
-                    <div className="grid grid-cols-7 text-center">
-                      {Array.from({ length: 7 }).map((_, index) => (
-                        <span key={index}>{formatShortDateRange(addDaysToDateString(todayDateString, index * 2), addDaysToDateString(todayDateString, index * 2 + 1))}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {availabilityRows.map(person => (
-                      <div key={person.id} className="grid grid-cols-[84px_1fr] items-center gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[11px] font-black text-slate-700">{person.name}</div>
-                          <div className="mt-0.5 truncate text-[8px] font-bold text-slate-350">{person.group}</div>
-                        </div>
-                        <div className="relative h-12 rounded-2xl border border-slate-100 bg-slate-50">
-                          {person.tasks.length === 0 && (
-                            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-emerald-500">
-                              空闲
-                            </div>
-                          )}
-                          {person.tasks.map(item => {
-                            const itemStart = parseDateValue(item.startDate) || parseDateValue(todayDateString) || 0;
-                            const itemEnd = parseDateValue(item.endDate) || itemStart;
-                            const horizonStart = parseDateValue(todayDateString) || itemStart;
-                            const leftDays = Math.max(0, (itemStart - horizonStart) / 86400000);
-                            const widthDays = Math.max(1, (itemEnd - itemStart) / 86400000 + 1);
-                            const left = Math.min(94, (leftDays / ganttTotalDays) * 100);
-                            const width = Math.min(100 - left, (widthDays / ganttTotalDays) * 100);
-                            const rolePreset = getScheduleRolePreset(item.role);
-                            return (
-                              <div
-                                key={item.id}
-                                className={`absolute top-2 h-8 overflow-hidden rounded-xl px-2 py-1 text-[8px] font-black ${rolePreset.className}`}
-                                style={{ left: `${left}%`, width: `${Math.max(8, width)}%` }}
-                                title={`${item.producer} / ${item.role} / ${formatShortDateRange(item.startDate, item.endDate)}`}
-                              >
-                                <div className="truncate">{item.requirementId}</div>
-                                <div className="truncate opacity-80">{formatShortDateRange(item.startDate, item.endDate)}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                          })
+                        )}
                       </div>
                     ))}
                   </div>

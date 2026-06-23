@@ -374,6 +374,7 @@ interface ScheduledTaskView {
   id: string;
   requirement: Requirement;
   task?: ProductionTask;
+  displayRequirementId: string;
   producer: string;
   role: string;
   status: string;
@@ -393,6 +394,23 @@ const getTaskProductionType = (
   return getReqType(requirement);
 };
 
+const formatScheduledRequirementId = (requirement: Requirement, task?: ProductionTask) => {
+  if (task?.version) return requirement.id;
+  const subVersions = requirement.subVersions || [];
+  if (subVersions.length <= 1) return requirement.id;
+
+  const versionNumbers = subVersions
+    .map((item) => Number.parseInt(item.version, 10))
+    .filter((value) => Number.isFinite(value));
+  const majorId = getRequirementMajorId(requirement);
+
+  if (versionNumbers.length > 0) {
+    return `${majorId}（${Math.min(...versionNumbers)}-${Math.max(...versionNumbers)}）`;
+  }
+
+  return `${majorId}（${subVersions.length}个）`;
+};
+
 const getScheduledTaskViews = (requirement: Requirement): ScheduledTaskView[] => {
   const taskViews = (requirement.tasks || [])
     .filter((task) => task.designer && task.startDate && task.endDate)
@@ -400,6 +418,7 @@ const getScheduledTaskViews = (requirement: Requirement): ScheduledTaskView[] =>
       id: `${requirement.id}:${task.id}`,
       requirement,
       task,
+      displayRequirementId: formatScheduledRequirementId(requirement, task),
       producer: task.designer,
       role: task.role || task.type,
       status: task.status || "已排期",
@@ -417,6 +436,7 @@ const getScheduledTaskViews = (requirement: Requirement): ScheduledTaskView[] =>
     .map((producer): ScheduledTaskView => ({
       id: `${requirement.id}:legacy:${producer}`,
       requirement,
+      displayRequirementId: formatScheduledRequirementId(requirement),
       producer,
       role: getReqType(requirement),
       status:
@@ -644,6 +664,10 @@ const filterMatches = (filterValue: string, actualValue?: string) => {
 
 const filterIsActive = (filterValue: string) => decodeFilterValue(filterValue).length > 0;
 
+const openNativeDatePicker = (event: React.MouseEvent<HTMLInputElement>) => {
+  (event.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+};
+
 const RequirementCenter: React.FC<RequirementCenterProps> = ({
   subView,
   onSubViewChange,
@@ -707,7 +731,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       }, {});
   }, [finishedCreativePerformance, todayDateString]);
   // States belonging to Production Scheduling Board
-  const [selectedProducer, setSelectedProducer] = useState<string>("张欢");
+  const [selectedProducers, setSelectedProducers] = useState<string[]>([]);
+  const [isProductionProducerFilterOpen, setIsProductionProducerFilterOpen] = useState(false);
+  const productionProducerFilterRef = useRef<HTMLDivElement>(null);
   const [productionView, setProductionView] = useState<"capacity" | "calendar" | "gantt">(
     "gantt",
   );
@@ -1801,6 +1827,19 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     };
     document.addEventListener("mousedown", handleRequirementFilterClickOutside);
     return () => document.removeEventListener("mousedown", handleRequirementFilterClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleProductionProducerFilterClickOutside = (event: MouseEvent) => {
+      if (
+        productionProducerFilterRef.current &&
+        !productionProducerFilterRef.current.contains(event.target as Node)
+      ) {
+        setIsProductionProducerFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleProductionProducerFilterClickOutside);
+    return () => document.removeEventListener("mousedown", handleProductionProducerFilterClickOutside);
   }, []);
 
   useEffect(() => {
@@ -3626,6 +3665,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       <input
                                         type="date"
                                         value={s.acceptanceDate || ""}
+                                        onClick={openNativeDatePicker}
                                         onChange={(e) =>
                                           updateSchedule(s.id, {
                                             acceptanceDate: e.target.value,
@@ -3651,6 +3691,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                       <input
                                         type="date"
                                         value={s.submissionDeadline || ""}
+                                        onClick={openNativeDatePicker}
                                         onChange={(e) =>
                                           updateSchedule(s.id, {
                                             submissionDeadline: e.target.value,
@@ -4645,13 +4686,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       <p className="mt-1 text-[10px] font-bold text-slate-400">
                         {productionView === "capacity"
                           ? "先按岗位判断未来 7 天占用，点击人员可切到日历定位。"
-                          : `手动排期时查看人员占用，同一天同一人可显示多条任务。${selectedProducer ? ` 当前定位：${selectedProducer}` : ""}`}
+                          : `手动排期时查看人员占用，同一天同一人可显示多条任务。${
+                              selectedProducers.length > 0 ? ` 当前筛选：${selectedProducers.join("、")}` : ""
+                            }`}
                       </p>
                     </div>
-                    {productionView !== "capacity" && selectedProducer && (
+                    {productionView !== "capacity" && selectedProducers.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setSelectedProducer("")}
+                        onClick={() => setSelectedProducers([])}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-500 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
                       >
                         清除定位
@@ -4703,7 +4746,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   key={row.producer.name}
                                   type="button"
                                   onClick={() => {
-                                    setSelectedProducer(row.producer.name);
+                                    setSelectedProducers([row.producer.name]);
                                     setProductionView("calendar");
                                   }}
                                   className="w-full rounded-xl border border-white bg-white p-3 text-left shadow-3xs transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-sm"
@@ -4766,7 +4809,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           key={task.id}
                                           className="max-w-full truncate rounded-lg bg-slate-100 px-2 py-1 text-[9px] font-black text-slate-500"
                                         >
-                                          {task.role} · {task.requirement.id}
+                                          {task.role} · {task.displayRequirementId}
                                         </span>
                                       ))
                                     )}
@@ -4815,11 +4858,75 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <div className="ml-2 text-sm font-black text-slate-800">
                             {calendarYear}年{calendarMonth}月
                           </div>
-                          {selectedProducer && (
-                            <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[9px] font-black text-indigo-600">
-                              仅看 {selectedProducer}
-                            </span>
-                          )}
+                          <div ref={productionProducerFilterRef} className="relative ml-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsProductionProducerFilterOpen((prev) => !prev)}
+                              className={`inline-flex h-8 min-w-[104px] items-center justify-between gap-2 rounded-xl border px-3 text-[10px] font-black shadow-3xs transition-all ${
+                                selectedProducers.length > 0
+                                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                  : "border-slate-150 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white"
+                              }`}
+                            >
+                              <span className="truncate">
+                                {selectedProducers.length === 0
+                                  ? "全部人员"
+                                  : selectedProducers.length === 1
+                                    ? selectedProducers[0]
+                                    : `${selectedProducers.length} 人`}
+                              </span>
+                              <ChevronDown
+                                className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                                  isProductionProducerFilterOpen ? "rotate-180" : ""
+                                }`}
+                              />
+                            </button>
+
+                            {isProductionProducerFilterOpen && (
+                              <div className="absolute left-0 top-full z-[130] mt-2 max-h-72 w-40 overflow-y-auto rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedProducers([]);
+                                    setIsProductionProducerFilterOpen(false);
+                                  }}
+                                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                    selectedProducers.length === 0 ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <span>全部人员</span>
+                                  {selectedProducers.length === 0 && <span className="text-indigo-600">✓</span>}
+                                </button>
+                                <div className="my-1 h-px bg-slate-100" />
+                                {activeProducers.map((producer) => {
+                                  const isSelected = selectedProducers.includes(producer.name);
+                                  return (
+                                    <button
+                                      key={producer.name}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedProducers((prev) =>
+                                          prev.includes(producer.name)
+                                            ? prev.filter((name) => name !== producer.name)
+                                            : [...prev, producer.name],
+                                        );
+                                      }}
+                                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                        isSelected ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                                      }`}
+                                    >
+                                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[9px] ${
+                                        isSelected ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 bg-white text-transparent"
+                                      }`}>
+                                        ✓
+                                      </span>
+                                      <span className="truncate">{producer.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 text-[10px] font-black">
@@ -4837,84 +4944,107 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         ))}
                       </div>
 
-                      <div className="grid grid-cols-7">
-                        {productionCalendarWeeks.flatMap((week) =>
-                          week.days.map((day) => {
-                            const dayTasks = productionTasks
-                              .filter((task) => {
-                                if (selectedProducer && task.producer !== selectedProducer) return false;
-                                return rangesOverlap(task.startDate, task.endDate, day.dateString, day.dateString);
-                              })
-                              .sort((a, b) => {
-                                const priorityOrder = { Highest: 0, High: 1, Mid: 2, Low: 3, "": 4 };
+                      <div>
+                        {productionCalendarWeeks.map((week, weekIndex) => {
+                          const weekStart = week.days[0].dateString;
+                          const weekEnd = week.days[6].dateString;
+                          const weekTasks = productionTasks
+                            .filter((task) => {
+                              if (selectedProducers.length > 0 && !selectedProducers.includes(task.producer)) return false;
+                              return rangesOverlap(task.startDate, task.endDate, weekStart, weekEnd);
+                            })
+                            .sort((a, b) => {
+                              const priorityOrder = { Highest: 0, High: 1, Mid: 2, Low: 3, "": 4 };
+                              return (
+                                (priorityOrder[a.requirement.priority as keyof typeof priorityOrder] ?? 4) -
+                                  (priorityOrder[b.requirement.priority as keyof typeof priorityOrder] ?? 4) ||
+                                a.startDate.localeCompare(b.startDate)
+                              );
+                            })
+                            .slice(0, 5);
+
+                          return (
+                            <div key={weekStart} className="relative grid min-h-[168px] grid-cols-7 overflow-visible border-b border-slate-100">
+                              {week.days.map((day) => {
+                                const dayTasksCount = productionTasks.filter((task) => {
+                                  if (selectedProducers.length > 0 && !selectedProducers.includes(task.producer)) return false;
+                                  return rangesOverlap(task.startDate, task.endDate, day.dateString, day.dateString);
+                                }).length;
                                 return (
-                                  (priorityOrder[a.requirement.priority as keyof typeof priorityOrder] ?? 4) -
-                                    (priorityOrder[b.requirement.priority as keyof typeof priorityOrder] ?? 4) ||
-                                  a.startDate.localeCompare(b.startDate)
-                                );
-                              });
-                            const visibleDayTasks = dayTasks.slice(0, 6);
-
-                            return (
-                              <div
-                                key={day.dateString}
-                                className={`min-h-[168px] border-b border-r border-slate-100 p-2 ${
-                                  day.isCurrentMonth ? "bg-white" : "bg-slate-50/60"
-                                } ${day.isWeekend ? "bg-slate-50" : ""}`}
-                              >
-                                <div className="mb-2 flex items-center justify-between gap-2">
-                                  <span
-                                    className={`flex h-5 min-w-5 items-center justify-center rounded-full text-[11px] font-black ${
-                                      day.isToday
-                                        ? "bg-indigo-600 text-white"
-                                        : day.isCurrentMonth
-                                          ? "text-slate-700"
-                                          : "text-slate-300"
-                                    }`}
+                                  <div
+                                    key={day.dateString}
+                                    className={`min-h-[168px] border-r border-slate-100 p-2 ${
+                                      day.isCurrentMonth ? "bg-white" : "bg-slate-50/60"
+                                    } ${day.isWeekend ? "bg-slate-50" : ""}`}
                                   >
-                                    {day.dayNum === 1 && day.isCurrentMonth ? `${calendarMonth}月1日` : day.dayNum}
-                                  </span>
-                                  {dayTasks.length > 0 && (
-                                    <span className="text-[9px] font-bold text-slate-300">
-                                      {dayTasks.length} 条
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="space-y-1">
-                                  {visibleDayTasks.map((task) => {
-                                    const tone =
-                                      task.requirement.priority === "Highest"
-                                        ? "bg-rose-100 text-rose-700"
-                                        : task.status === "已完成"
-                                          ? "bg-slate-100 text-slate-500"
-                                          : task.role.includes("平面")
-                                            ? "bg-lime-100 text-lime-800"
-                                            : "bg-sky-100 text-sky-800";
-                                    return (
-                                      <button
-                                        key={`${day.dateString}-${task.id}`}
-                                        type="button"
-                                        onClick={() => setSelectedReq(task.requirement)}
-                                        className={`block h-5 w-full truncate rounded px-2 text-left text-[9px] font-black transition-all hover:ring-2 hover:ring-indigo-100 ${tone}`}
-                                        title={`${task.requirement.id} / ${task.requirement.name} / ${task.producer}`}
+                                    <div className="mb-2 flex items-center justify-between gap-2">
+                                      <span
+                                        className={`flex h-5 min-w-5 items-center justify-center rounded-full text-[11px] font-black ${
+                                          day.isToday
+                                            ? "bg-indigo-600 text-white"
+                                            : day.isCurrentMonth
+                                              ? "text-slate-700"
+                                              : "text-slate-300"
+                                        }`}
                                       >
-                                        {task.requirement.id}
-                                        <span className="ml-1 font-bold opacity-70">{task.role}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-
-                                {dayTasks.length > visibleDayTasks.length && (
-                                  <div className="mt-2 text-[9px] font-bold text-slate-300">
-                                    还有 {dayTasks.length - visibleDayTasks.length} 条记录
+                                        {day.dayNum === 1 && day.isCurrentMonth ? `${calendarMonth}月1日` : day.dayNum}
+                                      </span>
+                                      {dayTasksCount > 0 && (
+                                        <span className="text-[9px] font-bold text-slate-300">{dayTasksCount} 条</span>
+                                      )}
+                                    </div>
                                   </div>
-                                )}
+                                );
+                              })}
+
+                              <div className="pointer-events-none absolute inset-x-0 top-9 z-10">
+                                {weekTasks.map((task, laneIndex) => {
+                                  const taskStartTime = parseDateValue(task.startDate) || parseDateValue(weekStart) || 0;
+                                  const taskEndTime = parseDateValue(task.endDate) || taskStartTime;
+                                  const weekStartTime = parseDateValue(weekStart) || taskStartTime;
+                                  const weekEndTime = parseDateValue(weekEnd) || taskEndTime;
+                                  const clippedStart = Math.max(taskStartTime, weekStartTime);
+                                  const clippedEnd = Math.min(taskEndTime, weekEndTime);
+                                  const startIndex = Math.max(0, Math.floor((clippedStart - weekStartTime) / 86400000));
+                                  const spanDays = Math.max(1, Math.floor((clippedEnd - clippedStart) / 86400000) + 1);
+                                  const left = (startIndex / 7) * 100;
+                                  const width = (spanDays / 7) * 100;
+                                  const startsInWeek = taskStartTime >= weekStartTime;
+                                  const endsInWeek = taskEndTime <= weekEndTime;
+                                  const tone =
+                                    task.requirement.priority === "Highest"
+                                      ? "bg-rose-100 text-rose-700"
+                                      : task.status === "已完成"
+                                        ? "bg-slate-100 text-slate-500"
+                                        : task.role.includes("平面")
+                                          ? "bg-lime-100 text-lime-800"
+                                          : "bg-sky-100 text-sky-800";
+
+                                  return (
+                                    <button
+                                      key={`${weekIndex}-${task.id}`}
+                                      type="button"
+                                      onClick={() => setSelectedReq(task.requirement)}
+                                      className={`pointer-events-auto absolute flex h-6 items-center truncate px-2 text-left text-[10px] font-black shadow-3xs transition-all hover:z-20 hover:ring-2 hover:ring-indigo-100 ${tone} ${
+                                        startsInWeek ? "rounded-l-md" : "rounded-l-none"
+                                      } ${endsInWeek ? "rounded-r-md" : "rounded-r-none"}`}
+                                      style={{
+                                        left: `calc(${left}% + 8px)`,
+                                        top: `${laneIndex * 26}px`,
+                                        width: `calc(${width}% - 16px)`,
+                                      }}
+                                      title={`${task.displayRequirementId} / ${task.requirement.name} / ${task.producer}`}
+                                    >
+                                      {task.displayRequirementId}
+                                      <span className="ml-1 font-bold opacity-70">{task.producer}</span>
+                                      <span className="ml-1 font-bold opacity-70">{task.role}</span>
+                                    </button>
+                                  );
+                                })}
                               </div>
-                            );
-                          }),
-                        )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : (
@@ -4954,18 +5084,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       </div>
 
                       <div className="max-h-[560px] min-w-max">
-                        {productionGanttRows.map(({ producer, tasks }) => {
+                        {productionGanttRows
+                          .filter(({ producer }) => selectedProducers.length === 0 || selectedProducers.includes(producer.name))
+                          .map(({ producer, tasks }) => {
                           const visibleTasks = tasks.length > 0 ? tasks : [];
                           return (
                             <div
                               key={producer.name}
                               className={`border-b border-slate-100 last:border-b-0 ${
-                                selectedProducer === producer.name ? "bg-indigo-50/40" : "bg-white"
+                                selectedProducers.includes(producer.name) ? "bg-indigo-50/40" : "bg-white"
                               }`}
                             >
                               <button
                                 type="button"
-                                onClick={() => setSelectedProducer(producer.name)}
+                                onClick={() => setSelectedProducers([producer.name])}
                                 className="flex h-10 w-full items-center gap-2 border-b border-slate-100 bg-white px-3 text-left transition-all hover:bg-slate-50"
                               >
                                 <ChevronDown className="h-3.5 w-3.5 text-slate-350" />
@@ -5049,7 +5181,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                         <div className="flex min-w-0 items-center border-r border-slate-100 px-3">
                                           <span className="truncate" title={task.requirement.name}>{task.requirement.name}</span>
                                         </div>
-                                        <div className="flex items-center border-r border-slate-100 px-3 font-mono text-indigo-600">{task.requirement.id}</div>
+                                        <div className="flex items-center border-r border-slate-100 px-3 font-mono text-indigo-600">{task.displayRequirementId}</div>
                                         <div className="flex items-center border-r border-slate-100 px-3">
                                           <span className="rounded-lg bg-cyan-100 px-2 py-0.5 text-[9px] font-black text-cyan-700">
                                             {task.role}
@@ -5105,8 +5237,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   );
                                 })
                               )}
-                            </div>
-                          );
+                              </div>
+                            );
                         })}
                       </div>
                     </div>
@@ -5210,6 +5342,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           <input
                                             type="date"
                                             value={row.requirementEnd}
+                                            onClick={openNativeDatePicker}
                                             onChange={(e) =>
                                               updateSchedule(row.id, {
                                                 requirementEnd: e.target.value,
@@ -5225,6 +5358,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           <input
                                             type="date"
                                             value={row.productionEnd}
+                                            onClick={openNativeDatePicker}
                                             onChange={(e) =>
                                               updateSchedule(row.id, {
                                                 productionEnd: e.target.value,
@@ -5537,6 +5671,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           <input
                                             type="date"
                                             value={row.requirementEnd}
+                                            onClick={openNativeDatePicker}
                                             onChange={(e) =>
                                               updateSchedule(row.id, {
                                                 requirementEnd: e.target.value,
@@ -5552,6 +5687,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           <input
                                             type="date"
                                             value={row.productionEnd}
+                                            onClick={openNativeDatePicker}
                                             onChange={(e) =>
                                               updateSchedule(row.id, {
                                                 productionEnd: e.target.value,
@@ -6017,7 +6153,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
       {showProductionRiskModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 p-6 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="flex max-h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] border border-slate-150 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="flex min-h-[480px] w-full min-w-[760px] max-w-5xl max-h-[82vh] flex-col overflow-hidden rounded-[24px] border border-slate-150 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div>
                 <h3 className="text-base font-black text-slate-900">排期延期需求</h3>
@@ -6907,6 +7043,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
               productionScheduleContext={productionTasks.map((task) => ({
                 id: task.id,
                 requirementId: task.requirement.id,
+                displayRequirementId: task.displayRequirementId,
                 requirementName: task.requirement.name,
                 priority: task.requirement.priority,
                 role: task.role,
