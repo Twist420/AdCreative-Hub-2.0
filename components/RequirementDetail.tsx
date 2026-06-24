@@ -65,6 +65,24 @@ const CREATIVE_ALIASES: Record<string, string> = {
   '顺子': 'sz'
 };
 
+const CREATIVE_PEOPLE = ['唐欣怡', '吉意煊', '马嘉良'];
+
+const PERSON_AVATAR_URLS: Record<string, string> = {
+  '唐欣怡': '/avatars/tang-xinyi.png',
+  '吉意煊': '/avatars/ji-yixuan.png',
+  '马嘉良': '/avatars/ma-jialiang.png',
+  '张欢': '/avatars/zhang-huan.png',
+  '何思乔': '/avatars/he-siqiao.png'
+};
+
+const getPersonAvatarUrl = (name?: string) => {
+  const normalizedName = name || 'unknown';
+  return (
+    PERSON_AVATAR_URLS[normalizedName] ||
+    `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${encodeURIComponent(normalizedName)}`
+  );
+};
+
 const getAssetTypeLabel = (assetType: Requirement['assetType']) => {
   if (assetType === 'Image') return '图片';
   if (assetType === 'Playable') return '试玩';
@@ -681,6 +699,8 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSubVersionsModal, setShowSubVersionsModal] = useState(false);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [isCreativePersonnelMenuOpen, setIsCreativePersonnelMenuOpen] = useState(false);
+  const creativePersonnelRef = useRef<HTMLDivElement>(null);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [availabilityView, setAvailabilityView] = useState<'calendar' | 'gantt'>('calendar');
   const todayForAvailability = new Date();
@@ -692,6 +712,24 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const [selectedPreviewDimension, setSelectedPreviewDimension] = useState<string>('');
   const [showClipUploadModal, setShowClipUploadModal] = useState(false);
   const [isClipDragActive, setIsClipDragActive] = useState(false);
+
+  const creativePersonnelOptions = useMemo(
+    () => Array.from(new Set([currentReq.creativePersonnel, ...CREATIVE_PEOPLE].filter(Boolean))),
+    [currentReq.creativePersonnel],
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        creativePersonnelRef.current &&
+        !creativePersonnelRef.current.contains(event.target as Node)
+      ) {
+        setIsCreativePersonnelMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1396,14 +1434,58 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="flex flex-col items-end">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">创意人员</span>
-            <div className="flex items-center gap-2">
-               <span className="text-xs font-black text-slate-700">{currentReq.creativePersonnel}</span>
-               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black text-[10px] border border-primary/20">
-                 {getInitials(currentReq.creativePersonnel).toUpperCase()}
-               </div>
-            </div>
+          <div ref={creativePersonnelRef} className="relative flex min-w-[132px] flex-col items-start">
+            <span className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">创意人员</span>
+            <button
+              type="button"
+              onClick={() => setIsCreativePersonnelMenuOpen(prev => !prev)}
+              className={`flex min-h-9 w-full items-center gap-2 rounded-2xl border px-2 py-1.5 text-left transition-all ${
+                isCreativePersonnelMenuOpen
+                  ? 'border-primary/25 bg-primary/5 shadow-3xs'
+                  : 'border-transparent bg-transparent hover:border-slate-150 hover:bg-slate-50'
+              }`}
+            >
+              <img
+                src={getPersonAvatarUrl(currentReq.creativePersonnel)}
+                alt={currentReq.creativePersonnel || '未指派'}
+                className="h-8 w-8 shrink-0 rounded-full border border-slate-200 bg-slate-50 object-cover shadow-3xs"
+                referrerPolicy="no-referrer"
+              />
+              <span className="min-w-0 flex-1 truncate text-xs font-black text-slate-700">{currentReq.creativePersonnel}</span>
+              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${isCreativePersonnelMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isCreativePersonnelMenuOpen && (
+              <div className="absolute right-0 top-full z-[90] mt-2 w-40 overflow-hidden rounded-2xl border border-slate-150 bg-white p-1.5 shadow-2xl shadow-slate-900/10">
+                {creativePersonnelOptions.map(person => {
+                  const isSelected = currentReq.creativePersonnel === person;
+                  return (
+                    <button
+                      key={person}
+                      type="button"
+                      onClick={() => {
+                        setCurrentReq({ ...currentReq, creativePersonnel: person });
+                        setIsCreativePersonnelMenuOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all ${
+                        isSelected ? 'bg-primary/5 text-primary' : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <img
+                        src={getPersonAvatarUrl(person)}
+                        alt={person}
+                        className={`h-7 w-7 shrink-0 rounded-full border bg-slate-50 object-cover ${
+                          isSelected ? 'border-primary/30 shadow-3xs' : 'border-slate-150'
+                        }`}
+                        referrerPolicy="no-referrer"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs font-black">{person}</span>
+                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           
           <div className="w-[1px] h-10 bg-slate-100"></div>
