@@ -580,6 +580,15 @@ const getSubmitTimeBadge = (submitDate: string, todayDate: string) => {
   return null;
 };
 
+const getSubmitDelayDays = (submitDate: string, todayDate: string) => {
+  const submitTime = parseDateValue(submitDate);
+  const todayTime = parseDateValue(todayDate);
+  if (submitTime === null || todayTime === null || submitTime >= todayTime) {
+    return 0;
+  }
+  return Math.ceil((todayTime - submitTime) / 86400000);
+};
+
 const formatCompactDate = (date: string) => date.replaceAll("-", "/");
 
 const ProductionSubmitDateDisplay = ({
@@ -590,9 +599,8 @@ const ProductionSubmitDateDisplay = ({
   badge: ReturnType<typeof getSubmitTimeBadge>;
 }) => (
   <div className="flex justify-center">
-    <div className="relative inline-flex h-9 min-w-[118px] items-center justify-center rounded-xl border border-slate-150 bg-white px-3 pr-9 text-[12px] font-black text-slate-800 shadow-3xs transition-all group-hover:border-indigo-150">
+    <div className="relative inline-flex h-9 min-w-[118px] items-center justify-center rounded-xl border border-slate-150 bg-white px-3 text-[12px] font-black text-slate-800 shadow-3xs transition-all group-hover:border-indigo-150">
       <span className="whitespace-nowrap">{date ? formatCompactDate(date) : "-"}</span>
-      <Calendar className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" />
       {badge && (
         <span
           className={`absolute -right-2 -top-2 inline-flex h-5 items-center rounded-full border bg-white px-1.5 text-[9px] font-black shadow-3xs ${badge.className}`}
@@ -1723,17 +1731,28 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     }
   }, [currentWeekRange, weekRanges, selectedWeekRange]);
 
+  const syncDateRangeToWeekSelections = useCallback((ranges: string[]) => {
+    const parsedRanges = ranges.map((range) => parseWeekRangeDates(range));
+    if (parsedRanges.length === 0) return;
+    const orderedStarts = parsedRanges.map((range) => range.start).sort();
+    const orderedEnds = parsedRanges.map((range) => range.end).sort();
+    setDateRangeStart(orderedStarts[0]);
+    setDateRangeEnd(orderedEnds[orderedEnds.length - 1]);
+  }, []);
+
   const toggleSelectedWeekRange = useCallback(
     (range: string) => {
-      setSelectedWeekRange(range);
       setSelectedWeekRanges((prev) => {
-        if (prev.includes(range)) {
-          return prev.filter((item) => item !== range);
-        }
-        return [...prev, range];
+        const next = prev.includes(range)
+          ? prev.filter((item) => item !== range)
+          : [...prev, range];
+        const nextSelections = next.length > 0 ? next : [range];
+        setSelectedWeekRange(nextSelections.includes(range) ? range : nextSelections[0]);
+        syncDateRangeToWeekSelections(nextSelections);
+        return nextSelections;
       });
     },
-    [],
+    [syncDateRangeToWeekSelections],
   );
 
   const toggleDirection = (id: string) => {
@@ -2168,8 +2187,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     useState<Requirement[] | null>(null);
   const [selectedScheduleForModal, setSelectedScheduleForModal] =
     useState<CreativeSchedule | null>(null);
+  const [instantTooltip, setInstantTooltip] = useState<{
+    content: string;
+    left: number;
+    top: number;
+  } | null>(null);
   const [scheduleTagInput, setScheduleTagInput] = useState("");
   const [openScheduleInfoMenuKey, setOpenScheduleInfoMenuKey] = useState<string | null>(null);
+  const [openRequirementCellDropdown, setOpenRequirementCellDropdown] =
+    useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(
     null,
   );
@@ -2177,7 +2203,37 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   useEffect(() => {
     setScheduleTagInput("");
     setOpenScheduleInfoMenuKey(null);
+    setOpenRequirementCellDropdown(null);
   }, [selectedScheduleForModal?.id]);
+
+  useEffect(() => {
+    const closeRequirementCellDropdown = () => {
+      setOpenRequirementCellDropdown(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenRequirementCellDropdown(null);
+      }
+    };
+    document.addEventListener("click", closeRequirementCellDropdown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("click", closeRequirementCellDropdown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
+  const showInstantTooltip = (
+    event: React.MouseEvent<HTMLElement> | React.FocusEvent<HTMLElement>,
+    content: string,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setInstantTooltip({
+      content,
+      left: Math.min(rect.left, window.innerWidth - 420),
+      top: rect.bottom + 8,
+    });
+  };
 
   const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(false);
   const weekFilterRef = useRef<HTMLDivElement>(null);
@@ -3081,14 +3137,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   };
 
   const getDefaultCycleAdjustTarget = (schedule: CreativeSchedule) => {
-    const currentRange = parseWeekRangeDates(schedule.weekRange);
-      const forwardRanges = allWeekRanges
+    const todayTime = parseDateValue(todayDateString) ?? Date.now();
+    const targetRanges = allWeekRanges
       .filter((range) => range !== schedule.weekRange)
       .map((range) => ({ range, parsed: parseWeekRangeDates(range) }))
-      .filter(({ parsed }) => parsed.startTime >= currentRange.endTime)
+      .filter(({ parsed }) => parsed.endTime >= todayTime)
       .sort((a, b) => a.parsed.startTime - b.parsed.startTime);
     return (
-      forwardRanges[0]?.range ||
+      targetRanges[0]?.range ||
       (selectedWeekRange !== schedule.weekRange ? selectedWeekRange : "") ||
       allWeekRanges.find((range) => range !== schedule.weekRange) ||
       schedule.weekRange
@@ -3124,14 +3180,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       return;
     }
 
-    const insight = scheduleInsights.get(schedule.id);
-    const isFullyUnstarted =
-      !insight ||
-      insight.total === 0 ||
-      (insight.notStarted === insight.total && insight.completed === 0 && insight.inProgress === 0);
     const targetDates = parseWeekRangeDates(targetWeekRange);
+    const selectedIds = new Set(cycleAdjustRequirementIds);
+    const relatedRequirements = requirements.filter((req) => req.scheduleId === schedule.id);
+    const selectedRequirements = relatedRequirements.filter(
+      (req) => req.prodStatus !== "Completed" && selectedIds.has(req.id),
+    );
+    const remainingRequirements = relatedRequirements.filter((req) => !selectedIds.has(req.id));
+    const shouldMoveSchedule = remainingRequirements.length === 0;
 
-    if (isFullyUnstarted) {
+    if (shouldMoveSchedule) {
       const movedSchedule: CreativeSchedule = {
         ...schedule,
         weekRange: targetWeekRange,
@@ -3140,25 +3198,19 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         submissionDeadline: targetDates.end,
         acceptanceDate: targetDates.start,
         rolloverStatus: "None",
-        decisionNote: `方向整体调整到 ${targetWeekRange}，未创建继承方向。`,
+        decisionNote: `方向整体调整到 ${targetWeekRange}，未复制方向。`,
       };
       setSchedules((prev) =>
         prev.map((item) => (item.id === schedule.id ? movedSchedule : item)),
       );
       setSelectedScheduleForModal(movedSchedule);
       setSelectedWeekRange(targetWeekRange);
+      setSelectedWeekRanges([targetWeekRange]);
+      setDateRangeStart(targetDates.start);
+      setDateRangeEnd(targetDates.end);
       setCycleAdjustScheduleId(null);
       setIsCycleAdjustWeekPickerOpen(false);
       showToast("方向已整体调整到所选周期。");
-      return;
-    }
-
-    const selectedIds = new Set(cycleAdjustRequirementIds);
-    const selectedRequirements = requirements.filter(
-      (req) => req.scheduleId === schedule.id && req.prodStatus !== "Completed" && selectedIds.has(req.id),
-    );
-    if (selectedRequirements.length === 0) {
-      showToast("请选择需要带走的未完成需求。");
       return;
     }
 
@@ -3213,9 +3265,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     );
     setSelectedScheduleForModal(inheritedSchedule);
     setSelectedWeekRange(targetWeekRange);
+    setSelectedWeekRanges([targetWeekRange]);
+    setDateRangeStart(targetDates.start);
+    setDateRangeEnd(targetDates.end);
     setCycleAdjustScheduleId(null);
     setIsCycleAdjustWeekPickerOpen(false);
-    showToast("已创建继承方向，并调整选中的未完成需求。");
+    showToast(
+      selectedRequirements.length > 0
+        ? "已复制继承方向，并调整选中的未完成需求。"
+        : "已复制继承方向，原方向下需求保持不变。",
+    );
   };
 
   const updateSchedulePriority = (
@@ -3303,6 +3362,76 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       default:
         return "bg-slate-300 text-white";
     }
+  };
+
+  const renderRequirementInlineDropdown = <T extends string>({
+    menuKey,
+    value,
+    options,
+    onSelect,
+    triggerClassName,
+    panelClassName = "w-36",
+  }: {
+    menuKey: string;
+    value: T;
+    options: Array<{ value: T; label: string }>;
+    onSelect: (value: T) => void;
+    triggerClassName: string;
+    panelClassName?: string;
+  }) => {
+    const isOpen = openRequirementCellDropdown === menuKey;
+    const selectedLabel =
+      options.find((option) => option.value === value)?.label || value;
+
+    return (
+      <div className="relative inline-flex justify-center">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpenRequirementCellDropdown((prev) =>
+              prev === menuKey ? null : menuKey,
+            );
+          }}
+          className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap shadow-3xs transition-all ${triggerClassName}`}
+        >
+          <span className="truncate">{selectedLabel}</span>
+          <ChevronDown
+            className={`h-3 w-3 shrink-0 transition-transform ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+        {isOpen && (
+          <div
+            className={`absolute left-1/2 top-full z-[160] mt-2 -translate-x-1/2 rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/12 ${panelClassName}`}
+          >
+            {options.map((option) => {
+              const selected = option.value === value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelect(option.value);
+                    setOpenRequirementCellDropdown(null);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                    selected
+                      ? FILTER_DROPDOWN_ACTIVE_CLASS
+                      : FILTER_DROPDOWN_IDLE_CLASS
+                  }`}
+                >
+                  <span>{option.label}</span>
+                  {selected && <DropdownSelectedCheck className="h-3.5 w-3.5" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const updateRequirement = (id: string, updates: Partial<Requirement>) => {
@@ -3492,6 +3621,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     // Add a dummy schedule for that week to make the row appear
     addScheduleRow(range);
     setSelectedWeekRange(range);
+    setSelectedWeekRanges([range]);
+    setDateRangeStart(newWeekStart);
+    setDateRangeEnd(newWeekEnd);
     setShowAddWeekPopup(false);
     setNewWeekRange("");
     setNewWeekStart("");
@@ -3616,6 +3748,17 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
             <span className="leading-relaxed">{toast}</span>
           </div>
+        </div>
+      )}
+      {instantTooltip && (
+        <div
+          className="pointer-events-none fixed z-[240] max-w-[380px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold leading-relaxed text-slate-700 shadow-xl shadow-slate-900/12"
+          style={{
+            left: `${instantTooltip.left}px`,
+            top: `${instantTooltip.top}px`,
+          }}
+        >
+          {instantTooltip.content}
         </div>
       )}
       {/* 主内容区域 */}
@@ -4266,10 +4409,21 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             : 0;
 
                         const isEditing = editingScheduleId === s.id;
-                        const scheduleRiskItems =
-                          productionInsights.highRiskRequirements.filter(
-                            (item) => item.req.scheduleId === s.id,
-                          );
+                        const scheduleDelayedItems = associatedReqs
+                          .map((req) => {
+                            const submitDate =
+                              req.endDate ||
+                              s.productionEnd ||
+                              s.submissionDeadline ||
+                              s.requirementEnd ||
+                              "";
+                            return {
+                              req,
+                              delayedDays: getSubmitDelayDays(submitDate, todayDateString),
+                            };
+                          })
+                          .filter((item) => item.delayedDays > 0)
+                          .sort((a, b) => b.delayedDays - a.delayedDays);
                         const scheduleInsight = scheduleInsights.get(s.id);
                         const visibleAssociatedReqs = associatedReqs.slice(0, 3);
                         const hiddenAssociatedReqCount = Math.max(
@@ -4284,9 +4438,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <div
                             key={s.id}
                             onClick={() => setSelectedScheduleForModal(s)}
-                            className={`h-[470px] bg-white rounded-3xl border transition-all p-5 pb-[76px] flex flex-col cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
+                            className={`h-[470px] bg-white rounded-3xl border transition-all p-5 flex flex-col cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
                           >
-                            <div>
+                            <div className="flex min-h-0 flex-1 flex-col">
                               {/* 头部信息 */}
                               <div className={`mb-3 ${
                                 isEditing
@@ -4552,7 +4706,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </div>
                               </div>
 
-                              {/* 方向 & 目标 - 采用精美的高级背景色块作为底色 */}
+                              {/* 方向 & 目标 */}
                               <div
                                 className="mb-2"
                                 onClick={
@@ -4583,7 +4737,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                           ? "bg-amber-50/70 text-amber-900 border-amber-150/60"
                                           : s.priority === "Low"
                                             ? "bg-emerald-55/75 text-emerald-900 border-emerald-150/60"
-                                            : "bg-indigo-50/50 text-indigo-905 border-indigo-150/50"
+                                            : "bg-slate-50 text-slate-800 border-slate-150"
                                     }`}
                                   >
                                     <h3
@@ -4592,17 +4746,28 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     >
                                       {s.directionName || "未命名方向"}
                                     </h3>
-                                    {scheduleRiskItems.length > 0 && (
+                                    {scheduleDelayedItems.length > 0 && (
                                       <span
-                                        className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-full border bg-white/90 px-2 text-[9px] font-black ${
-                                          scheduleRiskItems[0].severity === "danger"
-                                            ? "border-rose-150 text-rose-600"
-                                            : "border-amber-150 text-amber-700"
-                                        }`}
-                                        title={`排期风险 ${scheduleRiskItems.length} 个：${scheduleRiskItems[0].reason}，建议：${scheduleRiskItems[0].action}`}
+                                        tabIndex={0}
+                                        className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-rose-150 bg-white/90 px-2 text-[9px] font-black text-rose-600"
+                                        aria-label={`延期需求 ${scheduleDelayedItems.length} 个：${scheduleDelayedItems[0].req.id} 已延期 ${scheduleDelayedItems[0].delayedDays} 天`}
+                                        onMouseEnter={(event) =>
+                                          showInstantTooltip(
+                                            event,
+                                            `延期需求 ${scheduleDelayedItems.length} 个：${scheduleDelayedItems[0].req.id} 已延期 ${scheduleDelayedItems[0].delayedDays} 天`,
+                                          )
+                                        }
+                                        onMouseLeave={() => setInstantTooltip(null)}
+                                        onFocus={(event) =>
+                                          showInstantTooltip(
+                                            event,
+                                            `延期需求 ${scheduleDelayedItems.length} 个：${scheduleDelayedItems[0].req.id} 已延期 ${scheduleDelayedItems[0].delayedDays} 天`,
+                                          )
+                                        }
+                                        onBlur={() => setInstantTooltip(null)}
                                       >
                                         <AlertCircle className="h-3 w-3" />
-                                        {scheduleRiskItems.length}
+                                        {scheduleDelayedItems.length}
                                       </span>
                                     )}
                                   </div>
@@ -5121,7 +5286,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               </div>
 
                               {/* 关联需求和详情按钮 (Requirement 6 & 7) */}
-                              <div className="absolute bottom-5 left-5 right-5 z-20 flex min-h-10 items-center justify-between gap-3">
+                              <div className="mt-auto flex min-h-10 items-center justify-between gap-3 pt-4">
                                 <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden">
                                   {visibleAssociatedReqs.map((req) => {
                                     const baseId = req.id.split("-")[0];
@@ -5171,14 +5336,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     if (isEditing) return;
                                     handleAddRequirementForDirection(s.id);
                                   }}
-                                  className={`relative z-20 inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 text-[11px] font-black whitespace-nowrap transition-all duration-200 ${
+                                  className={`relative z-20 inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-[10px] font-black whitespace-nowrap transition-all duration-200 ${
                                     isEditing
                                       ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200 shadow-none"
                                       : "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 ring-1 ring-indigo-500 hover:bg-slate-950 hover:ring-slate-950 hover:-translate-y-0.5"
                                   }`}
                                   title={isEditing ? "保存方向后再新建需求" : "新建需求"}
                                 >
-                                  <Plus className="w-3.5 h-3.5" />
+                                  <Plus className="w-3 h-3" />
                                   新建需求
                                 </button>
                               </div>
@@ -5599,41 +5764,22 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <div className="flex justify-center font-sans">
-                                  <select
-                                    value={req.priority}
-                                    onChange={(e) =>
+                                  {renderRequirementInlineDropdown<RequirementPriority>({
+                                    menuKey: `${req.id}:list:priority`,
+                                    value: req.priority,
+                                    options: [
+                                      { value: "Low", label: "低" },
+                                      { value: "Mid", label: "中" },
+                                      { value: "High", label: "高" },
+                                      { value: "Highest", label: "最高" },
+                                    ],
+                                    onSelect: (value) =>
                                       updateRequirement(req.id, {
-                                        priority: e.target
-                                          .value as RequirementPriority,
-                                      })
-                                    }
-                                    className={`px-2 py-1 rounded text-[10px] font-black border-none focus:ring-0 cursor-pointer transition-all ${getPriorityStyle(req.priority)}`}
-                                  >
-                                    <option
-                                      value="Low"
-                                      className="text-slate-900 bg-white"
-                                    >
-                                      低
-                                    </option>
-                                    <option
-                                      value="Mid"
-                                      className="text-slate-900 bg-white"
-                                    >
-                                      中
-                                    </option>
-                                    <option
-                                      value="High"
-                                      className="text-slate-900 bg-white"
-                                    >
-                                      高
-                                    </option>
-                                    <option
-                                      value="Highest"
-                                      className="text-slate-900 bg-white"
-                                    >
-                                      最高
-                                    </option>
-                                  </select>
+                                        priority: value,
+                                      }),
+                                    triggerClassName: `h-7 min-w-[76px] rounded-lg border border-transparent px-2 text-[10px] font-black ${getPriorityStyle(req.priority)}`,
+                                    panelClassName: "w-32",
+                                  })}
                                 </div>
                               </td>
 
@@ -5666,23 +5812,22 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <div className="flex justify-center font-sans">
-                                  <select
-                                    value={req.reqStatus}
-                                    onChange={(e) =>
+                                  {renderRequirementInlineDropdown<RequirementReqStatus>({
+                                    menuKey: `${req.id}:list:reqStatus`,
+                                    value: req.reqStatus,
+                                    options: [
+                                      { value: "Draft", label: "草稿" },
+                                      { value: "Pending", label: "待审核" },
+                                      { value: "Approved", label: "审核通过" },
+                                      { value: "Modification", label: "需求修改" },
+                                    ],
+                                    onSelect: (value) =>
                                       updateRequirement(req.id, {
-                                        reqStatus: e.target
-                                          .value as RequirementReqStatus,
-                                      })
-                                    }
-                                    className={`px-2 py-0.5 rounded-full border text-[10px] font-bold border-none focus:ring-0 cursor-pointer ${getStatusStyle(req.reqStatus)}`}
-                                  >
-                                    <option value="Draft">草稿</option>
-                                    <option value="Pending">待审核</option>
-                                    <option value="Approved">审核通过</option>
-                                    <option value="Modification">
-                                      需求修改
-                                    </option>
-                                  </select>
+                                        reqStatus: value,
+                                      }),
+                                    triggerClassName: `h-7 min-w-[92px] rounded-full border border-transparent px-2.5 text-[10px] font-bold ${getStatusStyle(req.reqStatus)}`,
+                                    panelClassName: "w-36",
+                                  })}
                                 </div>
                               </td>
 
@@ -5691,34 +5836,23 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 className="px-4 py-3"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <div className="flex flex-col items-center justify-center gap-1 font-sans">
-                                  <select
-                                    value={req.prodStatus}
-                                    onChange={(e) =>
+                                <div className="flex items-center justify-center font-sans">
+                                  {renderRequirementInlineDropdown<RequirementProdStatus>({
+                                    menuKey: `${req.id}:list:prodStatus`,
+                                    value: req.prodStatus,
+                                    options: [
+                                      { value: "Unscheduled", label: "未排期" },
+                                      { value: "Scheduled", label: "已排期" },
+                                      { value: "InProgress", label: "进行中" },
+                                      { value: "Completed", label: "已完成" },
+                                    ],
+                                    onSelect: (value) =>
                                       updateRequirement(req.id, {
-                                        prodStatus: e.target
-                                          .value as RequirementProdStatus,
-                                      })
-                                    }
-                                    className={`px-2 py-1 border rounded text-[10px] font-bold focus:ring-0 cursor-pointer transition-all ${getProdStatusStyle(req.prodStatus)}`}
-                                  >
-                                    <option value="Unscheduled">未排期</option>
-                                    <option value="Scheduled">已排期</option>
-                                    <option value="InProgress">进行中</option>
-                                    <option value="Completed">已完成</option>
-                                  </select>
-                                  {requirementRisk && (
-                                    <span
-                                      className={`rounded-full px-1.5 py-0.5 text-[8px] font-black ${
-                                        requirementRisk.severity === "danger"
-                                          ? "bg-rose-50 text-rose-600"
-                                          : "bg-amber-50 text-amber-700"
-                                      }`}
-                                      title={`${requirementRisk.reason}：${requirementRisk.action}`}
-                                    >
-                                      {requirementRisk.reason}
-                                    </span>
-                                  )}
+                                        prodStatus: value,
+                                      }),
+                                    triggerClassName: `h-7 min-w-[82px] rounded-lg border px-2 text-[10px] font-bold ${getProdStatusStyle(req.prodStatus)}`,
+                                    panelClassName: "w-32",
+                                  })}
                                 </div>
                               </td>
 
@@ -5809,7 +5943,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                   </div>
                 </div>
 
-                {productionInsights.highRiskRequirements.length > 0 && (
+                {delayedProductionRiskItems.length > 0 && (
                   <div className="shrink-0 rounded-2xl border border-rose-100 bg-rose-50/70 px-3 py-2 text-[10px] font-bold text-rose-700 shadow-3xs">
                     <button
                       type="button"
@@ -5820,7 +5954,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-500" />
                         <span className="shrink-0 font-black">排期预警</span>
                         <span className="truncate text-rose-500/80">
-                          {productionInsights.highRiskRequirements.length} 个最高/高优风险
+                          {delayedProductionRiskItems.length} 个已延期需求
                         </span>
                         <span className="hidden truncate text-slate-400 lg:inline">
                           点击查看延期需求
@@ -7309,7 +7443,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           <div className="flex min-h-[480px] w-full min-w-[760px] max-w-5xl max-h-[82vh] flex-col overflow-hidden rounded-[24px] border border-slate-150 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div>
-                <h3 className="text-base font-black text-slate-900">排期延期需求</h3>
+                <h3 className="text-base font-black text-slate-900">
+                  排期延期需求（{delayedProductionRiskItems.length}）
+                </h3>
                 <p className="mt-0.5 text-[10px] font-bold text-slate-400">
                   仅显示延期需求编号、制作人员和已延期天数。
                 </p>
@@ -7743,12 +7879,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
             (req) => req.prodStatus !== "Completed",
           );
           const isCycleAdjustOpen = cycleAdjustScheduleId === s.id;
-          const isScheduleFullyUnstarted =
-            !modalScheduleInsight ||
-            modalScheduleInsight.total === 0 ||
-            (modalScheduleInsight.notStarted === modalScheduleInsight.total &&
-              modalScheduleInsight.completed === 0 &&
-              modalScheduleInsight.inProgress === 0);
+          const cycleAdjustSelectedIds = new Set(cycleAdjustRequirementIds);
+          const cycleAdjustRemainingCount = associatedReqs.filter(
+            (req) => !cycleAdjustSelectedIds.has(req.id),
+          ).length;
+          const cycleAdjustMode = cycleAdjustRemainingCount === 0 ? "move" : "copy";
+          const todayTime = parseDateValue(todayDateString) ?? Date.now();
+          const cycleAdjustTargetRanges = allWeekRanges.filter((range) => {
+            const { endTime } = parseWeekRangeDates(range);
+            return range !== s.weekRange && endTime >= todayTime;
+          }).sort((a, b) => {
+            const aRange = parseWeekRangeDates(a);
+            const bRange = parseWeekRangeDates(b);
+            return aRange.startTime - bRange.startTime || aRange.endTime - bRange.endTime;
+          });
 
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200 font-sans">
@@ -8042,11 +8186,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <button
                             type="button"
                             onClick={() => openCycleAdjustPanel(s)}
-                            disabled={
-                              !isScheduleFullyUnstarted &&
-                              modalScheduleInsight.total === modalScheduleInsight.completed
-                            }
-                            className="inline-flex h-8 items-center rounded-xl border border-amber-200 bg-amber-50 px-3 text-[11px] font-black text-amber-800 transition-all hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-150 disabled:bg-slate-50 disabled:text-slate-300"
+                            className="inline-flex h-8 items-center rounded-xl border border-amber-200 bg-amber-50 px-3 text-[11px] font-black text-amber-800 transition-all hover:bg-amber-100"
                           >
                             调整周期
                           </button>
@@ -8069,7 +8209,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 调整周期
                               </span>
                               <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-slate-500">
-                                {isScheduleFullyUnstarted ? "移动原方向" : "创建继承方向"}
+                                {cycleAdjustMode === "move" ? "移动方向" : "复制方向"}
                               </span>
                               <div className="relative" ref={cycleAdjustWeekPickerRef}>
                                 <button
@@ -8096,7 +8236,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </button>
                                 {isCycleAdjustWeekPickerOpen && (
                                   <div className="absolute left-0 top-full z-[130] mt-2 max-h-72 w-[300px] overflow-auto rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/12">
-                                    {allWeekRanges.map((range) => {
+                                    {cycleAdjustTargetRanges.map((range) => {
                                       const visual = weekVisualMap[range];
                                       const isTarget = cycleAdjustTargetWeekRange === range;
                                       return (
@@ -8126,13 +8266,18 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                         </button>
                                       );
                                     })}
+                                    {cycleAdjustTargetRanges.length === 0 && (
+                                      <div className="px-3 py-2 text-[11px] font-bold text-slate-400">
+                                        暂无可调整的未来周期
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
                               <span className="text-[11px] font-bold text-slate-500">
-                                {isScheduleFullyUnstarted
-                                  ? "尚未开始，直接挪到目标周期。"
-                                  : "只带走选中的未完成需求。"}
+                                {cycleAdjustMode === "move"
+                                  ? "没有需求留在原方向下，确认后整体移动。"
+                                  : "仍有需求留在原方向下，确认后复制继承方向。"}
                               </span>
                             </div>
 
@@ -8150,61 +8295,61 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               <button
                                 type="button"
                                 onClick={() => applyCycleAdjustment(s)}
+                                disabled={!cycleAdjustTargetWeekRange}
                                 className="inline-flex h-8 items-center rounded-xl border border-slate-800 bg-slate-800 px-3 text-[11px] font-black text-white shadow-sm shadow-slate-900/15 transition-all hover:bg-slate-900"
                               >
-                                {isScheduleFullyUnstarted ? "移动方向" : "创建继承方向"}
+                                {cycleAdjustMode === "move" ? "移动方向" : "复制方向"}
                               </button>
                             </div>
                           </div>
 
-                          {!isScheduleFullyUnstarted && (
-                            <div className="mt-3 flex flex-col gap-2 border-t border-amber-100 pt-3 md:flex-row md:items-center">
-                              <div className="flex shrink-0 items-center justify-between gap-2 md:w-auto">
-                                <span className="text-[10px] font-black text-slate-400">
-                                  带走需求
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setCycleAdjustRequirementIds(
-                                      cycleAdjustCandidates.map((req) => req.id),
-                                    )
-                                  }
-                                  className="text-[10px] font-black text-emerald-600 hover:text-emerald-700"
-                                >
-                                  全选未完成
-                                </button>
-                              </div>
-                              <div className="flex flex-1 flex-wrap gap-2">
-                                {cycleAdjustCandidates.map((req) => {
-                                  const checked = cycleAdjustRequirementIds.includes(req.id);
-                                  return (
-                                    <button
-                                      key={req.id}
-                                      type="button"
-                                      onClick={() => toggleCycleAdjustRequirement(req.id)}
-                                      className={`inline-flex h-8 items-center gap-2 rounded-xl border px-3 text-[11px] font-black transition-all ${
-                                        checked
-                                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                          : "border-slate-150 bg-white/60 text-slate-500 hover:bg-white"
-                                      }`}
-                                    >
-                                      <DropdownCheckbox
-                                        checked={checked}
-                                        className="h-3.5 w-3.5"
-                                      />
-                                      {req.id}
-                                    </button>
-                                  );
-                                })}
-                                {cycleAdjustCandidates.length === 0 && (
-                                  <span className="text-[11px] font-bold text-slate-400">
-                                    没有可调整的未完成需求
-                                  </span>
-                                )}
-                              </div>
+                          <div className="mt-3 flex flex-col gap-2 border-t border-amber-100 pt-3 md:flex-row md:items-center">
+                            <div className="flex shrink-0 items-center justify-between gap-2 md:w-auto">
+                              <span className="text-[10px] font-black text-slate-400">
+                                跟随调整的未完成需求
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCycleAdjustRequirementIds(
+                                    cycleAdjustCandidates.map((req) => req.id),
+                                  )
+                                }
+                                disabled={cycleAdjustCandidates.length === 0}
+                                className="text-[10px] font-black text-emerald-600 hover:text-emerald-700 disabled:text-slate-300"
+                              >
+                                全选未完成
+                              </button>
                             </div>
-                          )}
+                            <div className="flex flex-1 flex-wrap gap-2">
+                              {cycleAdjustCandidates.map((req) => {
+                                const checked = cycleAdjustRequirementIds.includes(req.id);
+                                return (
+                                  <button
+                                    key={req.id}
+                                    type="button"
+                                    onClick={() => toggleCycleAdjustRequirement(req.id)}
+                                    className={`inline-flex h-8 items-center gap-2 rounded-xl border px-3 text-[11px] font-black transition-all ${
+                                      checked
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : "border-slate-150 bg-white/60 text-slate-500 hover:bg-white"
+                                    }`}
+                                  >
+                                    <DropdownCheckbox
+                                      checked={checked}
+                                      className="h-3.5 w-3.5"
+                                    />
+                                    {req.id}
+                                  </button>
+                                );
+                              })}
+                              {cycleAdjustCandidates.length === 0 && (
+                                <span className="text-[11px] font-bold text-slate-400">
+                                  没有未完成需求可重新挂靠；确认后只复制或移动方向本身
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -8276,8 +8421,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     ) : (
                       <div className="min-h-0 flex-1 overflow-auto no-scrollbar">
                         <table className="w-full min-w-[1360px] text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="sticky top-0 z-10 bg-slate-55 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 select-none shadow-[0_1px_0_rgba(226,232,240,0.9)]">
+                          <thead className="sticky top-0 z-30 bg-white shadow-[0_1px_0_rgba(226,232,240,0.95)]">
+                            <tr className="border-b border-slate-100 bg-white text-[10px] font-black uppercase text-slate-400 select-none [&>th]:bg-white">
                                 {isCycleAdjustOpen && (
                                   <th className="px-3 py-3.5 pl-8 w-[72px] whitespace-nowrap">
                                     带走
@@ -8293,7 +8438,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 	                              <th className="px-3 py-3.5 text-center w-[128px] whitespace-nowrap">制作人员</th>
 	                              <th className="px-3 py-3.5 text-center w-[138px] whitespace-nowrap">投放渠道</th>
 	                              <th className="px-3 py-3.5 text-center w-[148px] whitespace-nowrap">制作提交</th>
-	                              <th className="px-3 py-3.5 text-center w-[136px] whitespace-nowrap">需求状态</th>
+	                              <th className="px-3 py-3.5 text-center w-[104px] whitespace-nowrap">需求状态</th>
 	                              <th className="px-3 py-3.5 text-center w-[112px] whitespace-nowrap">制作状态</th>
 	                              <th className="px-3 py-3.5 text-center w-[120px] whitespace-nowrap">
 	                                投放状态
@@ -8395,23 +8540,22 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <div className="flex justify-center">
-                                    <select
-                                      value={req.priority}
-                                      onChange={(e) =>
+                                    {renderRequirementInlineDropdown<RequirementPriority>({
+                                      menuKey: `${req.id}:priority`,
+                                      value: req.priority,
+                                      options: [
+                                        { value: "Low", label: "低" },
+                                        { value: "Mid", label: "中" },
+                                        { value: "High", label: "高" },
+                                        { value: "Highest", label: "最高" },
+                                      ],
+                                      onSelect: (value) =>
                                         updateRequirement(req.id, {
-                                          priority: e.target
-                                            .value as RequirementPriority,
-                                        })
-                                      }
-                                      className={`w-24 whitespace-nowrap px-2 py-1 rounded-lg text-[10px] font-bold focus:ring-0 border border-transparent hover:border-slate-200 cursor-pointer text-center transition-all ${getPriorityStyle(req.priority)}`}
-                                    >
-                                      <option value="Low">低</option>
-                                      <option value="Mid">中</option>
-                                      <option value="High">高</option>
-                                      <option value="Highest">
-                                        最高
-                                      </option>
-                                    </select>
+                                          priority: value,
+                                        }),
+                                      triggerClassName: `h-7 w-24 rounded-lg border border-transparent px-2 text-[10px] font-bold hover:border-slate-200 ${getPriorityStyle(req.priority)}`,
+                                      panelClassName: "w-32",
+                                    })}
                                   </div>
                                 </td>
 
@@ -8450,27 +8594,22 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   className="px-3 py-3.5"
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  <select
-                                    value={req.reqStatus}
-                                    onChange={(e) =>
+                                  {renderRequirementInlineDropdown<RequirementReqStatus>({
+                                    menuKey: `${req.id}:reqStatus`,
+                                    value: req.reqStatus,
+                                    options: [
+                                      { value: "Draft", label: "草稿" },
+                                      { value: "Pending", label: "待审核" },
+                                      { value: "Approved", label: "审核通过" },
+                                      { value: "Modification", label: "需求修改" },
+                                    ],
+                                    onSelect: (value) =>
                                       updateRequirement(req.id, {
-                                        reqStatus: e.target
-                                          .value as RequirementReqStatus,
-                                      })
-                                    }
-                                    className={`min-w-[128px] whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-black cursor-pointer border-none shadow-3xs ${getStatusStyle(req.reqStatus)}`}
-                                  >
-	                                    <option value="Draft">草稿</option>
-	                                    <option value="Pending">
-	                                      待审核
-	                                    </option>
-	                                    <option value="Approved">
-	                                      审核通过
-	                                    </option>
-	                                    <option value="Modification">
-	                                      需求修改
-	                                    </option>
-                                  </select>
+                                        reqStatus: value,
+                                      }),
+                                    triggerClassName: `h-7 min-w-[92px] rounded-full border border-transparent px-2.5 text-[10px] font-black ${getStatusStyle(req.reqStatus)}`,
+                                    panelClassName: "w-36",
+                                  })}
                                 </td>
 
                                 {/* prodStatus */}
@@ -8478,23 +8617,22 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   className="px-3 py-3.5"
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  <select
-                                    value={req.prodStatus}
-                                    onChange={(e) =>
+                                  {renderRequirementInlineDropdown<RequirementProdStatus>({
+                                    menuKey: `${req.id}:prodStatus`,
+                                    value: req.prodStatus,
+                                    options: [
+                                      { value: "Unscheduled", label: "未排期" },
+                                      { value: "Scheduled", label: "已排期" },
+                                      { value: "InProgress", label: "进行中" },
+                                      { value: "Completed", label: "已完成" },
+                                    ],
+                                    onSelect: (value) =>
                                       updateRequirement(req.id, {
-                                        prodStatus: e.target
-                                          .value as RequirementProdStatus,
-                                      })
-                                    }
-	                                    className={`min-w-[82px] whitespace-nowrap px-2 py-1 border rounded-lg text-[10px] font-bold focus:ring-1 focus:ring-slate-150 cursor-pointer tracking-tight transition-all ${getProdStatusStyle(req.prodStatus)}`}
-	                                  >
-                                      <option value="Unscheduled">未排期</option>
-	                                    <option value="Scheduled">已排期</option>
-	                                    <option value="InProgress">
-	                                      进行中
-	                                    </option>
-	                                    <option value="Completed">已完成</option>
-	                                  </select>
+                                        prodStatus: value,
+                                      }),
+                                    triggerClassName: `h-7 min-w-[82px] rounded-lg border px-2 text-[10px] font-bold tracking-tight ${getProdStatusStyle(req.prodStatus)}`,
+                                    panelClassName: "w-32",
+                                  })}
                                 </td>
 
                                 {/* Delivery Play/Pause */}
