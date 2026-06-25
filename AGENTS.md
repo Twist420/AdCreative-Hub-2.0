@@ -17,6 +17,7 @@
 - 新功能优先补齐 `types.ts` 中的数据结构，再接入页面组件和服务层。
 - UI 保持偏业务后台风格：信息密度适中、状态清楚、操作路径短。
 - UI 相关开发必须先参考 `components/UiSpecification.tsx` 中的“规范画布”，按其中的视觉原子、空间栅格、控件状态、媒体比例和组件代码模式实现。
+- 修改需求中心时先阅读 `docs/requirement-center-module-map.md`，按页面-模块职责定位文件，避免把已拆出的逻辑重新堆回 `components/RequirementCenter.tsx`。
 - 涉及需求详情的“需求脚本”工作台时，必须先阅读 `docs/requirement-script-workbench-guidelines.md`，保持视频模板页签、需求参考、CTA/落版和版本信息的统一产品规则。
 - 不把密钥、真实客户数据、投放账号数据提交进仓库；本地密钥放在 `.env.local`。
 - 不提交 `node_modules`、`dist`、`.npm-cache`、`.DS_Store`。
