@@ -205,6 +205,14 @@ export interface CreativeSchedule {
   requirementEnd: string;
   productionEnd: string;
   validationGoal?: string;
+  directionTags?: string[];
+  inheritedFromScheduleId?: string;
+  inheritedToScheduleIds?: string[];
+  inheritanceLabel?: string;
+  rolloverStatus?: 'None' | 'PartialCompleted' | 'CarriedOver' | 'Closed' | 'Deferred' | 'Observing';
+  closePermissionRole?: 'Owner' | 'Lead' | 'Admin';
+  closeReason?: string;
+  decisionNote?: string;
   broadDirection?: '3D玩法' | '大字报' | '原始玩法';
   materialStage?: '新' | '老' | '迭';
   channels?: string[];
@@ -226,6 +234,11 @@ export interface Requirement {
   id: string;
   parentId?: string; 
   scheduleId?: string; 
+  inheritedFromScheduleId?: string;
+  currentScheduleId?: string;
+  rolloverStatus?: 'None' | 'CarriedOver' | 'Dropped' | 'Closed';
+  deliverySetId?: string;
+  doNotProduceReason?: string;
   sourceRequirementId?: string;
   sourceRequirementIds?: string[];
   createMode?: 'New' | 'LocalizedFromExisting';
@@ -279,6 +292,21 @@ export interface Requirement {
   parentRequirementId?: string;
   masterVersion?: string;
   script?: string;
+}
+
+export interface DeliverySet {
+  id: string;
+  scheduleId: string;
+  inheritedFromScheduleId?: string;
+  scheduleIds: string[];
+  requirementIds: string[];
+  status: 'Draft' | 'Confirmed' | 'Uploaded' | 'Delivering' | 'Paused';
+  channel: string;
+  setName: string;
+  createdBy: string;
+  createdAt: string;
+  confirmedAt?: string;
+  externalSetId?: string;
 }
 
 export interface PerformanceData {

@@ -70,38 +70,65 @@ export const generateSchedules = (): CreativeSchedule[] => {
   const forms: CreativeForm[] = ['Video', 'Playable', 'Image'];
   const scenarios: CreativeScenario[] = ['Standard', 'Localized', 'ASO'];
   const types: CreativeDirectionType[] = ['Original-Gameplay', 'Original-Hook', 'Scaling-Iteration'];
+  const scheduleWeeks = [
+    { range: '2026-06-24 ~ 2026-07-01', start: '2026-06-24', end: '2026-07-01', count: 3 },
+    { range: '2026-06-17 ~ 2026-06-24', start: '2026-06-17', end: '2026-06-24', count: 3 },
+    { range: '2026-06-10 ~ 2026-06-17', start: '2026-06-10', end: '2026-06-17', count: 3 },
+    { range: '2026-06-03 ~ 2026-06-10', start: '2026-06-03', end: '2026-06-10', count: 2 },
+    { range: '2026-05-27 ~ 2026-06-03', start: '2026-05-27', end: '2026-06-03', count: 2 },
+    { range: '2026-05-20 ~ 2026-05-27', start: '2026-05-20', end: '2026-05-27', count: 2 },
+    { range: '2026-05-13 ~ 2026-05-20', start: '2026-05-13', end: '2026-05-20', count: 2 },
+    { range: '2026-05-06 ~ 2026-05-13', start: '2026-05-06', end: '2026-05-13', count: 1 },
+    { range: '2026-04-29 ~ 2026-05-06', start: '2026-04-29', end: '2026-05-06', count: 1 },
+    { range: '2026-04-22 ~ 2026-04-29', start: '2026-04-22', end: '2026-04-29', count: 1 },
+  ].flatMap((week) => Array.from({ length: week.count }, () => week));
 
-  return Array.from({ length: 15 }).map((_, i) => {
+  return scheduleWeeks.map((week, i) => {
     const totalRequiredCount = 4 + Math.floor(rng() * 6);
     const submittedCount = Math.floor(rng() * totalRequiredCount);
     const directionText = ['展示新玩法', '角色互动', '场景融合', '吸量大字报', '3D剧情'][i % 5];
+    const directionTagPresets = [
+      ['新玩法', '机制验证'],
+      ['角色', '互动'],
+      ['场景', '融合'],
+      ['大字报', '转化'],
+      ['3D', '剧情'],
+    ];
     const formVal = forms[i % forms.length];
-    
-    // Distribute among 4 distinct week ranges to show more schedule periods
-    let weekRange = "2026-05-12 ~ 2026-05-19";
-    let reqStart = "2026-05-12";
-    let reqEnd = "2026-05-19";
-    
-    if (i < 4) {
-      weekRange = "2026-05-05 ~ 2026-05-12";
-      reqStart = "2026-05-05";
-      reqEnd = "2026-05-12";
-    } else if (i < 8) {
-      weekRange = "2026-05-12 ~ 2026-05-19";
-      reqStart = "2026-05-12";
-      reqEnd = "2026-05-19";
-    } else if (i < 12) {
-      weekRange = "2026-05-19 ~ 2026-05-26";
-      reqStart = "2026-05-19";
-      reqEnd = "2026-05-26";
-    } else {
-      weekRange = "2026-05-26 ~ 2026-06-02";
-      reqStart = "2026-05-26";
-      reqEnd = "2026-06-02";
-    }
+    const weekRange = week.range;
+    const reqStart = week.start;
+    const reqEnd = week.end;
+
+    const scheduleId = `sched-${i}`;
+    const rolloverMeta: Partial<CreativeSchedule> =
+      i === 12
+        ? {
+            inheritedFromScheduleId: 'sched-2',
+            inheritanceLabel: '继承自 2026-06-17 ~ 2026-06-24',
+            rolloverStatus: 'CarriedOver',
+            decisionNote: '延续场景融合方向，优先收口未完成素材。',
+          }
+        : i === 2
+          ? {
+              inheritedToScheduleIds: ['sched-12'],
+              rolloverStatus: 'PartialCompleted',
+              decisionNote: '部分素材结转到 2026-06-03 周期继续推进。',
+            }
+          : i === 16
+            ? {
+                rolloverStatus: 'Deferred',
+                decisionNote: '等待新素材素材包后恢复。',
+              }
+            : i === 17
+              ? {
+                  rolloverStatus: 'Closed',
+                  closePermissionRole: 'Owner',
+                  closeReason: '方向验证价值不足，本周期关闭。',
+                }
+              : { rolloverStatus: 'None' };
 
     return {
-      id: `sched-${i}`,
+      id: scheduleId,
       weekRange,
       directionName: `方向${i + 1}: ${directionText}`,
       priority: priorities[Math.floor(rng() * priorities.length)],
@@ -115,14 +142,16 @@ export const generateSchedules = (): CreativeSchedule[] => {
       owner: owners[Math.floor(rng() * owners.length)],
       requirementStart: reqStart,
       requirementEnd: reqEnd,
-      productionEnd: '2026-05-26',
+      productionEnd: reqEnd,
       validationGoal: `验证${directionText}转化表现与Cvr`,
+      directionTags: directionTagPresets[i % directionTagPresets.length],
       broadDirection: (i % 5 === 3 ? '大字报' : i % 5 === 4 ? '3D玩法' : '原始玩法') as any,
       materialStage: (i % 3 === 0 ? '新' : i % 3 === 1 ? '老' : '迭') as any,
       channels: [i % 2 === 0 ? 'all' : 'fb'],
       campaign: `global_android_cam_${100 + i}`,
       submissionDeadline: reqEnd,
-      acceptanceDate: reqStart
+      acceptanceDate: reqStart,
+      ...rolloverMeta,
     };
   });
 };
@@ -132,7 +161,7 @@ export const generateRequirements = (): Requirement[] => {
   const schedules = generateSchedules();
   const reqStatuses: RequirementReqStatus[] = ['Approved', 'Pending', 'Draft', 'Modification'];
   const prodStatuses: RequirementProdStatus[] = ['Scheduled', 'InProgress', 'Completed'];
-  const deliveryStatuses: RequirementDeliveryStatus[] = ['Delivering', 'Paused'];
+  const deliveryStatuses: RequirementDeliveryStatus[] = ['NotLaunched', 'Delivering', 'Paused'];
   const priorities: RequirementPriority[] = ['Low', 'Mid', 'High', 'Highest'];
   const creators = ['唐欣怡', '吉意煊', '马嘉良'];
   const producers = ['张欢', '吴楠', '曲冬丽', '刘洋', '孙崇洋', '张永进'];
@@ -142,34 +171,59 @@ export const generateRequirements = (): Requirement[] => {
   const channels = ['all', 'apl', 'fb', 'uac'];
   const testStatuses: ('待测试' | '测试中' | '数据合格' | '不达标')[] = ['待测试', '测试中', '数据合格', '不达标'];
 
-  return Array.from({ length: 18 }).map((_, i) => {
-    const idNum = 3376 - i;
-    const subId = i % 3 === 0 ? '02' : '01';
-    const typeVal: CreativeForm = i % 3 === 0 ? 'Playable' : i % 3 === 1 ? 'Video' : 'Image';
+  const buildRequirement = ({
+    index,
+    assetIndex,
+    assetVersion,
+    scheduleId,
+    parentId,
+  }: {
+    index: number;
+    assetIndex: number;
+    assetVersion: string;
+    scheduleId: string;
+    parentId?: string;
+  }): Requirement => {
+    const typeVal: CreativeForm = index % 3 === 0 ? 'Playable' : index % 3 === 1 ? 'Video' : 'Image';
     const producerStart = Math.floor(rng() * producers.length);
     const productionPersonnel = Array.from(
       new Set([
         producers[producerStart],
-        ...(i % 4 === 0 ? [producers[(producerStart + 1) % producers.length]] : []),
-        ...(i % 7 === 0 ? [producers[(producerStart + 2) % producers.length]] : []),
+        ...(index % 4 === 0 ? [producers[(producerStart + 1) % producers.length]] : []),
+        ...(index % 7 === 0 ? [producers[(producerStart + 2) % producers.length]] : []),
       ]),
     );
     const channelStart = Math.floor(rng() * channels.length);
     const syncedChannels = Array.from(
       new Set([
         channels[channelStart],
-        ...(i % 3 === 0 ? [channels[(channelStart + 1) % channels.length]] : []),
-        ...(i % 5 === 0 ? [channels[(channelStart + 2) % channels.length]] : []),
+        ...(index % 3 === 0 ? [channels[(channelStart + 1) % channels.length]] : []),
+        ...(index % 5 === 0 ? [channels[(channelStart + 2) % channels.length]] : []),
       ]),
     );
+    const prodStatus: RequirementProdStatus =
+      scheduleId === 'sched-14'
+        ? 'Completed'
+        : scheduleId === 'sched-12'
+          ? (index % 5 === 0 ? 'Completed' : index % 2 === 0 ? 'InProgress' : 'Scheduled')
+          : prodStatuses[Math.floor(rng() * prodStatuses.length)];
+    const deliveryStatus: RequirementDeliveryStatus =
+      prodStatus === 'Completed'
+        ? scheduleId === 'sched-14'
+          ? 'NotLaunched'
+          : deliveryStatuses[Math.floor(rng() * deliveryStatuses.length)]
+        : 'NotLaunched';
+
     return {
-      id: `cp${idNum}-${subId}`,
-      name: i % 2 === 0 ? '新玩法A段神好奇物合' : '精灵王子变 (蛇)',
+      id: `cp${assetIndex}-${assetVersion}`,
+      parentId,
+      parentRequirementId: parentId,
+      name: index % 2 === 0 ? '新玩法A段神好奇物合' : '精灵王子变 (蛇)',
       assetType: typeVal,
-      assetIndex: idNum,
-      assetVersion: subId,
+      assetIndex,
+      assetVersion,
       projectName: 'Panthia',
-      previews: [`https://picsum.photos/100/100?random=${i}`, `https://picsum.photos/100/100?random=${i+100}`],
+      previews: [`https://picsum.photos/100/100?random=${index}`, `https://picsum.photos/100/100?random=${index+100}`],
       broadDirection: broadDirections[Math.floor(rng() * broadDirections.length)],
       materialStage: materialStages[Math.floor(rng() * materialStages.length)],
       creativePersonnel: creators[Math.floor(rng() * creators.length)],
@@ -180,7 +234,7 @@ export const generateRequirements = (): Requirement[] => {
       dimensions: ['9:16'],
       testStatus: typeVal === 'Playable' ? testStatuses[Math.floor(rng() * testStatuses.length)] : undefined,
       
-      duration: i % 4 === 0 ? '0:48' : '0:36',
+      duration: index % 4 === 0 ? '0:48' : '0:36',
       goal: '新玩法A段神奇动物合',
       template: 'A+B',
       has3DPlot: rng() > 0.5,
@@ -188,17 +242,63 @@ export const generateRequirements = (): Requirement[] => {
       owner: creators[Math.floor(rng() * creators.length)],
       
       priority: priorities[Math.floor(rng() * priorities.length)],
-      scheduleId: schedules[Math.floor(rng() * schedules.length)].id,
+      scheduleId,
       reqStatus: reqStatuses[Math.floor(rng() * reqStatuses.length)],
-      prodStatus: prodStatuses[Math.floor(rng() * prodStatuses.length)],
-      deliveryStatus: deliveryStatuses[Math.floor(rng() * deliveryStatuses.length)],
+      prodStatus,
+      deliveryStatus,
       status: 'Approved',
       rating: Math.floor(rng() * 3),
       createdAt: '2025-12-16 16:43:47',
-      completedAt: i % 3 === 0 ? '2025-12-20 10:30:00' : undefined,
+      completedAt: index % 3 === 0 ? '2025-12-20 10:30:00' : undefined,
+      startDate: index % 4 === 0 ? '2026-06-22' : index % 4 === 1 ? '2026-06-23' : '2026-06-24',
+      endDate: index % 6 === 0 ? '2026-06-23' : index % 5 === 0 ? '2026-06-24' : index % 4 === 0 ? '2026-06-25' : '2026-06-30',
       description: '在仙子举牌里播放地面钥匙组合，从第19秒开始，配合仙子说卖点，接重大通知'
     };
+  };
+
+  const sched12VersionPlan = [
+    { assetIndex: 3376, versions: ['01', '02', '03', '04'] },
+    { assetIndex: 3375, versions: ['01', '02', '03'] },
+    { assetIndex: 3374, versions: ['01', '02', '03'] },
+    { assetIndex: 3373, versions: ['01', '02', '03', '04'] },
+    { assetIndex: 3372, versions: ['01', '02', '03'] },
+    { assetIndex: 3371, versions: ['01', '02', '03'] },
+  ];
+  let directionRequirementsSeedIndex = 0;
+  const directionRequirements = sched12VersionPlan.flatMap((group) =>
+    group.versions.map((version) => {
+      const parentId = version === '01' ? undefined : `cp${group.assetIndex}-01`;
+      return buildRequirement({
+        index: directionRequirementsSeedIndex++,
+        assetIndex: group.assetIndex,
+        assetVersion: version,
+        scheduleId: 'sched-12',
+        parentId,
+      });
+    }),
+  );
+
+  const otherRequirements = Array.from({ length: 18 }).map((_, i) => {
+    const fallbackSchedules = schedules.filter((schedule) => schedule.id !== 'sched-12');
+    const scheduleId =
+      i <= 2
+        ? 'sched-2'
+        : i <= 4
+          ? 'sched-14'
+          : i === 5
+            ? 'sched-4'
+            : i === 6
+              ? 'sched-5'
+              : fallbackSchedules[Math.floor(rng() * fallbackSchedules.length)].id;
+    return buildRequirement({
+      index: i + directionRequirements.length,
+      assetIndex: 3368 - i,
+      assetVersion: '01',
+      scheduleId,
+    });
   });
+
+  return [...directionRequirements, ...otherRequirements];
 };
 
 export const generateFinishedCreativePerformance = (

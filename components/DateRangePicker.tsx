@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  X,
 } from "lucide-react";
 
 interface DateRangePickerProps {
@@ -138,6 +139,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const panelMaxHeight = compact ? "max-h-[500px]" : "max-h-[620px]";
   const monthHeaderHeight = compact ? "h-11" : "h-14";
   const dayCellHeight = compact ? "h-7 text-xs" : "h-9 text-sm";
+  const hasValue = Boolean(start || end);
 
   useEffect(() => {
     setDraftStart(start);
@@ -209,10 +211,10 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
         className={`inline-flex w-full min-w-0 items-center gap-2 rounded-xl border px-3 text-left font-black shadow-3xs transition-all ${
           compact ? "h-9 text-[10px]" : "h-11 text-xs"
         } ${
-          start || end
+          hasValue
             ? "border-indigo-200 bg-indigo-50 text-indigo-700"
             : "border-slate-150 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white"
-        } ${buttonClassName}`}
+        } ${hasValue ? "pr-8" : ""} ${buttonClassName}`}
       >
         <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />
         {label && (
@@ -224,6 +226,24 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
           {summary}
         </span>
       </button>
+      {hasValue && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setDraftStart("");
+            setDraftEnd("");
+            onChange({ start: "", end: "" });
+            setOpen(false);
+          }}
+          className={`absolute right-2 top-1/2 z-10 flex -translate-y-1/2 items-center justify-center rounded-lg text-indigo-400 transition-all hover:bg-white/80 hover:text-rose-500 ${
+            compact ? "h-5 w-5" : "h-6 w-6"
+          }`}
+          aria-label="清除时间范围"
+        >
+          <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+        </button>
+      )}
 
       {open && (
         <div

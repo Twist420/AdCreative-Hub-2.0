@@ -13,6 +13,7 @@ import {
   CreativeDirectionType,
   FinishedCreativePerformance,
   AssetVersionItem,
+  DeliverySet,
   CHANNELS,
 } from "../types";
 import {
@@ -48,18 +49,22 @@ import {
   Play,
   Pause,
   Hammer,
+  Check,
   CheckCircle,
   Calendar,
   ClipboardList,
+  Info,
   PlusCircle,
   Upload,
   Target,
+  Hash,
   Compass,
   Award,
   Activity,
   Eye,
   Radio,
   Users,
+  Tag,
 } from "lucide-react";
 import RequirementDetail from "./RequirementDetail";
 import MaterialUpload from "./MaterialUpload";
@@ -179,7 +184,7 @@ const PersonAvatarStack: React.FC<{
         <span className="max-w-[56px] truncate text-[10px] font-extrabold text-slate-600">
           {names[0]}
         </span>
-        <span className="pointer-events-none absolute left-1/2 top-full z-[120] mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-lg group-hover/person:block">
+        <span className="pointer-events-none absolute bottom-full left-1/2 z-[260] mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-xl group-hover/person:block">
           {names[0]}
         </span>
       </span>
@@ -204,7 +209,7 @@ const PersonAvatarStack: React.FC<{
           +{names.length - visibleNames.length}
         </span>
       )}
-      <span className="pointer-events-none absolute left-1/2 top-full z-[120] mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-lg group-hover/person:block">
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-[260] mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-700 shadow-xl group-hover/person:block">
         {names.join("、")}
       </span>
     </div>
@@ -555,6 +560,69 @@ const getDateRangeDays = (startDate: string, endDate: string) => {
   return Math.max(1, Math.round((endTime - startTime) / 86400000) + 1);
 };
 
+const getSubmitTimeBadge = (submitDate: string, todayDate: string) => {
+  const submitTime = parseDateValue(submitDate);
+  const todayTime = parseDateValue(todayDate);
+  if (submitTime === null || todayTime === null) return null;
+  const diffDays = Math.round((submitTime - todayTime) / 86400000);
+  if (diffDays < 0) {
+    return {
+      label: "延期",
+      className: "border-rose-100 bg-rose-50 text-rose-600",
+    };
+  }
+  if (diffDays <= 1) {
+    return {
+      label: "1天内",
+      className: "border-amber-100 bg-amber-50 text-amber-700",
+    };
+  }
+  return null;
+};
+
+const formatCompactDate = (date: string) => date.replaceAll("-", "/");
+
+const ProductionSubmitDateDisplay = ({
+  date,
+  badge,
+}: {
+  date: string;
+  badge: ReturnType<typeof getSubmitTimeBadge>;
+}) => (
+  <div className="flex justify-center">
+    <div className="relative inline-flex h-9 min-w-[118px] items-center justify-center rounded-xl border border-slate-150 bg-white px-3 pr-9 text-[12px] font-black text-slate-800 shadow-3xs transition-all group-hover:border-indigo-150">
+      <span className="whitespace-nowrap">{date ? formatCompactDate(date) : "-"}</span>
+      <Calendar className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" />
+      {badge && (
+        <span
+          className={`absolute -right-2 -top-2 inline-flex h-5 items-center rounded-full border bg-white px-1.5 text-[9px] font-black shadow-3xs ${badge.className}`}
+        >
+          {badge.label}
+        </span>
+      )}
+    </div>
+  </div>
+);
+
+const WeekRangeRuleInfo = ({ className = "" }: { className?: string }) => (
+  <span
+    className={`group/rule relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-all hover:bg-white/70 hover:text-indigo-500 ${className}`}
+    onClick={(event) => event.stopPropagation()}
+    role="button"
+    aria-label="查看周期显示规则"
+  >
+    <Info className="h-3.5 w-3.5" />
+    <span className="pointer-events-none absolute left-1/2 top-full z-[180] mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-slate-150 bg-white p-3 text-left text-[10px] font-bold leading-relaxed text-slate-500 shadow-2xl shadow-slate-900/10 group-hover/rule:block">
+      <span className="block text-[11px] font-black text-slate-800">周期显示规则</span>
+      <span className="mt-2 block">橙色框：未来周期</span>
+      <span className="block">绿色框：当前周期</span>
+      <span className="block">灰色框：过去周期</span>
+      <span className="mt-1 block pl-3 text-slate-400">- 灰色点：过去周期所有方向已完成</span>
+      <span className="block pl-3 text-slate-400">- 红色点：过去周期存在方向未完成</span>
+    </span>
+  </span>
+);
+
 const addDaysToDateString = (dateStr: string, days: number) => {
   const base = new Date(`${dateStr}T00:00:00`);
   if (Number.isNaN(base.getTime())) return dateStr;
@@ -567,29 +635,41 @@ const DEFAULT_WEEK_RANGE_COUNT = 20;
 const getDefaultWeekRanges = (
   ranges: string[],
   count: number = DEFAULT_WEEK_RANGE_COUNT,
+  baseDate: string = formatCalendarDate(new Date()),
 ) => {
   const sortedRanges = [...ranges].sort((a, b) => {
     const aRange = parseWeekRangeDates(a);
     const bRange = parseWeekRangeDates(b);
     return bRange.endTime - aRange.endTime || bRange.startTime - aRange.startTime;
   });
-  const latestRange =
-    sortedRanges[0] ||
-    `${formatCalendarDate(new Date())} ~ ${addDaysToDateString(formatCalendarDate(new Date()), 7)}`;
-  let { start, end } = parseWeekRangeDates(latestRange);
+  const baseTime = parseDateValue(baseDate) ?? Date.now();
+  const existingCurrentRange =
+    sortedRanges.find((range) => {
+      const { startTime, endTime } = parseWeekRangeDates(range);
+      return baseTime >= startTime && baseTime < endTime;
+    }) || sortedRanges[0];
+  const fallbackCurrentStart = baseDate;
+  const fallbackCurrentEnd = addDaysToDateString(fallbackCurrentStart, 7);
+  const { start: currentStart, end: currentEnd } = existingCurrentRange
+    ? parseWeekRangeDates(existingCurrentRange)
+    : { start: fallbackCurrentStart, end: fallbackCurrentEnd };
   const generatedRanges: string[] = [];
 
-  while (generatedRanges.length < count) {
-    generatedRanges.push(`${start} ~ ${end}`);
-    end = start;
-    start = addDaysToDateString(start, -7);
+  generatedRanges.push(`${currentStart} ~ ${currentEnd}`);
+  for (let i = 1; i <= 4; i += 1) {
+    const start = addDaysToDateString(currentStart, i * 7);
+    generatedRanges.push(`${start} ~ ${addDaysToDateString(start, 7)}`);
+  }
+  for (let i = 1; generatedRanges.length < count; i += 1) {
+    const start = addDaysToDateString(currentStart, -i * 7);
+    generatedRanges.push(`${start} ~ ${addDaysToDateString(start, 7)}`);
   }
 
   return Array.from(new Set([...sortedRanges, ...generatedRanges]))
     .sort((a, b) => {
       const aRange = parseWeekRangeDates(a);
       const bRange = parseWeekRangeDates(b);
-      return bRange.endTime - aRange.endTime || bRange.startTime - aRange.startTime;
+      return bRange.startTime - aRange.startTime || bRange.endTime - aRange.endTime;
     })
     .slice(0, Math.max(count, sortedRanges.length));
 };
@@ -646,6 +726,150 @@ const INITIAL_REQUIREMENT_FILTERS = {
 
 const FILTER_ALL = "全部";
 const FILTER_SEPARATOR = "|";
+
+type ScheduleDerivedRolloverStatus =
+  | "进行中"
+  | "部分完成"
+  | "完全未开始"
+  | "全部完成且未投放"
+  | "已投放"
+  | "已关闭"
+  | "暂缓";
+
+type WeekRangeVisualTone =
+  | "current"
+  | "future"
+  | "past"
+  | "pastUnfinished";
+
+type CoordinatedFlexibleFilterField =
+  | "priority"
+  | "materialStage"
+  | "productionPersonnel"
+  | "scenario"
+  | "channels"
+  | "reqStatus"
+  | "productionProgress"
+  | "deliveryStatus"
+  | "language";
+
+type CoordinatedFlexibleFilterOperator =
+  | "equals"
+  | "notEquals"
+  | "contains"
+  | "notContains"
+  | "isEmpty"
+  | "isNotEmpty";
+
+type CoordinatedFlexibleFilter = {
+  id: string;
+  field: CoordinatedFlexibleFilterField;
+  operator: CoordinatedFlexibleFilterOperator;
+  value: string;
+};
+
+const REQUIREMENT_LANGUAGE_OPTIONS = ["en", "de", "fr", "it", "jp", "kr", "tw", "es", "pt"];
+
+const COORDINATED_FLEXIBLE_FILTER_FIELDS: Array<{
+  key: CoordinatedFlexibleFilterField;
+  label: string;
+  options: string[];
+}> = [
+  {
+    key: "priority",
+    label: "优先级",
+    options: ["最高", "高", "中", "低"],
+  },
+  {
+    key: "materialStage",
+    label: "素材阶段",
+    options: ["新", "老", "迭"],
+  },
+  {
+    key: "productionPersonnel",
+    label: "制作人员",
+    options: PRODUCERS.filter((producer) => producer.status === "在职").map(
+      (producer) => producer.name,
+    ),
+  },
+  {
+    key: "scenario",
+    label: "场景",
+    options: ["通投", "本地化", "ASO"],
+  },
+  {
+    key: "channels",
+    label: "渠道",
+    options: CHANNELS.map((channel) => channel.id),
+  },
+  {
+    key: "reqStatus",
+    label: "需求提交状态",
+    options: ["草稿", "待审核", "审核通过", "需求修改"],
+  },
+  {
+    key: "productionProgress",
+    label: "制作完成进度",
+    options: ["完全未开始", "进行中", "部分完成", "已完成"],
+  },
+  {
+    key: "deliveryStatus",
+    label: "投放状态",
+    options: ["未投放", "投放中", "已暂停"],
+  },
+  {
+    key: "language",
+    label: "语言",
+    options: REQUIREMENT_LANGUAGE_OPTIONS,
+  },
+];
+
+const COORDINATED_FLEXIBLE_FILTER_OPERATORS: Array<{
+  key: CoordinatedFlexibleFilterOperator;
+  label: string;
+}> = [
+  { key: "equals", label: "等于" },
+  { key: "notEquals", label: "不等于" },
+  { key: "contains", label: "包含" },
+  { key: "notContains", label: "不包含" },
+  { key: "isEmpty", label: "为空" },
+  { key: "isNotEmpty", label: "不为空" },
+];
+
+const createCoordinatedFlexibleFilter = (): CoordinatedFlexibleFilter => ({
+  id: `condition-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  field: "priority",
+  operator: "equals",
+  value: "高",
+});
+
+const FILTER_DROPDOWN_PANEL_CLASS =
+  "absolute left-0 top-full z-[120] mt-2 w-52 rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10";
+const FILTER_DROPDOWN_ACTIVE_CLASS = "bg-indigo-50 text-indigo-700";
+const FILTER_DROPDOWN_IDLE_CLASS = "text-slate-600 hover:bg-slate-50";
+const FILTER_DROPDOWN_ALL_IDLE_CLASS = "text-slate-500 hover:bg-slate-50";
+
+const DropdownSelectedCheck = ({ className = "" }: { className?: string }) => (
+  <Check className={`h-4 w-4 shrink-0 stroke-[3] text-indigo-500 ${className}`} />
+);
+
+const DropdownCheckbox = ({
+  checked,
+  className = "",
+}: {
+  checked: boolean;
+  className?: string;
+}) => (
+  <span
+    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-all ${
+      checked
+        ? "border-indigo-500 bg-indigo-500 text-white"
+        : "border-slate-200 bg-white text-transparent"
+    } ${className}`}
+  >
+    <Check className="h-3 w-3 stroke-[3]" />
+  </span>
+);
 
 const decodeFilterValue = (value: string) =>
   !value || value === FILTER_ALL
@@ -710,9 +934,20 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   });
   const [openRequirementFilterKey, setOpenRequirementFilterKey] = useState<string | null>(null);
   const requirementFilterRef = useRef<HTMLDivElement>(null);
+  const [openCoordinatedFilterKey, setOpenCoordinatedFilterKey] = useState<string | null>(null);
+  const coordinatedFilterRef = useRef<HTMLDivElement>(null);
   const [schedules, setSchedules] =
     useState<CreativeSchedule[]>(generateSchedules());
   const todayDateString = formatCalendarDate(new Date());
+  const defaultDateRangeStart = useMemo(
+    () => addDaysToDateString(todayDateString, -90),
+    [todayDateString],
+  );
+  const defaultDateRangeEnd = todayDateString;
+  const [dateRangeStart, setDateRangeStart] = useState(() =>
+    addDaysToDateString(todayDateString, -90),
+  );
+  const [dateRangeEnd, setDateRangeEnd] = useState(() => todayDateString);
   const productionTasks = useMemo(
     () => requirements.flatMap(getScheduledTaskViews),
     [requirements],
@@ -721,6 +956,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     () => generateFinishedCreativePerformance(requirements),
     [requirements],
   );
+  const [deliverySets, setDeliverySets] = useState<DeliverySet[]>([]);
   const recentRequirementSpendMap = useMemo(() => {
     const sinceDate = addDaysToDateString(todayDateString, -30);
     return finishedCreativePerformance
@@ -838,19 +1074,69 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   };
 
   // Clean states for combined layout
-  const weekRanges = useMemo(() => {
+  const allWeekRanges = useMemo(() => {
     const ranges = Array.from(
       new Set(schedules.map((s) => s.weekRange)),
     ).filter(Boolean);
-    return getDefaultWeekRanges(ranges);
-  }, [schedules]);
+    return getDefaultWeekRanges(ranges, 24, todayDateString);
+  }, [schedules, todayDateString]);
 
-  const pinnedWeekRanges = useMemo(() => weekRanges.slice(0, 4), [weekRanges]);
-  const overflowWeekRanges = useMemo(() => weekRanges.slice(4), [weekRanges]);
+  const weekRanges = useMemo(() => {
+    return allWeekRanges;
+  }, [allWeekRanges]);
+
+  const orderedWeekRanges = useMemo(
+    () =>
+      [...allWeekRanges].sort((a, b) => {
+        const aRange = parseWeekRangeDates(a);
+        const bRange = parseWeekRangeDates(b);
+        return bRange.startTime - aRange.startTime || bRange.endTime - aRange.endTime;
+      }),
+    [allWeekRanges],
+  );
+
+  const futureWeekRanges = useMemo(() => {
+    const todayTime = parseDateValue(todayDateString) ?? Date.now();
+    return orderedWeekRanges.filter((range) => parseWeekRangeDates(range).startTime > todayTime);
+  }, [orderedWeekRanges, todayDateString]);
+
+  const pastWeekRanges = useMemo(() => {
+    const todayTime = parseDateValue(todayDateString) ?? Date.now();
+    return orderedWeekRanges.filter((range) => parseWeekRangeDates(range).endTime <= todayTime);
+  }, [orderedWeekRanges, todayDateString]);
+
+  const currentWeekRange = useMemo(() => {
+    const todayTime = parseDateValue(todayDateString) ?? Date.now();
+    return (
+      orderedWeekRanges.find((range) => {
+        const { startTime, endTime } = parseWeekRangeDates(range);
+        return todayTime >= startTime && todayTime < endTime;
+      }) ||
+      futureWeekRanges.at(-1) ||
+      orderedWeekRanges[0] ||
+      ""
+    );
+  }, [futureWeekRanges, orderedWeekRanges, todayDateString]);
+
+  const pinnedWeekRanges = useMemo(() => {
+    const nearestFutureRanges = [...futureWeekRanges].sort((a, b) => {
+      const aRange = parseWeekRangeDates(a);
+      const bRange = parseWeekRangeDates(b);
+      return aRange.startTime - bRange.startTime || aRange.endTime - bRange.endTime;
+    });
+    return [currentWeekRange, ...nearestFutureRanges.slice(0, 3)]
+      .filter((range): range is string => Boolean(range))
+      .filter((range, index, ranges) => ranges.indexOf(range) === index)
+      .sort((a, b) => {
+        const aRange = parseWeekRangeDates(a);
+        const bRange = parseWeekRangeDates(b);
+        return bRange.startTime - aRange.startTime || bRange.endTime - aRange.endTime;
+      });
+  }, [currentWeekRange, futureWeekRanges]);
 
   const weekStatusMap = useMemo(() => {
     const statusMap: Record<string, "completed" | "inprogress"> = {};
-    weekRanges.forEach((w) => {
+    allWeekRanges.forEach((w) => {
       const weekSchedules = schedules.filter((s) => s.weekRange === w);
       if (weekSchedules.length === 0) {
         statusMap[w] = "completed";
@@ -873,12 +1159,111 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         hasRequirements && allCompleted ? "completed" : "inprogress";
     });
     return statusMap;
-  }, [weekRanges, schedules, requirements]);
+  }, [allWeekRanges, schedules, requirements]);
+
+  const weekVisualMap = useMemo(() => {
+    const todayTime = parseDateValue(todayDateString) ?? Date.now();
+    const visualMap: Record<
+      string,
+      {
+        tone: WeekRangeVisualTone;
+        label: string;
+        dotClass: string;
+        buttonClass: string;
+        activeClass: string;
+        dropdownActiveClass: string;
+      }
+    > = {};
+
+    allWeekRanges.forEach((w) => {
+      const { startTime, endTime } = parseWeekRangeDates(w);
+      const weekSchedules = schedules.filter((s) => s.weekRange === w);
+      const weekScheduleIds = new Set(weekSchedules.map((s) => s.id));
+      const weekRequirements = requirements.filter((req) =>
+        weekScheduleIds.has(req.scheduleId),
+      );
+      const hasUnfinished =
+        weekRequirements.some((req) => req.prodStatus !== "Completed") ||
+        weekSchedules.some((s) => {
+          const existingCount = requirements.filter((req) => req.scheduleId === s.id).length;
+          return existingCount === 0 && (s.totalRequiredCount || 0) > 0;
+        });
+
+      let tone: WeekRangeVisualTone = "past";
+      if (todayTime >= startTime && todayTime < endTime) {
+        tone = "current";
+      } else if (startTime > todayTime) {
+        tone = "future";
+      } else if (hasUnfinished) {
+        tone = "pastUnfinished";
+      }
+
+      const meta: Record<
+        WeekRangeVisualTone,
+        {
+          label: string;
+          dotClass: string;
+          buttonClass: string;
+          activeClass: string;
+          dropdownActiveClass: string;
+        }
+      > = {
+        current: {
+          label: "当前周期",
+          dotClass: "bg-emerald-500 ring-4 ring-emerald-100",
+          buttonClass: "bg-emerald-50 text-emerald-700 border-emerald-150 hover:bg-emerald-100",
+          activeClass: "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/15",
+          dropdownActiveClass: "bg-emerald-50 text-emerald-700",
+        },
+        future: {
+          label: "未来周期",
+          dotClass: "bg-orange-400 ring-4 ring-orange-100",
+          buttonClass: "bg-orange-50 text-orange-700 border-orange-150 hover:bg-orange-100",
+          activeClass: "bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-500/15",
+          dropdownActiveClass: "bg-orange-50 text-orange-700",
+        },
+        past: {
+          label: "已完成周期",
+          dotClass: "bg-slate-300 ring-4 ring-slate-100",
+          buttonClass: "bg-slate-50 text-slate-500 border-slate-150 hover:bg-slate-100",
+          activeClass: "bg-slate-600 text-white border-slate-600 shadow-md shadow-slate-600/15",
+          dropdownActiveClass: "bg-slate-100 text-slate-600",
+        },
+        pastUnfinished: {
+          label: "历史周期有未完成",
+          dotClass: "bg-rose-500 ring-4 ring-rose-100",
+          buttonClass: "bg-slate-50 text-slate-500 border-slate-150 hover:bg-slate-100",
+          activeClass: "bg-slate-600 text-white border-slate-600 shadow-md shadow-slate-600/15",
+          dropdownActiveClass: "bg-slate-100 text-slate-600",
+        },
+      };
+
+      visualMap[w] = { tone, ...meta[tone] };
+    });
+
+    return visualMap;
+  }, [allWeekRanges, requirements, schedules, todayDateString]);
+
+  const overflowWeekRanges = useMemo(
+    () =>
+      orderedWeekRanges
+        .filter((range) => !pinnedWeekRanges.includes(range))
+        .filter((range) => {
+          const visual = weekVisualMap[range];
+          const hasRealSchedule = schedules.some((schedule) => schedule.weekRange === range);
+          return !(
+            hasRealSchedule &&
+            visual?.tone === "past" &&
+            weekStatusMap[range] === "completed"
+          );
+        }),
+    [orderedWeekRanges, pinnedWeekRanges, schedules, weekStatusMap, weekVisualMap],
+  );
 
   const { inProgressWeeks, completedWeeks } = useMemo(() => {
     const inProgress: string[] = [];
     const completed: string[] = [];
-    weekRanges.forEach((w) => {
+    allWeekRanges.forEach((w) => {
       if (weekStatusMap[w] === "completed") {
         completed.push(w);
       } else {
@@ -886,11 +1271,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       }
     });
     return { inProgressWeeks: inProgress, completedWeeks: completed };
-  }, [weekRanges, weekStatusMap]);
+  }, [allWeekRanges, weekStatusMap]);
 
   const [selectedWeekRange, setSelectedWeekRange] = useState<string>("");
-  const [dateRangeStart, setDateRangeStart] = useState("");
-  const [dateRangeEnd, setDateRangeEnd] = useState("");
+  const [selectedWeekRanges, setSelectedWeekRanges] = useState<string[]>([]);
   const [createdRangeStart, setCreatedRangeStart] = useState("");
   const [createdRangeEnd, setCreatedRangeEnd] = useState("");
   const [completedRangeStart, setCompletedRangeStart] = useState("");
@@ -899,6 +1283,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     "priority" | "form" | "progress" | "broadDirection" | "scheduleRisk" | "none"
   >("none");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [coordinatedFlexibleFilters, setCoordinatedFlexibleFilters] = useState<
+    CoordinatedFlexibleFilter[]
+  >([]);
+  const [isFlexibleFilterPanelOpen, setIsFlexibleFilterPanelOpen] = useState(false);
+  const [openFlexibleFilterMenu, setOpenFlexibleFilterMenu] = useState<string | null>(null);
+  const [cycleAdjustScheduleId, setCycleAdjustScheduleId] = useState<string | null>(null);
+  const [cycleAdjustTargetWeekRange, setCycleAdjustTargetWeekRange] = useState("");
+  const [cycleAdjustRequirementIds, setCycleAdjustRequirementIds] = useState<string[]>([]);
+  const [isCycleAdjustWeekPickerOpen, setIsCycleAdjustWeekPickerOpen] = useState(false);
+  const cycleAdjustWeekPickerRef = useRef<HTMLDivElement>(null);
   const [collapsedDirections, setCollapsedDirections] = useState<
     Record<string, boolean>
   >({});
@@ -919,12 +1313,257 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     }, 2600);
   }, []);
 
+  const scheduleInsights = useMemo(() => {
+    const todayTime = parseDateValue(todayDateString) ?? 0;
+    const quickThresholdTime = parseDateValue(addDaysToDateString(todayDateString, 1)) ?? todayTime;
+    const insights = new Map<
+      string,
+      {
+        status: ScheduleDerivedRolloverStatus;
+        statusTone: string;
+        total: number;
+        completed: number;
+        inProgress: number;
+        notStarted: number;
+        launched: number;
+        completedNotLaunched: number;
+        quickCompleting: number;
+        readyRequirements: Requirement[];
+        quickRequirementIds: string[];
+        draftSetCount: number;
+        suggestion: string;
+        isInherited: boolean;
+        isLegacy: boolean;
+      }
+    >();
+
+    schedules.forEach((schedule) => {
+      const relatedRequirements = requirements.filter((req) => req.scheduleId === schedule.id);
+      const completedRequirements = relatedRequirements.filter((req) => req.prodStatus === "Completed");
+      const completedNotLaunchedRequirements = completedRequirements.filter(
+        (req) => req.deliveryStatus === "NotLaunched" && !req.deliverySetId,
+      );
+      const inProgressRequirements = relatedRequirements.filter((req) => req.prodStatus === "InProgress");
+      const notStartedRequirements = relatedRequirements.filter(
+        (req) => req.prodStatus === "Unscheduled" || req.prodStatus === "Scheduled" || !req.prodStatus,
+      );
+      const launchedRequirements = relatedRequirements.filter((req) => req.deliveryStatus === "Delivering");
+      const quickRequirementIds = relatedRequirements
+        .filter((req) => req.prodStatus !== "Completed")
+        .filter((req) => {
+          const taskEnds = getScheduledTaskViews(req)
+            .map((task) => task.endDate)
+            .filter(Boolean)
+            .sort();
+          const dueDate =
+            taskEnds.at(-1) ||
+            req.endDate ||
+            schedule.productionEnd ||
+            schedule.submissionDeadline ||
+            schedule.requirementEnd ||
+            "";
+          const dueTime = parseDateValue(dueDate);
+          return dueTime !== null && dueTime >= todayTime && dueTime <= quickThresholdTime;
+        })
+        .map((req) => req.id);
+      const draftSetCount = deliverySets.filter(
+        (set) => set.scheduleIds.includes(schedule.id) && set.status === "Draft",
+      ).length;
+
+      let status: ScheduleDerivedRolloverStatus = "进行中";
+      if (schedule.rolloverStatus === "Closed") {
+        status = "已关闭";
+      } else if (schedule.rolloverStatus === "Deferred") {
+        status = "暂缓";
+      } else if (
+        relatedRequirements.length > 0 &&
+        completedRequirements.length === relatedRequirements.length &&
+        completedNotLaunchedRequirements.length === relatedRequirements.length
+      ) {
+        status = "全部完成且未投放";
+      } else if (
+        relatedRequirements.length === 0 ||
+        notStartedRequirements.length === relatedRequirements.length
+      ) {
+        status = "完全未开始";
+      } else if (
+        completedRequirements.length > 0 ||
+        schedule.rolloverStatus === "PartialCompleted" ||
+        schedule.inheritedToScheduleIds?.length
+      ) {
+        status = "部分完成";
+      } else if (launchedRequirements.length > 0) {
+        status = "已投放";
+      }
+
+      const statusTone =
+        status === "全部完成且未投放"
+          ? "bg-emerald-50 border-emerald-150 text-emerald-700"
+          : status === "部分完成"
+            ? "bg-amber-50 border-amber-150 text-amber-700"
+            : status === "完全未开始"
+              ? "bg-slate-50 border-slate-150 text-slate-600"
+              : status === "已关闭"
+                ? "bg-rose-50 border-rose-150 text-rose-600"
+                : status === "暂缓"
+                  ? "bg-violet-50 border-violet-150 text-violet-700"
+                  : status === "已投放"
+                    ? "bg-blue-50 border-blue-150 text-blue-700"
+                    : "bg-indigo-50 border-indigo-150 text-indigo-700";
+
+      const suggestion =
+        status === "全部完成且未投放"
+          ? `可生成 ${completedNotLaunchedRequirements.length} 条素材的投放 Set`
+          : quickRequirementIds.length > 0
+            ? `${quickRequirementIds.length} 条预计 1 天内完成，可考虑等待`
+            : status === "部分完成"
+              ? "需要确认关闭、暂缓或调整未完成素材周期"
+              : status === "完全未开始"
+                ? "可关闭、暂缓或挪入下周期"
+                : status === "已关闭"
+                  ? schedule.closeReason || "已关闭，默认不进入待办"
+                  : status === "暂缓"
+                    ? schedule.decisionNote || "暂缓推进，保留观察"
+                    : "继续推进当前方向";
+
+      insights.set(schedule.id, {
+        status,
+        statusTone,
+        total: relatedRequirements.length,
+        completed: completedRequirements.length,
+        inProgress: inProgressRequirements.length,
+        notStarted: notStartedRequirements.length,
+        launched: launchedRequirements.length,
+        completedNotLaunched: completedNotLaunchedRequirements.length,
+        quickCompleting: quickRequirementIds.length,
+        readyRequirements: completedNotLaunchedRequirements,
+        quickRequirementIds,
+        draftSetCount,
+        suggestion,
+        isInherited: Boolean(schedule.inheritedFromScheduleId),
+        isLegacy: Boolean(schedule.inheritedFromScheduleId || schedule.inheritedToScheduleIds?.length),
+      });
+    });
+
+    return insights;
+  }, [deliverySets, requirements, schedules, todayDateString]);
+
+  const getScheduleFlexibleFieldValues = useCallback(
+    (
+      schedule: CreativeSchedule,
+      field: CoordinatedFlexibleFilterField,
+    ) => {
+      const relatedRequirements = requirements.filter(
+        (req) => req.scheduleId === schedule.id,
+      );
+      if (field === "priority") {
+        const labels: Record<string, string> = {
+          Highest: "最高",
+          High: "高",
+          Mid: "中",
+          Low: "低",
+        };
+        return [labels[schedule.priority || ""] || ""].filter(Boolean);
+      }
+      if (field === "materialStage") {
+        return [schedule.materialStage || ""].filter(Boolean);
+      }
+      if (field === "productionPersonnel") {
+        return Array.from(
+          new Set(relatedRequirements.flatMap((req) => req.productionPersonnel || [])),
+        ).filter(Boolean);
+      }
+      if (field === "scenario") {
+        const labels: Record<string, string> = {
+          Standard: "通投",
+          Localized: "本地化",
+          ASO: "ASO",
+        };
+        return [labels[schedule.scenario || ""] || ""].filter(Boolean);
+      }
+      if (field === "channels") {
+        return Array.from(
+          new Set([
+            ...(schedule.channels || []),
+            ...relatedRequirements.flatMap((req) => req.channels || []),
+          ]),
+        ).filter(Boolean);
+      }
+      if (field === "reqStatus") {
+        const labels: Record<string, string> = {
+          Draft: "草稿",
+          Pending: "待审核",
+          Approved: "审核通过",
+          Modification: "需求修改",
+        };
+        return Array.from(
+          new Set(relatedRequirements.map((req) => labels[req.reqStatus] || "")),
+        ).filter(Boolean);
+      }
+      if (field === "productionProgress") {
+        if (relatedRequirements.length === 0) return ["完全未开始"];
+        const completed = relatedRequirements.filter(
+          (req) => req.prodStatus === "Completed",
+        ).length;
+        const inProgress = relatedRequirements.filter(
+          (req) => req.prodStatus === "InProgress",
+        ).length;
+        if (completed === relatedRequirements.length) return ["已完成"];
+        if (completed > 0) return ["部分完成"];
+        if (inProgress > 0) return ["进行中"];
+        return ["完全未开始"];
+      }
+      if (field === "deliveryStatus") {
+        const labels: Record<string, string> = {
+          NotLaunched: "未投放",
+          Delivering: "投放中",
+          Paused: "已暂停",
+        };
+        return Array.from(
+          new Set(relatedRequirements.map((req) => labels[req.deliveryStatus] || "")),
+        ).filter(Boolean);
+      }
+      if (field === "language") {
+        return Array.from(
+          new Set(relatedRequirements.map((req) => req.language || "")),
+        ).filter(Boolean);
+      }
+      return [];
+    },
+    [requirements],
+  );
+
+  const scheduleMatchesFlexibleFilter = useCallback(
+    (schedule: CreativeSchedule, condition: CoordinatedFlexibleFilter) => {
+      const actualValues = getScheduleFlexibleFieldValues(schedule, condition.field);
+      const expectedValue = condition.value.trim();
+      if (condition.operator === "isEmpty") return actualValues.length === 0;
+      if (condition.operator === "isNotEmpty") return actualValues.length > 0;
+      if (!expectedValue) return true;
+      if (condition.operator === "equals") {
+        return actualValues.some((value) => value === expectedValue);
+      }
+      if (condition.operator === "notEquals") {
+        return actualValues.every((value) => value !== expectedValue);
+      }
+      if (condition.operator === "contains") {
+        return actualValues.some((value) => value.includes(expectedValue));
+      }
+      if (condition.operator === "notContains") {
+        return actualValues.every((value) => !value.includes(expectedValue));
+      }
+      return true;
+    },
+    [getScheduleFlexibleFieldValues],
+  );
+
   const visibleSchedules = useMemo(() => {
     const hasDateRange = Boolean(dateRangeStart || dateRangeEnd);
-    let list = hasDateRange
-      ? schedules
-      : schedules.filter((s) => s.weekRange === selectedWeekRange);
-    if (dateRangeStart || dateRangeEnd) {
+    let list = schedules;
+    if (selectedWeekRanges.length > 0) {
+      list = list.filter((s) => selectedWeekRanges.includes(s.weekRange));
+    }
+    if (hasDateRange) {
       list = list.filter((s) =>
         rangesOverlap(
           s.requirementStart || parseWeekRangeDates(s.weekRange).start,
@@ -933,6 +1572,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           dateRangeEnd,
         ),
       );
+    } else {
+      list = list.filter((s) => s.weekRange === selectedWeekRange);
     }
     if (filterIsActive(filters.creativePersonnel)) {
       list = list.filter((s) => filterMatches(filters.creativePersonnel, s.owner));
@@ -942,6 +1583,13 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     }
     if (filterIsActive(filters.broadDirection)) {
       list = list.filter((s) => filterMatches(filters.broadDirection, s.broadDirection));
+    }
+    if (coordinatedFlexibleFilters.length > 0) {
+      list = list.filter((s) =>
+        coordinatedFlexibleFilters.every((condition) =>
+          scheduleMatchesFlexibleFilter(s, condition),
+        ),
+      );
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -1049,9 +1697,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   }, [
     schedules,
     selectedWeekRange,
+    selectedWeekRanges,
     dateRangeStart,
     dateRangeEnd,
     filters,
+    coordinatedFlexibleFilters,
+    scheduleMatchesFlexibleFilter,
     currentSort,
     sortOrder,
     searchQuery,
@@ -1062,10 +1713,28 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   useEffect(() => {
     if (weekRanges.length > 0) {
       if (!selectedWeekRange || !weekRanges.includes(selectedWeekRange)) {
-        setSelectedWeekRange(weekRanges[0]);
+        setSelectedWeekRange(currentWeekRange);
       }
+      setSelectedWeekRanges((prev) => {
+        const validSelections = prev.filter((range) => weekRanges.includes(range));
+        if (validSelections.length > 0) return validSelections;
+        return currentWeekRange ? [currentWeekRange] : [];
+      });
     }
-  }, [weekRanges, selectedWeekRange]);
+  }, [currentWeekRange, weekRanges, selectedWeekRange]);
+
+  const toggleSelectedWeekRange = useCallback(
+    (range: string) => {
+      setSelectedWeekRange(range);
+      setSelectedWeekRanges((prev) => {
+        if (prev.includes(range)) {
+          return prev.filter((item) => item !== range);
+        }
+        return [...prev, range];
+      });
+    },
+    [],
+  );
 
   const toggleDirection = (id: string) => {
     setCollapsedDirections((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1499,9 +2168,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     useState<Requirement[] | null>(null);
   const [selectedScheduleForModal, setSelectedScheduleForModal] =
     useState<CreativeSchedule | null>(null);
+  const [scheduleTagInput, setScheduleTagInput] = useState("");
+  const [openScheduleInfoMenuKey, setOpenScheduleInfoMenuKey] = useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(
     null,
   );
+
+  useEffect(() => {
+    setScheduleTagInput("");
+    setOpenScheduleInfoMenuKey(null);
+  }, [selectedScheduleForModal?.id]);
 
   const [showWeekFilterDropdown, setShowWeekFilterDropdown] = useState(false);
   const weekFilterRef = useRef<HTMLDivElement>(null);
@@ -1830,6 +2506,35 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
   }, []);
 
   useEffect(() => {
+    const handleCoordinatedFilterClickOutside = (event: MouseEvent) => {
+      if (
+        coordinatedFilterRef.current &&
+        !coordinatedFilterRef.current.contains(event.target as Node)
+      ) {
+        setOpenCoordinatedFilterKey(null);
+        setIsFlexibleFilterPanelOpen(false);
+        setOpenFlexibleFilterMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleCoordinatedFilterClickOutside);
+    return () => document.removeEventListener("mousedown", handleCoordinatedFilterClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleCycleAdjustWeekPickerClickOutside = (event: MouseEvent) => {
+      if (
+        cycleAdjustWeekPickerRef.current &&
+        !cycleAdjustWeekPickerRef.current.contains(event.target as Node)
+      ) {
+        setIsCycleAdjustWeekPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleCycleAdjustWeekPickerClickOutside);
+    return () =>
+      document.removeEventListener("mousedown", handleCycleAdjustWeekPickerClickOutside);
+  }, []);
+
+  useEffect(() => {
     const handleProductionProducerFilterClickOutside = (event: MouseEvent) => {
       if (
         productionProducerFilterRef.current &&
@@ -2019,85 +2724,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     ],
   );
 
-  const coordinatedFilterChips = useMemo(() => {
-    const chips: Array<{
-      key: string;
-      label: string;
-      onRemove: () => void;
-    }> = [];
-    if (filterIsActive(filters.creativePersonnel)) {
-      chips.push({
-        key: "creativePersonnel",
-        label: `创意人员：${decodeFilterValue(filters.creativePersonnel).join("、")}`,
-        onRemove: () => setFilters((prev) => ({ ...prev, creativePersonnel: "全部" })),
-      });
-    }
-    if (filterIsActive(filters.assetType)) {
-      const assetTypeLabel = decodeFilterValue(filters.assetType).map((assetType) =>
-        assetType === "Video"
-          ? "视频"
-          : assetType === "Playable"
-            ? "试玩"
-            : assetType === "Image"
-              ? "图片"
-              : assetType,
-      ).join("、");
-      chips.push({
-        key: "assetType",
-        label: `制作类型：${assetTypeLabel}`,
-        onRemove: () => setFilters((prev) => ({ ...prev, assetType: "全部" })),
-      });
-    }
-    if (filterIsActive(filters.broadDirection)) {
-      chips.push({
-        key: "broadDirection",
-        label: `大方向：${decodeFilterValue(filters.broadDirection).join("、")}`,
-        onRemove: () => setFilters((prev) => ({ ...prev, broadDirection: "全部" })),
-      });
-    }
-    if (filterIsActive(filters.scheduleRisk)) {
-      chips.push({
-        key: "scheduleRisk",
-        label: `排期风险：${decodeFilterValue(filters.scheduleRisk).join("、")}`,
-        onRemove: () => setFilters((prev) => ({ ...prev, scheduleRisk: "全部" })),
-      });
-    }
-    if (dateRangeStart || dateRangeEnd) {
-      chips.push({
-        key: "dateRange",
-        label: `时间：${dateRangeStart || "不限"} ~ ${dateRangeEnd || "不限"}`,
-        onRemove: () => {
-          setDateRangeStart("");
-          setDateRangeEnd("");
-        },
-      });
-    }
-    if (currentSort !== "none") {
-      const sortLabelMap: Record<string, string> = {
-        priority: "优先级",
-        scheduleRisk: "排期风险",
-        form: "类型",
-        progress: "进度",
-        broadDirection: "大方向",
-      };
-      chips.push({
-        key: "sort",
-        label: `排序：${sortLabelMap[currentSort]} ${sortOrder === "desc" ? "降序" : "升序"}`,
-        onRemove: () => setCurrentSort("none"),
-      });
-    }
-    return chips;
-  }, [
-    currentSort,
-    sortOrder,
-    filters.creativePersonnel,
-    filters.assetType,
-    filters.broadDirection,
-    filters.scheduleRisk,
-    dateRangeStart,
-    dateRangeEnd,
-  ]);
-
   const resetCoordinatedFilters = useCallback(() => {
     setFilters((prev) => ({
       ...prev,
@@ -2106,10 +2732,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       broadDirection: "全部",
       scheduleRisk: "全部",
     }));
-    setDateRangeStart("");
-    setDateRangeEnd("");
+    setDateRangeStart(defaultDateRangeStart);
+    setDateRangeEnd(defaultDateRangeEnd);
     setCurrentSort("none");
-  }, []);
+    setCoordinatedFlexibleFilters([]);
+    setIsFlexibleFilterPanelOpen(false);
+    setOpenFlexibleFilterMenu(null);
+    setSelectedWeekRange(currentWeekRange);
+    setSelectedWeekRanges(currentWeekRange ? [currentWeekRange] : []);
+  }, [currentWeekRange, defaultDateRangeEnd, defaultDateRangeStart]);
 
   const handleAddSubRequirement = (
     parent: Requirement,
@@ -2288,14 +2919,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
   const isScheduleVisibleInCoordinatedView = useCallback(
     (schedule: CreativeSchedule) => {
-      const hasDateRange = Boolean(dateRangeStart || dateRangeEnd);
-
-      if (!hasDateRange && schedule.weekRange !== selectedWeekRange) {
-        return false;
-      }
-
       if (
-        hasDateRange &&
+        (dateRangeStart || dateRangeEnd) &&
         !rangesOverlap(
           schedule.requirementStart || parseWeekRangeDates(schedule.weekRange).start,
           schedule.requirementEnd || parseWeekRangeDates(schedule.weekRange).end,
@@ -2328,6 +2953,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         return false;
       }
 
+      if (
+        coordinatedFlexibleFilters.length > 0 &&
+        !coordinatedFlexibleFilters.every((condition) =>
+          scheduleMatchesFlexibleFilter(schedule, condition),
+        )
+      ) {
+        return false;
+      }
+
       const query = searchQuery.trim().toLowerCase();
       if (query) {
         return (
@@ -2341,12 +2975,13 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     [
       dateRangeStart,
       dateRangeEnd,
+      coordinatedFlexibleFilters,
       filters.assetType,
       filters.broadDirection,
       filters.creativePersonnel,
       filters.scheduleRisk,
+      scheduleMatchesFlexibleFilter,
       searchQuery,
-      selectedWeekRange,
     ],
   );
 
@@ -2368,6 +3003,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       requirementStart: "",
       requirementEnd: "",
       productionEnd: "",
+      directionTags: [],
+      broadDirection: "原始玩法",
+      materialStage: "新",
     };
     if (atTop) {
       setSchedules([newSchedule, ...schedules]);
@@ -2397,6 +3035,259 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
         return s;
       }),
     );
+  };
+
+  const addScheduleDirectionTag = (schedule: CreativeSchedule) => {
+    const nextTag = scheduleTagInput.trim();
+    if (!nextTag) return;
+
+    const currentTags = schedule.directionTags || [];
+    if (currentTags.includes(nextTag)) {
+      setScheduleTagInput("");
+      return;
+    }
+
+    updateSchedule(schedule.id, {
+      directionTags: [...currentTags, nextTag],
+    });
+    setScheduleTagInput("");
+  };
+
+  const removeScheduleDirectionTag = (schedule: CreativeSchedule, tag: string) => {
+    updateSchedule(schedule.id, {
+      directionTags: (schedule.directionTags || []).filter((item) => item !== tag),
+    });
+  };
+
+  const closeScheduleDirection = (schedule: CreativeSchedule) => {
+    if (schedule.owner !== "唐欣怡") {
+      showToast("关闭方向默认仅方向负责人、组长或管理员可操作。当前演示按负责人权限限制。");
+      return;
+    }
+    updateSchedule(schedule.id, {
+      rolloverStatus: "Closed",
+      closePermissionRole: "Owner",
+      closeReason: "会议收口确认关闭。",
+    });
+    showToast("方向已标记为已关闭。");
+  };
+
+  const deferScheduleDirection = (schedule: CreativeSchedule) => {
+    updateSchedule(schedule.id, {
+      rolloverStatus: "Deferred",
+      decisionNote: "会议收口暂缓，后续再判断是否恢复。",
+    });
+    showToast("方向已标记为暂缓。");
+  };
+
+  const getDefaultCycleAdjustTarget = (schedule: CreativeSchedule) => {
+    const currentRange = parseWeekRangeDates(schedule.weekRange);
+      const forwardRanges = allWeekRanges
+      .filter((range) => range !== schedule.weekRange)
+      .map((range) => ({ range, parsed: parseWeekRangeDates(range) }))
+      .filter(({ parsed }) => parsed.startTime >= currentRange.endTime)
+      .sort((a, b) => a.parsed.startTime - b.parsed.startTime);
+    return (
+      forwardRanges[0]?.range ||
+      (selectedWeekRange !== schedule.weekRange ? selectedWeekRange : "") ||
+      allWeekRanges.find((range) => range !== schedule.weekRange) ||
+      schedule.weekRange
+    );
+  };
+
+  const openCycleAdjustPanel = (schedule: CreativeSchedule) => {
+    const candidates = requirements.filter(
+      (req) => req.scheduleId === schedule.id && req.prodStatus !== "Completed",
+    );
+    setCycleAdjustScheduleId(schedule.id);
+    setCycleAdjustTargetWeekRange(getDefaultCycleAdjustTarget(schedule));
+    setCycleAdjustRequirementIds(candidates.map((req) => req.id));
+    setIsCycleAdjustWeekPickerOpen(false);
+  };
+
+  const toggleCycleAdjustRequirement = (requirementId: string) => {
+    setCycleAdjustRequirementIds((prev) =>
+      prev.includes(requirementId)
+        ? prev.filter((id) => id !== requirementId)
+        : [...prev, requirementId],
+    );
+  };
+
+  const applyCycleAdjustment = (schedule: CreativeSchedule) => {
+    const targetWeekRange = cycleAdjustTargetWeekRange;
+    if (!targetWeekRange) {
+      showToast("请先选择要调整到的周期范围。");
+      return;
+    }
+    if (targetWeekRange === schedule.weekRange) {
+      showToast("目标周期和当前周期一致，无需调整。");
+      return;
+    }
+
+    const insight = scheduleInsights.get(schedule.id);
+    const isFullyUnstarted =
+      !insight ||
+      insight.total === 0 ||
+      (insight.notStarted === insight.total && insight.completed === 0 && insight.inProgress === 0);
+    const targetDates = parseWeekRangeDates(targetWeekRange);
+
+    if (isFullyUnstarted) {
+      const movedSchedule: CreativeSchedule = {
+        ...schedule,
+        weekRange: targetWeekRange,
+        requirementStart: targetDates.start,
+        requirementEnd: targetDates.end,
+        submissionDeadline: targetDates.end,
+        acceptanceDate: targetDates.start,
+        rolloverStatus: "None",
+        decisionNote: `方向整体调整到 ${targetWeekRange}，未创建继承方向。`,
+      };
+      setSchedules((prev) =>
+        prev.map((item) => (item.id === schedule.id ? movedSchedule : item)),
+      );
+      setSelectedScheduleForModal(movedSchedule);
+      setSelectedWeekRange(targetWeekRange);
+      setCycleAdjustScheduleId(null);
+      setIsCycleAdjustWeekPickerOpen(false);
+      showToast("方向已整体调整到所选周期。");
+      return;
+    }
+
+    const selectedIds = new Set(cycleAdjustRequirementIds);
+    const selectedRequirements = requirements.filter(
+      (req) => req.scheduleId === schedule.id && req.prodStatus !== "Completed" && selectedIds.has(req.id),
+    );
+    if (selectedRequirements.length === 0) {
+      showToast("请选择需要带走的未完成需求。");
+      return;
+    }
+
+    const inheritedScheduleId = `${schedule.id}-roll-${Date.now()}`;
+    const inheritedSchedule: CreativeSchedule = {
+      ...schedule,
+      id: inheritedScheduleId,
+      weekRange: targetWeekRange,
+      requirementStart: targetDates.start,
+      requirementEnd: targetDates.end,
+      submissionDeadline: targetDates.end,
+      acceptanceDate: targetDates.start,
+      validCount: 0,
+      submittedCount: 0,
+      totalRequiredCount: selectedRequirements.length,
+      inheritedFromScheduleId: schedule.id,
+      inheritedToScheduleIds: [],
+      inheritanceLabel: `继承自 ${schedule.weekRange}`,
+      rolloverStatus: "CarriedOver",
+      decisionNote: `调整 ${selectedRequirements.length} 条未完成需求到 ${targetWeekRange}，复用原需求编号。`,
+    };
+
+    setSchedules((prev) =>
+      prev
+        .map((item) =>
+          item.id === schedule.id
+            ? {
+                ...item,
+                rolloverStatus: "PartialCompleted" as const,
+                inheritedToScheduleIds: [
+                  ...(item.inheritedToScheduleIds || []),
+                  inheritedScheduleId,
+                ],
+                decisionNote: `已调整 ${selectedRequirements.length} 条未完成需求到 ${targetWeekRange}`,
+              }
+            : item,
+        )
+        .concat(inheritedSchedule),
+    );
+    setRequirements((prev) =>
+      prev.map((req) =>
+        selectedIds.has(req.id) && req.scheduleId === schedule.id
+          ? {
+              ...req,
+              scheduleId: inheritedScheduleId,
+              currentScheduleId: inheritedScheduleId,
+              inheritedFromScheduleId: schedule.id,
+              rolloverStatus: "CarriedOver",
+            }
+          : req,
+      ),
+    );
+    setSelectedScheduleForModal(inheritedSchedule);
+    setSelectedWeekRange(targetWeekRange);
+    setCycleAdjustScheduleId(null);
+    setIsCycleAdjustWeekPickerOpen(false);
+    showToast("已创建继承方向，并调整选中的未完成需求。");
+  };
+
+  const updateSchedulePriority = (
+    schedule: CreativeSchedule,
+    value: RequirementPriority | "Closed",
+  ) => {
+    if (value === "Closed") {
+      updateSchedule(schedule.id, {
+        rolloverStatus: "Closed",
+        closePermissionRole: "Owner",
+        closeReason: "手动将方向优先级调整为关闭。",
+      });
+      showToast("方向已标记为关闭。");
+      return;
+    }
+
+    updateSchedule(schedule.id, {
+      priority: value,
+      rolloverStatus: schedule.rolloverStatus === "Closed" ? "None" : schedule.rolloverStatus,
+      closeReason: "",
+    });
+    setRequirements((prev) =>
+      prev.map((req) =>
+        req.scheduleId === schedule.id
+          ? {
+              ...req,
+              priority: value,
+            }
+          : req,
+      ),
+    );
+    showToast("方向优先级已同步到方向下需求。");
+  };
+
+  const createDeliverySetDraft = (schedule: CreativeSchedule) => {
+    const insight = scheduleInsights.get(schedule.id);
+    const readyRequirements = insight?.readyRequirements || [];
+    if (readyRequirements.length === 0) {
+      showToast("当前方向暂无全部完成且未投放的素材。");
+      return;
+    }
+    const groupedByChannel = readyRequirements.reduce<Record<string, Requirement[]>>(
+      (acc, req) => {
+        const channels = req.channels.length > 0 ? req.channels : ["all"];
+        channels.forEach((channel) => {
+          acc[channel] = [...(acc[channel] || []), req];
+        });
+        return acc;
+      },
+      {},
+    );
+    const now = new Date().toISOString();
+    const drafts = Object.entries(groupedByChannel).map(([channel, reqs]) => ({
+      id: `ds-${Date.now()}-${channel}`,
+      scheduleId: schedule.id,
+      inheritedFromScheduleId: schedule.inheritedFromScheduleId,
+      scheduleIds: [schedule.id, ...(schedule.inheritedFromScheduleId ? [schedule.inheritedFromScheduleId] : [])],
+      requirementIds: reqs.map((req) => req.id),
+      status: "Draft" as const,
+      channel,
+      setName: `${schedule.directionName}-${getChannelDisplayName(channel)}-${reqs.length}条`,
+      createdBy: schedule.owner || "唐欣怡",
+      createdAt: now,
+    }));
+    setDeliverySets((prev) => [...drafts, ...prev]);
+    setRequirements((prev) =>
+      prev.map((req) => {
+        const draft = drafts.find((item) => item.requirementIds.includes(req.id));
+        return draft ? { ...req, deliverySetId: draft.id } : req;
+      }),
+    );
+    showToast(`已按渠道生成 ${drafts.length} 个 Delivery Set 草稿。`);
   };
 
   const getPriorityStyle = (priority: RequirementPriority) => {
@@ -2601,8 +3492,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
     // Add a dummy schedule for that week to make the row appear
     addScheduleRow(range);
     setSelectedWeekRange(range);
-    setDateRangeStart("");
-    setDateRangeEnd("");
     setShowAddWeekPopup(false);
     setNewWeekRange("");
     setNewWeekStart("");
@@ -2742,37 +3631,32 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                 <div className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex flex-wrap items-center gap-2 pb-1 max-w-full sm:max-w-[75%] md:max-w-[80%] overflow-visible">
-                      {pinnedWeekRanges.map((w) => {
-                        const isActive =
-                          !dateRangeStart &&
-                          !dateRangeEnd &&
-                          selectedWeekRange === w;
-                        const status = weekStatusMap[w] || "inprogress";
-                        return (
-                          <button
-                            key={w}
-                            onClick={() => {
-                              setSelectedWeekRange(w);
-                              setDateRangeStart("");
-                              setDateRangeEnd("");
-                            }}
-                            className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all border outline-none shrink-0 flex items-center gap-1.5 ${
+	                      {pinnedWeekRanges.map((w) => {
+	                        const isActive = selectedWeekRanges.includes(w);
+	                        const visual = weekVisualMap[w];
+	                        return (
+	                          <button
+	                            key={w}
+	                            onClick={() => {
+	                              toggleSelectedWeekRange(w);
+	                            }}
+	                            className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all border outline-none shrink-0 flex items-center gap-1.5 ${
                               isActive
-                                ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/15"
-                                : "bg-white text-slate-705 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                                ? visual?.activeClass || "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/15"
+                                : visual?.buttonClass || "bg-white text-slate-705 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
                             }`}
+                            title={visual?.label}
                           >
                             <span
-                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                status === "completed"
-                                  ? "bg-emerald-500"
-                                  : "bg-amber-500"
-                              }`}
-                            />
-                            <span className="font-mono">{w}</span>
-                          </button>
-                        );
-                      })}
+                              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                                visual?.dotClass || "bg-amber-500 ring-4 ring-amber-100"
+	                              }`}
+		                            />
+		                            <span className="font-mono">{w}</span>
+		                            {isActive && <Check className="h-3.5 w-3.5 shrink-0 stroke-[3]" />}
+		                          </button>
+	                        );
+	                      })}
 
                       {overflowWeekRanges.length > 0 && (
                         <div className="relative shrink-0" ref={weekFilterRef}>
@@ -2781,12 +3665,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             onClick={() =>
                               setShowWeekFilterDropdown((prev) => !prev)
                             }
-                            className={`h-[34px] px-3 rounded-xl text-[11px] font-black transition-all border outline-none flex items-center gap-1.5 ${
-                              overflowWeekRanges.includes(selectedWeekRange) &&
-                              !dateRangeStart &&
-                              !dateRangeEnd
-                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+	                            className={`h-[34px] px-3 rounded-xl text-[11px] font-black transition-all border outline-none flex items-center gap-1.5 ${
+	                              overflowWeekRanges.some((range) =>
+	                                selectedWeekRanges.includes(range),
+	                              )
+	                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+	                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
                             }`}
                           >
                             <span>更多周期</span>
@@ -2801,37 +3685,33 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           </button>
 
                           {showWeekFilterDropdown && (
-                            <div className="absolute left-0 top-full z-[100] mt-2 w-64 rounded-2xl border border-slate-100 bg-white p-1.5 shadow-2xl shadow-slate-900/10">
-                              {overflowWeekRanges.map((w) => {
-                                const isActive =
-                                  !dateRangeStart &&
-                                  !dateRangeEnd &&
-                                  selectedWeekRange === w;
-                                const status = weekStatusMap[w] || "inprogress";
-                                return (
+                            <div className="absolute left-0 top-full z-[100] mt-2 w-64 rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+	                              {overflowWeekRanges.map((w) => {
+	                                const isActive = selectedWeekRanges.includes(w);
+	                                const visual = weekVisualMap[w];
+	                                return (
                                   <button
                                     key={w}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedWeekRange(w);
-                                      setDateRangeStart("");
-                                      setDateRangeEnd("");
-                                      setShowWeekFilterDropdown(false);
-                                    }}
+	                                    type="button"
+	                                    onClick={() => {
+	                                      toggleSelectedWeekRange(w);
+	                                    }}
                                     className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-colors ${
                                       isActive
-                                        ? "bg-indigo-50 text-indigo-700"
+                                        ? visual?.dropdownActiveClass || "bg-indigo-50 text-indigo-700"
                                         : "text-slate-600 hover:bg-slate-50"
                                     }`}
+                                    title={visual?.label}
                                   >
-                                    <span className="font-mono">{w}</span>
-                                    <span
-                                      className={`w-1.5 h-1.5 rounded-full ${
-                                        status === "completed"
-                                          ? "bg-emerald-500"
-                                          : "bg-amber-500"
-                                      }`}
-                                    />
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <span
+                                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                          visual?.dotClass || "bg-amber-500 ring-4 ring-amber-100"
+                                        }`}
+	                                      />
+	                                      <span className="truncate font-mono">{w}</span>
+	                                    </span>
+                                    {isActive && <DropdownSelectedCheck />}
                                   </button>
                                 );
                               })}
@@ -2839,6 +3719,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           )}
                         </div>
                       )}
+
+                      <WeekRangeRuleInfo className="h-[34px] w-[34px] border border-slate-150 bg-white shadow-3xs hover:border-indigo-200" />
 
                       <button
                         onClick={openAddWeekPopup}
@@ -2862,17 +3744,268 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                   <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <div ref={coordinatedFilterRef} className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-slate-50 px-2.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
                           <Filter className="h-3 w-3 text-indigo-500" />
                           快速筛选
                         </span>
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFlexibleFilterPanelOpen((prev) => !prev);
+                              setOpenCoordinatedFilterKey(null);
+                              setOpenFlexibleFilterMenu(null);
+                            }}
+                            className={`inline-flex h-8 min-w-[128px] items-center justify-between gap-2 rounded-xl border px-3 text-[10px] font-black shadow-3xs transition-all ${
+                              coordinatedFlexibleFilters.length > 0
+                                ? "border-indigo-150 bg-indigo-50 text-indigo-700"
+                                : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
+                            }`}
+                          >
+                            <span>通用筛选</span>
+                            {coordinatedFlexibleFilters.length > 0 && (
+                              <span className="rounded-full bg-indigo-100 px-1.5 text-[9px] text-indigo-600">
+                                {coordinatedFlexibleFilters.length}
+                              </span>
+                            )}
+                            <ChevronDown
+                              className={`h-3 w-3 transition-transform ${isFlexibleFilterPanelOpen ? "rotate-180" : ""}`}
+                            />
+                          </button>
+                          {isFlexibleFilterPanelOpen && (
+	                            <div className="absolute left-0 top-full z-[130] mt-2 w-[620px] rounded-3xl border border-slate-150 bg-white p-4 shadow-2xl shadow-slate-900/10">
+	                              <div className="flex items-center gap-2 text-sm font-black text-slate-850">
+	                                <span>设置筛选条件</span>
+	                                <AlertCircle className="h-4 w-4 text-slate-400" />
+	                              </div>
+	                              <div className="mt-4 flex flex-col gap-2">
+                                {coordinatedFlexibleFilters.length === 0 && (
+                                  <div className="rounded-2xl border border-dashed border-slate-150 bg-slate-50 px-3 py-3 text-[11px] font-bold text-slate-400">
+                                    暂无通用条件，可添加优先级、素材阶段、制作人员、场景、渠道、需求提交状态、制作完成进度、投放状态、语言等条件。
+                                  </div>
+                                )}
+                                {coordinatedFlexibleFilters.map((condition) => {
+                                  const fieldConfig =
+                                    COORDINATED_FLEXIBLE_FILTER_FIELDS.find(
+                                      (field) => field.key === condition.field,
+                                    ) || COORDINATED_FLEXIBLE_FILTER_FIELDS[0];
+                                  const operatorConfig =
+                                    COORDINATED_FLEXIBLE_FILTER_OPERATORS.find(
+                                      (operator) => operator.key === condition.operator,
+                                    ) || COORDINATED_FLEXIBLE_FILTER_OPERATORS[0];
+                                  const valueDisabled =
+                                    condition.operator === "isEmpty" ||
+                                    condition.operator === "isNotEmpty";
+
+                                  const renderFlexibleDropdown = (
+                                    menuKey: string,
+                                    label: string,
+                                    minWidth: string,
+                                    options: Array<{ value: string; label: string }>,
+                                    onSelect: (value: string) => void,
+                                  ) => {
+                                    const isOpen = openFlexibleFilterMenu === menuKey;
+                                    return (
+                                      <div className="relative">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setOpenFlexibleFilterMenu((prev) =>
+                                              prev === menuKey ? null : menuKey,
+                                            )
+                                          }
+                                          className={`inline-flex h-8 ${minWidth} items-center justify-between gap-2 rounded-xl border border-slate-150 bg-white px-3 text-[11px] font-black text-slate-700 shadow-3xs transition-all hover:border-indigo-200 ${
+                                            isOpen ? "border-indigo-400 text-indigo-700" : ""
+                                          }`}
+                                        >
+                                          <span className="truncate">{label}</span>
+                                          <ChevronDown
+                                            className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                                              isOpen ? "rotate-180" : ""
+                                            }`}
+                                          />
+                                        </button>
+                                        {isOpen && (
+                                          <div className="absolute left-0 top-full z-[140] mt-2 w-48 rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                                            {options.map((option) => {
+                                              const isSelected = option.label === label;
+                                              return (
+                                                <button
+                                                  key={option.value}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    onSelect(option.value);
+                                                    setOpenFlexibleFilterMenu(null);
+                                                  }}
+                                                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                                    isSelected
+                                                      ? FILTER_DROPDOWN_ACTIVE_CLASS
+                                                      : FILTER_DROPDOWN_IDLE_CLASS
+                                                  }`}
+                                                >
+                                                  <span>{option.label}</span>
+                                                  {isSelected && <DropdownSelectedCheck />}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  };
+
+                                  return (
+                                    <div
+                                      key={condition.id}
+                                      className="flex min-w-0 items-center gap-2"
+                                    >
+                                      {renderFlexibleDropdown(
+                                        `${condition.id}:field`,
+                                        fieldConfig.label,
+                                        "min-w-[120px]",
+                                        COORDINATED_FLEXIBLE_FILTER_FIELDS.map((field) => ({
+                                          value: field.key,
+                                          label: field.label,
+                                        })),
+                                        (value) => {
+                                          const nextField = value as CoordinatedFlexibleFilterField;
+                                          const nextFieldConfig =
+                                            COORDINATED_FLEXIBLE_FILTER_FIELDS.find(
+                                              (field) => field.key === nextField,
+                                            ) || COORDINATED_FLEXIBLE_FILTER_FIELDS[0];
+                                          setCoordinatedFlexibleFilters((prev) =>
+                                            prev.map((item) =>
+                                              item.id === condition.id
+                                                ? {
+                                                    ...item,
+                                                    field: nextField,
+                                                    value: nextFieldConfig.options[0] || "",
+                                                  }
+                                                : item,
+                                            ),
+                                          );
+                                        },
+                                      )}
+                                      {renderFlexibleDropdown(
+                                        `${condition.id}:operator`,
+                                        operatorConfig.label,
+                                        "min-w-[104px]",
+                                        COORDINATED_FLEXIBLE_FILTER_OPERATORS.map((operator) => ({
+                                          value: operator.key,
+                                          label: operator.label,
+                                        })),
+                                        (value) =>
+                                          setCoordinatedFlexibleFilters((prev) =>
+                                            prev.map((item) =>
+                                              item.id === condition.id
+                                                ? {
+                                                    ...item,
+                                                    operator: value as CoordinatedFlexibleFilterOperator,
+                                                  }
+                                                : item,
+                                            ),
+                                          ),
+                                      )}
+                                      <div className="relative min-w-0 flex-1">
+                                        <button
+                                          type="button"
+                                          disabled={valueDisabled}
+                                          onClick={() =>
+                                            setOpenFlexibleFilterMenu((prev) =>
+                                              prev === `${condition.id}:value`
+                                                ? null
+                                                : `${condition.id}:value`,
+                                            )
+                                          }
+                                          className={`inline-flex h-8 w-full items-center justify-between gap-2 rounded-xl border px-3 text-[11px] font-black shadow-3xs transition-all ${
+                                            valueDisabled
+                                              ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                                              : "border-slate-150 bg-white text-slate-700 hover:border-indigo-200"
+                                          }`}
+                                        >
+                                          <span className="truncate">
+                                            {valueDisabled ? "无需选择值" : condition.value}
+                                          </span>
+                                          {!valueDisabled && (
+                                            <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                          )}
+                                        </button>
+                                        {openFlexibleFilterMenu === `${condition.id}:value` &&
+                                          !valueDisabled && (
+                                            <div className="absolute left-0 top-full z-[140] mt-2 w-full rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                                              {fieldConfig.options.map((option) => {
+                                                const isSelected = condition.value === option;
+                                                return (
+                                                  <button
+                                                    key={option}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setCoordinatedFlexibleFilters((prev) =>
+                                                        prev.map((item) =>
+                                                          item.id === condition.id
+                                                            ? { ...item, value: option }
+                                                            : item,
+                                                        ),
+                                                      );
+                                                      setOpenFlexibleFilterMenu(null);
+                                                    }}
+                                                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                                      isSelected
+                                                        ? FILTER_DROPDOWN_ACTIVE_CLASS
+                                                        : FILTER_DROPDOWN_IDLE_CLASS
+                                                    }`}
+                                                  >
+                                                    <span>{option}</span>
+                                                    {isSelected && <DropdownSelectedCheck />}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setCoordinatedFlexibleFilters((prev) =>
+                                            prev.filter((item) => item.id !== condition.id),
+                                          )
+                                        }
+                                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-500"
+                                        aria-label="删除筛选条件"
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+	                              <div className="mt-4 flex items-center justify-start">
+	                                <button
+	                                  type="button"
+	                                  onClick={() =>
+                                    setCoordinatedFlexibleFilters((prev) => [
+                                      ...prev,
+                                      createCoordinatedFlexibleFilter(),
+                                    ])
+                                  }
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2 text-[12px] font-black text-slate-700 transition-all hover:bg-slate-50"
+                                >
+	                                  <Plus className="h-4 w-4" />
+	                                  添加条件
+	                                </button>
+	                              </div>
+                            </div>
+                          )}
+                        </div>
 
                         {[
                           {
                             key: "assetType",
                             label: "类型",
                             value: filters.assetType,
+                            minWidth: "min-w-[128px]",
                             options: [
                               ["全部", "全部类型"],
                               ["Video", "视频"],
@@ -2884,6 +4017,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             key: "broadDirection",
                             label: "方向",
                             value: filters.broadDirection,
+                            minWidth: "min-w-[134px]",
                             options: [
                               ["全部", "全部方向"],
                               ["原始玩法", "原始玩法"],
@@ -2892,72 +4026,127 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             ],
                           },
                           {
-                            key: "scheduleRisk",
-                            label: "风险",
-                            value: filters.scheduleRisk,
+                            key: "creativePersonnel",
+                            label: "创意人员",
+                            value: filters.creativePersonnel,
+                            minWidth: "min-w-[142px]",
+                            icon: "user",
                             options: [
-                              ["全部", "全部风险"],
-                              ["有风险", "有风险"],
-                              ["严重风险", "严重风险"],
+                              ["全部", "全部"],
+                              ["唐欣怡", "唐欣怡"],
+                              ["吉意煊", "吉意煊"],
+                              ["马嘉良", "马嘉良"],
                             ],
                           },
                         ].map((item) => (
-                          <label
-                            key={item.key}
-                            className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-[10px] font-black shadow-3xs transition-all ${
-                              filterIsActive(item.value)
-                                ? "border-indigo-150 bg-indigo-50 text-indigo-700"
-                                : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
-                            }`}
-                          >
-                            <span className="text-slate-400">{item.label}</span>
-                            <select
-                              value={decodeFilterValue(item.value).length === 1 ? item.value : "全部"}
-                              onChange={(e) =>
-                                setFilters((prev) => ({
-                                  ...prev,
-                                  [item.key]: e.target.value,
-                                }))
-                              }
-                              className="max-w-[96px] bg-transparent p-0 text-[10px] font-black text-inherit outline-none focus:ring-0"
-                            >
-                              {item.options.map(([value, label]) => (
-                                <option key={value} value={value}>
-                                  {label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                          (() => {
+                            const selectedValues = decodeFilterValue(item.value);
+                            const isActive = selectedValues.length > 0;
+                            const isOpen = openCoordinatedFilterKey === item.key;
+                            const labelByValue = Object.fromEntries(item.options);
+                            const displayText =
+                              selectedValues.length === 0
+                                ? labelByValue[FILTER_ALL]
+                                : selectedValues.length === 1
+                                  ? labelByValue[selectedValues[0]] || getFilterOptionLabel(selectedValues[0])
+                                  : `${selectedValues.length} 项`;
+
+                            return (
+                              <div key={item.key} className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpenCoordinatedFilterKey((prev) =>
+                                      prev === item.key ? null : item.key,
+                                    )
+                                  }
+                                  className={`inline-flex h-8 ${item.minWidth} items-center justify-between gap-2 rounded-xl border px-2.5 text-[10px] font-black shadow-3xs transition-all ${
+                                    isActive
+                                      ? "border-indigo-150 bg-indigo-50 pr-7 text-indigo-700"
+                                      : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
+                                  }`}
+                                >
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    {item.icon === "user" && (
+                                      <User className="h-3.5 w-3.5 shrink-0 text-slate-350" />
+                                    )}
+                                    <span className="shrink-0 text-slate-400">{item.label}</span>
+                                    <span className="max-w-[70px] truncate text-inherit">
+                                      {displayText}
+                                    </span>
+                                  </span>
+                                  {!isActive && (
+                                    <ChevronDown
+                                      className={`h-3 w-3 shrink-0 transition-transform ${
+                                        isOpen ? "rotate-180" : ""
+                                      }`}
+                                    />
+                                  )}
+                                </button>
+                                {isActive && (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setFilters((prev) => ({ ...prev, [item.key]: FILTER_ALL }));
+                                      if (openCoordinatedFilterKey === item.key) {
+                                        setOpenCoordinatedFilterKey(null);
+                                      }
+                                    }}
+                                    className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-lg text-indigo-400 transition-all hover:bg-white/80 hover:text-rose-500"
+                                    aria-label={`清除${item.label}筛选`}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+
+                                {isOpen && (
+                                  <div className={FILTER_DROPDOWN_PANEL_CLASS}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleRequirementFilterOption(item.key, FILTER_ALL);
+                                        setOpenCoordinatedFilterKey(null);
+                                      }}
+                                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                        !isActive
+                                          ? FILTER_DROPDOWN_ACTIVE_CLASS
+                                          : FILTER_DROPDOWN_ALL_IDLE_CLASS
+                                      }`}
+                                    >
+                                      <span>{labelByValue[FILTER_ALL] || "全部"}</span>
+                                      {!isActive && <DropdownSelectedCheck />}
+                                    </button>
+                                    <div className="my-1 h-px bg-slate-100" />
+                                    {item.options
+                                      .filter(([value]) => value !== FILTER_ALL)
+                                      .map(([value, label]) => {
+                                        const checked = selectedValues.includes(value);
+                                        return (
+                                          <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => toggleRequirementFilterOption(item.key, value)}
+                                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                              checked
+                                                ? FILTER_DROPDOWN_ACTIVE_CLASS
+                                                : FILTER_DROPDOWN_IDLE_CLASS
+                                            }`}
+                                          >
+                                            <DropdownCheckbox checked={checked} />
+                                            <span className="truncate">{label}</span>
+                                          </button>
+                                        );
+                                      })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()
                         ))}
 
-                        <label
-                          className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-2.5 text-[10px] font-black shadow-3xs transition-all ${
-                            filterIsActive(filters.creativePersonnel)
-                              ? "border-indigo-150 bg-indigo-50 text-indigo-700"
-                              : "border-slate-150 bg-white text-slate-600 hover:border-slate-300"
-                          }`}
-                        >
-                          <User className="h-3.5 w-3.5 text-slate-350" />
-                          <span className="text-slate-400">创意人员</span>
-                          <select
-                            value={decodeFilterValue(filters.creativePersonnel).length === 1 ? filters.creativePersonnel : "全部"}
-                            onChange={(e) =>
-                              setFilters((prev) => ({
-                                ...prev,
-                                creativePersonnel: e.target.value,
-                              }))
-                            }
-                            className="max-w-[90px] bg-transparent p-0 text-[10px] font-black text-inherit outline-none focus:ring-0"
-                          >
-                            <option value="全部">全部</option>
-                            <option value="唐欣怡">唐欣怡</option>
-                            <option value="吉意煊">吉意煊</option>
-                            <option value="马嘉良">马嘉良</option>
-                          </select>
-                        </label>
-
-                        <DateRangePicker
-                          label="时间范围"
+	                        <DateRangePicker
+	                          label="周期时间"
                           start={dateRangeStart}
                           end={dateRangeEnd}
                           onChange={({ start, end }) => {
@@ -3024,43 +4213,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        <span className="text-[10px] font-black text-slate-400">
-                          当前显示 {visibleSchedules.length} 个方向
-                        </span>
-                        {coordinatedFilterChips.length === 0 ? (
-                          <span className="rounded-full bg-slate-50 px-2 py-1 text-[9px] font-bold text-slate-350">
-                            未使用额外筛选
-                          </span>
-                        ) : (
-                          coordinatedFilterChips.map((chip) => (
-                            <button
-                              key={chip.key}
-                              type="button"
-                              onClick={chip.onRemove}
-                              className="inline-flex max-w-full items-center gap-1 rounded-full border border-indigo-100 bg-indigo-50 px-2 py-1 text-[9px] font-black text-indigo-650 transition-all hover:border-indigo-200 hover:bg-white"
-                              title="点击移除该条件"
-                            >
-                              <span className="truncate">{chip.label}</span>
-                              <X className="h-2.5 w-2.5 shrink-0" />
-                            </button>
-                          ))
-                        )}
-                      </div>
-
-                      {(coordinatedFilterChips.length > 0 ||
-                        searchQuery.trim()) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetCoordinatedFilters();
-                            setSearchQuery("");
-                          }}
-                          className="text-[10px] font-black text-slate-400 transition-colors hover:text-rose-500"
-                        >
-                          重置全部
-                        </button>
-                      )}
+                      <span className="text-[10px] font-black text-slate-400">
+                        当前显示 {visibleSchedules.length} 个方向
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -3115,6 +4270,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           productionInsights.highRiskRequirements.filter(
                             (item) => item.req.scheduleId === s.id,
                           );
+                        const scheduleInsight = scheduleInsights.get(s.id);
+                        const visibleAssociatedReqs = associatedReqs.slice(0, 3);
+                        const hiddenAssociatedReqCount = Math.max(
+                          0,
+                          associatedReqs.length - visibleAssociatedReqs.length,
+                        );
 
                         const cardPriorityStyle =
                           "border-slate-150 shadow-xs hover:shadow-md";
@@ -3123,7 +4284,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                           <div
                             key={s.id}
                             onClick={() => setSelectedScheduleForModal(s)}
-                            className={`h-[470px] bg-white rounded-3xl border transition-all p-5 flex flex-col justify-between cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
+                            className={`h-[470px] bg-white rounded-3xl border transition-all p-5 pb-[76px] flex flex-col cursor-pointer group relative overflow-hidden min-w-0 ${cardPriorityStyle}`}
                           >
                             <div>
                               {/* 头部信息 */}
@@ -3900,9 +5061,27 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               {/* 2. 制作完成进度 */}
                               <div>
                                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1 text-[10px]">
-                                  <span className="font-extrabold text-slate-500 uppercase tracking-tight flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 bg-emerald-505 rounded-full inline-block shrink-0" />{" "}
-                                    2. 制作完成进度
+                                  <span className="font-extrabold text-slate-500 uppercase tracking-tight flex flex-wrap items-center gap-1">
+                                    <span className="inline-flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 bg-emerald-505 rounded-full inline-block shrink-0" />{" "}
+                                      2. 制作完成进度
+                                    </span>
+                                    {scheduleInsight && !isEditing && (
+                                      <span
+                                        className={`inline-flex h-5 items-center rounded-full border px-2 text-[9px] font-black ${scheduleInsight.statusTone}`}
+                                        title={scheduleInsight.suggestion}
+                                      >
+                                        {scheduleInsight.status}
+                                      </span>
+                                    )}
+                                    {scheduleInsight && scheduleInsight.completedNotLaunched > 0 && !isEditing && (
+                                      <span
+                                        className="inline-flex h-5 items-center rounded-full border border-emerald-150 bg-emerald-50 px-2 text-[9px] font-black text-emerald-700"
+                                        title="已完成且未投放，可进入投放打包建议"
+                                      >
+                                        可打包 {scheduleInsight.completedNotLaunched}
+                                      </span>
+                                    )}
                                   </span>
                                   <span className="font-mono font-black text-emerald-600 font-sans">
                                     {totalProdPercent}%
@@ -3942,9 +5121,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               </div>
 
                               {/* 关联需求和详情按钮 (Requirement 6 & 7) */}
-                              <div className="flex flex-col min-[430px]:flex-row min-[430px]:items-center justify-between gap-2 pt-1">
-                                <div className="flex min-w-0 max-w-full flex-wrap gap-1">
-                                  {associatedReqs.slice(0, 5).map((req) => {
+                              <div className="absolute bottom-5 left-5 right-5 z-20 flex min-h-10 items-center justify-between gap-3">
+                                <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden">
+                                  {visibleAssociatedReqs.map((req) => {
                                     const baseId = req.id.split("-")[0];
                                     const statusColorClass =
                                       req.prodStatus === "Completed"
@@ -3962,23 +5141,23 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     return (
                                       <span
                                         key={req.id}
-                                        className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black font-mono shadow-3xs hover:scale-105 transition-all ${statusColorClass}`}
+                                        className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-black font-mono shadow-3xs transition-all hover:scale-105 ${statusColorClass}`}
                                         title={`${req.id} (${req.name}) - 制作状态: ${statusLabel}`}
                                       >
                                         {baseId}
                                       </span>
                                     );
                                   })}
-                                  {associatedReqs.length > 5 && (
+                                  {hiddenAssociatedReqCount > 0 && (
                                     <span
-                                      className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[8px] font-black text-slate-500 font-sans shrink-0 shadow-3xs"
-                                      title={`还有 ${associatedReqs.length - 5} 个额外关联需求`}
+                                      className="shrink-0 rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[8px] font-black text-slate-500 font-sans shadow-3xs"
+                                      title={`还有 ${hiddenAssociatedReqCount} 个额外关联需求`}
                                     >
-                                      +{associatedReqs.length - 5}
+                                      +{hiddenAssociatedReqCount}
                                     </span>
                                   )}
                                   {associatedReqs.length === 0 && (
-                                    <span className="text-[10px] text-slate-450 italic font-sans font-medium">
+                                    <span className="truncate text-[10px] text-slate-450 italic font-sans font-medium">
                                       暂无关联需求
                                     </span>
                                   )}
@@ -3992,7 +5171,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     if (isEditing) return;
                                     handleAddRequirementForDirection(s.id);
                                   }}
-                                  className={`relative z-20 inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black transition-all duration-200 shrink-0 whitespace-nowrap ${
+                                  className={`relative z-20 inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 text-[11px] font-black whitespace-nowrap transition-all duration-200 ${
                                     isEditing
                                       ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200 shadow-none"
                                       : "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 ring-1 ring-indigo-500 hover:bg-slate-950 hover:ring-slate-950 hover:-translate-y-0.5"
@@ -4097,7 +5276,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               onClick={() => setOpenRequirementFilterKey((prev) => prev === config.key ? null : config.key)}
                               className={`inline-flex h-9 min-w-[152px] items-center justify-between gap-2 rounded-xl border px-3 shadow-3xs transition-all ${
                                 isActive
-                                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                  ? "border-indigo-200 bg-indigo-50 pr-8 text-indigo-700"
                                   : "border-slate-150 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white"
                               }`}
                             >
@@ -4109,11 +5288,29 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   {getFilterDisplayText(currentValue)}
                                 </span>
                               </span>
-                              <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                              {!isActive && (
+                                <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                              )}
                             </button>
+                            {isActive && (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setFilters((prev) => ({ ...prev, [config.key]: FILTER_ALL }));
+                                  if (openRequirementFilterKey === config.key) {
+                                    setOpenRequirementFilterKey(null);
+                                  }
+                                }}
+                                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-lg text-indigo-400 transition-all hover:bg-white/80 hover:text-rose-500"
+                                aria-label={`清除${config.label}筛选`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
 
                             {isOpen && (
-                              <div className="absolute left-0 top-full z-[120] mt-2 w-52 rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                              <div className={FILTER_DROPDOWN_PANEL_CLASS}>
                                 <button
                                   type="button"
                                   onClick={() => toggleRequirementFilterOption(config.key, FILTER_ALL)}
@@ -4122,7 +5319,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   }`}
                                 >
                                   <span>全部</span>
-                                  {!isActive && <span className="text-indigo-600">✓</span>}
+                                  {!isActive && <DropdownSelectedCheck />}
                                 </button>
                                 <div className="my-1 h-px bg-slate-100" />
                                 {config.options.filter((opt) => opt !== FILTER_ALL).map((opt) => {
@@ -4136,11 +5333,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                         checked ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
                                       }`}
                                     >
-                                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[9px] ${
-                                        checked ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 bg-white text-transparent"
-                                      }`}>
-                                        ✓
-                                      </span>
+                                      <DropdownCheckbox checked={checked} />
                                       <span className="truncate">{getFilterOptionLabel(opt)}</span>
                                     </button>
                                   );
@@ -4249,12 +5442,12 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     </div>
                   ) : (
                     <div className="h-full overflow-auto no-scrollbar">
-                      <table className="w-full min-w-[1540px] text-left border-collapse">
+                      <table className="w-full min-w-[1520px] text-left border-collapse">
                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-100">
                           <tr className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
                             <th className="px-4 py-3 font-sans whitespace-nowrap w-[150px]">编号</th>
                             <th className="px-4 py-3 font-sans whitespace-nowrap w-[120px]">预览</th>
-                            <th className="px-4 py-3 font-sans whitespace-nowrap min-w-[220px]">需求名称</th>
+                            <th className="px-4 py-3 font-sans whitespace-nowrap w-[220px]">需求名称</th>
                             <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[110px]">
                               优先级
                             </th>
@@ -4265,14 +5458,14 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[170px]">
                               投放渠道
                             </th>
+                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[148px]">
+                              制作提交
+                            </th>
                             <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[130px]">
                               需求状态
                             </th>
                             <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[130px]">
                               制作状态
-                            </th>
-                            <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[120px]">
-                              测试状态
                             </th>
                             <th className="px-4 py-3 text-center font-sans whitespace-nowrap w-[130px]">
                               投放状态
@@ -4295,6 +5488,8 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                               iterationGroup.length > 1
                                 ? `将复制 ${iterationGroup.map((item) => item.id).join("、")}，并按原小版本顺序生成新大版本`
                                 : "当前大版本只有 1 条需求，将生成 -01 迭代版本";
+                            const submitDate = req.endDate || "";
+                            const submitBadge = getSubmitTimeBadge(submitDate, todayDateString);
 
                             return (
                             <tr
@@ -4392,30 +5587,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     ))}
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-slate-700 font-bold max-w-[190px] font-sans">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  {req.level > 0 && (
-                                    <span className="bg-slate-100 text-slate-400 px-1 py-0.5 rounded text-[8px] font-black uppercase">
-                                      Sub
-                                    </span>
-                                  )}
-                                  {req.isLocalization && (
-                                    <span className="shrink-0 rounded-full border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black text-indigo-600">
-                                      本地化
-                                    </span>
-                                  )}
-                                  <span className="truncate">{req.name}</span>
-                                </div>
-                                {req.isLocalization && (
-                                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] font-black text-slate-400">
-                                    <span className="rounded-lg bg-slate-50 px-1.5 py-0.5 text-indigo-600">
-                                      {req.localizationLanguageLabel || req.language}
-                                    </span>
-                                    <span>
-                                      {getAssetTypeLabel(req.assetType)} · 来源 {req.sourceRequirementIds?.length || req.subVersions?.length || 1} 条
-                                    </span>
-                                  </div>
-                                )}
+                              <td className="px-4 py-3 text-slate-700 font-bold font-sans">
+                                <span className="block max-w-[200px] truncate" title={req.name}>
+                                  {req.name}
+                                </span>
                               </td>
 
                               {/* 优先级 */}
@@ -4474,6 +5649,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                               <td className="px-4 py-3">
                                 <DeliveryChannelsCell channels={req.channels} />
+                              </td>
+
+                              <td
+                                className="px-4 py-3 text-center"
+                              >
+                                <ProductionSubmitDateDisplay
+                                  date={submitDate}
+                                  badge={submitBadge}
+                                />
                               </td>
 
                               {/* 需求状态 */}
@@ -4536,33 +5720,6 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                     </span>
                                   )}
                                 </div>
-                              </td>
-
-                              {/* 测试状态 */}
-                              <td
-                                className="px-4 py-3 text-center"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {req.assetType === "Playable" ? (
-                                  <select
-                                    value={req.testStatus || "待测试"}
-                                    onChange={(e) =>
-                                      updateRequirement(req.id, {
-                                        testStatus: e.target.value as any,
-                                      })
-                                    }
-                                    className="bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded text-[10px] border border-purple-250 focus:ring-1 focus:ring-purple-200 cursor-pointer font-sans"
-                                  >
-                                    <option value="待测试">待测试</option>
-                                    <option value="测试中">测试中</option>
-                                    <option value="数据合格">数据合格</option>
-                                    <option value="不达标">不达标</option>
-                                  </select>
-                                ) : (
-                                  <span className="text-slate-350 italic text-[10px]">
-                                    -
-                                  </span>
-                                )}
                               </td>
 
                               {/* 投放状态 */}
@@ -4883,7 +6040,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                             </button>
 
                             {isProductionProducerFilterOpen && (
-                              <div className="absolute left-0 top-full z-[130] mt-2 max-h-72 w-40 overflow-y-auto rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                              <div className="absolute left-0 top-full z-[130] mt-2 max-h-72 w-40 overflow-y-auto rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -4895,7 +6052,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                   }`}
                                 >
                                   <span>全部人员</span>
-                                  {selectedProducers.length === 0 && <span className="text-indigo-600">✓</span>}
+                                  {selectedProducers.length === 0 && <DropdownSelectedCheck />}
                                 </button>
                                 <div className="my-1 h-px bg-slate-100" />
                                 {activeProducers.map((producer) => {
@@ -4915,11 +6072,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                         isSelected ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
                                       }`}
                                     >
-                                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[9px] ${
-                                        isSelected ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-200 bg-white text-transparent"
-                                      }`}>
-                                        ✓
-                                      </span>
+                                      <DropdownCheckbox checked={isSelected} />
                                       <span className="truncate">{producer.name}</span>
                                     </button>
                                   );
@@ -6573,65 +7726,79 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           const associatedReqs = requirements
             .filter((r) => r.scheduleId === s.id)
             .sort((a, b) => {
-              const getRiskValue = (req: Requirement) => {
-                const risk = productionInsights.highRiskRequirements.find(
-                  (item) => item.req.id === req.id,
-                );
-                if (!risk) return 0;
-                return risk.severity === "danger" ? 2 : 1;
-              };
-              const riskDiff = getRiskValue(b) - getRiskValue(a);
-              if (riskDiff !== 0) return riskDiff;
-              const priorityOrder = { Highest: 4, High: 3, Mid: 2, Low: 1, "": 0 };
-              return (
-                (priorityOrder[b.priority as keyof typeof priorityOrder] || 0) -
-                (priorityOrder[a.priority as keyof typeof priorityOrder] || 0)
-              );
+              const aParsed = parseRequirementVersionId(a.id);
+              const bParsed = parseRequirementVersionId(b.id);
+              const aMajor = aParsed?.majorId || `cp${a.assetIndex}`;
+              const bMajor = bParsed?.majorId || `cp${b.assetIndex}`;
+              if (aMajor !== bMajor) {
+                return b.assetIndex - a.assetIndex;
+              }
+              return Number(a.assetVersion || 0) - Number(b.assetVersion || 0);
             });
+          const modalScheduleInsight = scheduleInsights.get(s.id);
+          const modalDeliverySetDrafts = deliverySets.filter((set) =>
+            set.scheduleIds.includes(s.id),
+          );
+          const cycleAdjustCandidates = associatedReqs.filter(
+            (req) => req.prodStatus !== "Completed",
+          );
+          const isCycleAdjustOpen = cycleAdjustScheduleId === s.id;
+          const isScheduleFullyUnstarted =
+            !modalScheduleInsight ||
+            modalScheduleInsight.total === 0 ||
+            (modalScheduleInsight.notStarted === modalScheduleInsight.total &&
+              modalScheduleInsight.completed === 0 &&
+              modalScheduleInsight.inProgress === 0);
 
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200 font-sans">
               <div className="w-full max-w-7xl h-[88vh] bg-white rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col overflow-hidden relative animate-in zoom-in-95 duration-200">
-                {/* 高档一体化白底弹窗 Header (White-backed Premium Header) */}
-                <div className="px-6 py-5 md:px-8 md:py-6 bg-slate-50/50 border-b border-slate-100 flex flex-col gap-4 shrink-0 select-none">
-                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                    {/* 标题 & 周期/分类徽章 */}
-                    <div className="space-y-2.5 max-w-full md:max-w-[70%]">
+                {/* 方向详情头部 */}
+                <div className="px-6 py-3 md:px-7 md:py-4 bg-white border-b border-slate-100 flex flex-col gap-2.5 shrink-0 select-none">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-2.5">
+                    <div className="min-w-0 flex-1 space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 border border-indigo-100 rounded-lg text-[10px] font-bold text-indigo-700 shadow-3xs">
-                          <Target className="w-3 h-3 text-indigo-500" />
-                          <span>排期方向分类 & ID:</span>
-                          <span className="text-indigo-900 font-extrabold">
-                            {s.id}
-                          </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-150 rounded-lg text-[10px] font-bold text-slate-500 shadow-3xs">
+                          <Hash className="w-3 h-3 text-slate-400" />
+                          <span className="text-slate-700 font-extrabold">{s.id}</span>
                         </span>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-50 border border-sky-100 rounded-lg text-[10px] font-mono font-bold text-sky-700 shadow-3xs">
-                          <span>📅 排期周期:</span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-sky-50 border border-sky-100 rounded-lg text-[10px] font-mono font-bold text-sky-700 shadow-3xs">
+                          <Calendar className="w-3 h-3 text-sky-500" />
+                          <span>排期周期</span>
                           <span className="text-sky-900 font-black">
                             {s.weekRange || "通用周期"}
                           </span>
                         </span>
                       </div>
 
-                      <h2 className="text-xl md:text-2xl font-black text-slate-850 tracking-tight break-words leading-tight">
-                        {s.directionName || "未命名方向"}
-                      </h2>
+                      <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(260px,0.48fr)_minmax(360px,1fr)] lg:items-stretch">
+                        <div className="flex min-h-[48px] items-center rounded-2xl border border-slate-150 bg-slate-50 px-4 py-2.5">
+                          <h2
+                            className="min-w-0 text-xl md:text-2xl font-black text-slate-850 tracking-tight break-words leading-tight"
+                            title={s.directionName}
+                          >
+                            {s.directionName || "未命名方向"}
+                          </h2>
+                        </div>
+                        <div className="flex min-h-[48px] items-start gap-2 rounded-2xl border border-slate-150 bg-white px-4 py-2.5 shadow-3xs">
+                          <Target className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-black text-slate-400">
+                              验证目标
+                            </div>
+                            <p
+                              className="mt-0.5 text-xs font-bold leading-relaxed text-slate-700 line-clamp-2"
+                              title={s.validationGoal}
+                            >
+                              {s.validationGoal || "暂无验证目标"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {/* 顶栏操作区域 */}
                     <div className="flex items-center gap-3 shrink-0 self-end md:self-start">
-                      <button
-                        disabled={editingScheduleId === s.id}
-                        onClick={() => handleAddRequirementForDirection(s.id)}
-                        className={`px-4 py-2.5 text-xs font-black rounded-xl flex items-center gap-1.5 transition-all ${
-                          editingScheduleId === s.id
-                            ? "cursor-not-allowed bg-slate-100 text-slate-400 shadow-none"
-                            : "cursor-pointer bg-indigo-600 hover:bg-indigo-550 active:scale-95 text-white shadow-md shadow-indigo-600/10"
-                        }`}
-                        title={editingScheduleId === s.id ? "保存方向后再新建需求" : "关联增加新创意需求"}
-                      >
-                        <Plus className="w-4 h-4" /> 关联增加新创意需求
-                      </button>
                       <button
                         onClick={() => setSelectedScheduleForModal(null)}
                         className="p-2.5 bg-slate-100 hover:bg-rose-50 border border-slate-200 hover:border-rose-150 text-slate-500 hover:text-rose-600 rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center shadow-3xs"
@@ -6642,23 +7809,427 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                     </div>
                   </div>
 
-                  {/* 目标策略横幅卡片 */}
-                  <div className="p-3.5 bg-rose-50/50 border border-rose-100/50 rounded-2xl flex items-start gap-2.5 text-xs">
-                    <span className="text-base leading-none shrink-0">🎯</span>
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-rose-800">目标策略:</span>
-                      <p className="text-slate-700 font-medium leading-relaxed select-text">
-                        {s.validationGoal || "暂无详细目标说明..."}
-                      </p>
+                  <div className="rounded-2xl border border-slate-150 bg-slate-50/70 px-4 py-2.5">
+                    <div className="mb-2.5">
+                      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black text-slate-400">
+                        基础信息
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {[
+                          {
+                            key: "form",
+                            label: "类型",
+                            value: s.form || "Video",
+                            display: s.form === "Playable" ? "试玩" : s.form === "Image" ? "图片" : "视频",
+                            options: [
+                              { value: "Video", label: "视频" },
+                              { value: "Image", label: "图片" },
+                              { value: "Playable", label: "试玩" },
+                            ],
+                            onSelect: (value: string) =>
+                              updateSchedule(s.id, { form: value as CreativeForm }),
+                          },
+                          {
+                            key: "broadDirection",
+                            label: "大方向",
+                            value: s.broadDirection || "原始玩法",
+                            display: s.broadDirection || "原始玩法",
+                            options: [
+                              { value: "原始玩法", label: "原始玩法" },
+                              { value: "3D玩法", label: "3D玩法" },
+                              { value: "大字报", label: "大字报" },
+                            ],
+                            onSelect: (value: string) =>
+                              updateSchedule(s.id, {
+                                broadDirection: value as CreativeSchedule["broadDirection"],
+                              }),
+                          },
+                          {
+                            key: "materialStage",
+                            label: "阶段",
+                            value: s.materialStage || "新",
+                            display: s.materialStage || "新",
+                            options: [
+                              { value: "新", label: "新" },
+                              { value: "迭", label: "迭" },
+                              { value: "老", label: "老" },
+                            ],
+                            onSelect: (value: string) =>
+                              updateSchedule(s.id, {
+                                materialStage: value as CreativeSchedule["materialStage"],
+                              }),
+                          },
+                          {
+                            key: "priority",
+                            label: "优先级",
+                            value: s.priority || "Mid",
+                            display:
+                              s.priority === "Highest"
+                                ? "最高"
+                                : s.priority === "High"
+                                  ? "高"
+                                  : s.priority === "Low"
+                                    ? "低"
+                                    : "中",
+                            options: [
+                              { value: "Highest", label: "最高" },
+                              { value: "High", label: "高" },
+                              { value: "Mid", label: "中" },
+                              { value: "Low", label: "低" },
+                            ],
+                            onSelect: (value: string) =>
+                              updateSchedulePriority(s, value as RequirementPriority),
+                          },
+                          {
+                            key: "owner",
+                            label: "负责人",
+                            value: s.owner || "唐欣怡",
+                            display: s.owner || "未指派",
+                            options: ["唐欣怡", "吉意煊", "马嘉良", "张欢", "吴楠", "宋爽"].map((name) => ({
+                              value: name,
+                              label: name,
+                            })),
+                            onSelect: (value: string) => updateSchedule(s.id, { owner: value }),
+                          },
+                        ].map((item) => {
+                          const isOpen = openScheduleInfoMenuKey === item.key;
+                          return (
+                            <div key={item.key} className="relative">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setOpenScheduleInfoMenuKey((prev) =>
+                                    prev === item.key ? null : item.key,
+                                  );
+                                }}
+                                className="inline-flex h-8 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-650 shadow-3xs transition-all hover:border-indigo-150 hover:bg-indigo-50 hover:text-indigo-700"
+                              >
+                                <span className="text-slate-400">{item.label}</span>
+                                <span>{item.display}</span>
+                                <ChevronDown
+                                  className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${
+                                    isOpen ? "rotate-180" : ""
+                                  }`}
+                                />
+                              </button>
+                              {isOpen && (
+                                <div className="absolute left-0 top-full z-[150] mt-2 w-40 rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                                  {item.options.map((option) => {
+                                    const active = item.value === option.value;
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          item.onSelect(option.value);
+                                          setOpenScheduleInfoMenuKey(null);
+                                        }}
+                                        className={`flex h-8 w-full items-center justify-between rounded-xl px-3 text-left text-[11px] font-black transition-all ${
+                                          active
+                                            ? FILTER_DROPDOWN_ACTIVE_CLASS
+                                            : FILTER_DROPDOWN_IDLE_CLASS
+                                        }`}
+                                      >
+                                        <span>{option.label}</span>
+                                        {active && <DropdownSelectedCheck />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-150 pt-3">
+                      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-black text-slate-400">
+                      <Tag className="h-3.5 w-3.5" />
+                      方向标签
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                      {(s.directionTags || []).map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-indigo-150 bg-indigo-50 px-3 text-xs font-black text-indigo-700"
+                        >
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeScheduleDirectionTag(s, tag);
+                            }}
+                            className="-mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-indigo-400 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
+                            title={`删除标签 ${tag}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {(s.directionTags || []).length === 0 && (
+                        <span className="text-xs font-bold text-slate-400">
+                          暂无标签，可添加冰雪、sort、皮肤等方向关键词
+                        </span>
+                      )}
+                      <div className="inline-flex h-8 min-w-[180px] items-center gap-1.5 rounded-full border border-dashed border-slate-250 bg-white px-2.5">
+                        <input
+                          value={scheduleTagInput}
+                          onChange={(event) => setScheduleTagInput(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addScheduleDirectionTag(s);
+                            }
+                          }}
+                          placeholder="添加标签"
+                          className="h-full min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-700 outline-none placeholder:text-slate-350"
+                        />
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            addScheduleDirectionTag(s);
+                          }}
+                          disabled={!scheduleTagInput.trim()}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 transition-all hover:bg-indigo-100 disabled:bg-slate-50 disabled:text-slate-300"
+                          title="添加方向标签"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* 主体内置滚动展示区 */}
-                <div className="flex-1 overflow-auto p-4 md:p-8 bg-slate-50/15 flex flex-col">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/15 p-3 md:p-4">
+                  {modalScheduleInsight && (
+                    <div className="mb-3 shrink-0 rounded-2xl border border-slate-150 bg-white p-3 shadow-sm">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex h-7 items-center rounded-full border px-3 text-xs font-black ${modalScheduleInsight.statusTone}`}
+                            >
+                              {modalScheduleInsight.status}
+                            </span>
+                            {s.inheritedFromScheduleId && (
+                              <span
+                                className="inline-flex h-7 items-center rounded-full border border-blue-150 bg-blue-50 px-3 text-xs font-black text-blue-700"
+                                title={s.inheritanceLabel || `继承自 ${s.inheritedFromScheduleId}`}
+                              >
+                                {s.inheritanceLabel || `继承自 ${s.inheritedFromScheduleId}`}
+                              </span>
+                            )}
+                            {s.inheritedToScheduleIds?.length ? (
+                              <span className="inline-flex h-7 items-center rounded-full border border-amber-150 bg-amber-50 px-3 text-xs font-black text-amber-700">
+                                已结转 {s.inheritedToScheduleIds.length} 个方向
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-2 text-xs font-bold text-slate-500">
+                            {modalScheduleInsight.suggestion}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openCycleAdjustPanel(s)}
+                            disabled={
+                              !isScheduleFullyUnstarted &&
+                              modalScheduleInsight.total === modalScheduleInsight.completed
+                            }
+                            className="inline-flex h-8 items-center rounded-xl border border-amber-200 bg-amber-50 px-3 text-[11px] font-black text-amber-800 transition-all hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-slate-150 disabled:bg-slate-50 disabled:text-slate-300"
+                          >
+                            调整周期
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => createDeliverySetDraft(s)}
+                            disabled={modalScheduleInsight.completedNotLaunched === 0}
+                            className="inline-flex h-8 items-center rounded-xl border border-emerald-150 bg-emerald-50 px-3 text-[11px] font-black text-emerald-700 transition-all hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-150 disabled:bg-slate-50 disabled:text-slate-300"
+                          >
+                            生成 Set 草稿
+                          </button>
+                        </div>
+                      </div>
+
+                      {isCycleAdjustOpen && (
+                        <div className="mt-3 rounded-2xl border border-amber-150 bg-amber-50/35 p-3">
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                              <span className="text-xs font-black text-slate-800">
+                                调整周期
+                              </span>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-slate-500">
+                                {isScheduleFullyUnstarted ? "移动原方向" : "创建继承方向"}
+                              </span>
+                              <div className="relative" ref={cycleAdjustWeekPickerRef}>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsCycleAdjustWeekPickerOpen((prev) => !prev)}
+                                  className="inline-flex h-8 min-w-[250px] items-center justify-between gap-2 rounded-xl border border-amber-200 bg-white px-3 text-[11px] font-black text-amber-700 shadow-sm transition-all hover:border-amber-300"
+                                >
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <span
+                                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                        weekVisualMap[cycleAdjustTargetWeekRange]?.dotClass ||
+                                        "bg-amber-500 ring-4 ring-amber-100"
+                                      }`}
+                                    />
+                                    <span className="truncate font-mono">
+                                      {cycleAdjustTargetWeekRange || "选择目标周期"}
+                                    </span>
+                                  </span>
+                                  <ChevronDown
+                                    className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                                      isCycleAdjustWeekPickerOpen ? "rotate-180" : ""
+                                    }`}
+                                  />
+                                </button>
+                                {isCycleAdjustWeekPickerOpen && (
+                                  <div className="absolute left-0 top-full z-[130] mt-2 max-h-72 w-[300px] overflow-auto rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/12">
+                                    {allWeekRanges.map((range) => {
+                                      const visual = weekVisualMap[range];
+                                      const isTarget = cycleAdjustTargetWeekRange === range;
+                                      return (
+                                        <button
+                                          key={range}
+                                          type="button"
+                                          onClick={() => {
+                                            setCycleAdjustTargetWeekRange(range);
+                                            setIsCycleAdjustWeekPickerOpen(false);
+                                          }}
+                                          className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-black transition-all ${
+                                            isTarget
+                                              ? "bg-emerald-50 text-emerald-700"
+                                              : "text-slate-600 hover:bg-slate-50"
+                                          }`}
+                                          title={visual?.label}
+                                        >
+                                          <span className="flex min-w-0 items-center gap-2">
+                                            <span
+                                              className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                                visual?.dotClass || "bg-amber-500 ring-4 ring-amber-100"
+                                              }`}
+                                            />
+                                            <span className="truncate font-mono">{range}</span>
+                                          </span>
+                                          {isTarget && <DropdownSelectedCheck />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[11px] font-bold text-slate-500">
+                                {isScheduleFullyUnstarted
+                                  ? "尚未开始，直接挪到目标周期。"
+                                  : "只带走选中的未完成需求。"}
+                              </span>
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCycleAdjustScheduleId(null);
+                                  setIsCycleAdjustWeekPickerOpen(false);
+                                }}
+                                className="inline-flex h-8 items-center rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-500 transition-all hover:bg-slate-50"
+                              >
+                                取消
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => applyCycleAdjustment(s)}
+                                className="inline-flex h-8 items-center rounded-xl border border-slate-800 bg-slate-800 px-3 text-[11px] font-black text-white shadow-sm shadow-slate-900/15 transition-all hover:bg-slate-900"
+                              >
+                                {isScheduleFullyUnstarted ? "移动方向" : "创建继承方向"}
+                              </button>
+                            </div>
+                          </div>
+
+                          {!isScheduleFullyUnstarted && (
+                            <div className="mt-3 flex flex-col gap-2 border-t border-amber-100 pt-3 md:flex-row md:items-center">
+                              <div className="flex shrink-0 items-center justify-between gap-2 md:w-auto">
+                                <span className="text-[10px] font-black text-slate-400">
+                                  带走需求
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCycleAdjustRequirementIds(
+                                      cycleAdjustCandidates.map((req) => req.id),
+                                    )
+                                  }
+                                  className="text-[10px] font-black text-emerald-600 hover:text-emerald-700"
+                                >
+                                  全选未完成
+                                </button>
+                              </div>
+                              <div className="flex flex-1 flex-wrap gap-2">
+                                {cycleAdjustCandidates.map((req) => {
+                                  const checked = cycleAdjustRequirementIds.includes(req.id);
+                                  return (
+                                    <button
+                                      key={req.id}
+                                      type="button"
+                                      onClick={() => toggleCycleAdjustRequirement(req.id)}
+                                      className={`inline-flex h-8 items-center gap-2 rounded-xl border px-3 text-[11px] font-black transition-all ${
+                                        checked
+                                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                          : "border-slate-150 bg-white/60 text-slate-500 hover:bg-white"
+                                      }`}
+                                    >
+                                      <DropdownCheckbox
+                                        checked={checked}
+                                        className="h-3.5 w-3.5"
+                                      />
+                                      {req.id}
+                                    </button>
+                                  );
+                                })}
+                                {cycleAdjustCandidates.length === 0 && (
+                                  <span className="text-[11px] font-bold text-slate-400">
+                                    没有可调整的未完成需求
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {modalDeliverySetDrafts.length > 0 && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                          <span className="text-[10px] font-black text-slate-400">
+                            Delivery Set 草稿
+                          </span>
+                          {modalDeliverySetDrafts.map((set) => (
+                            <span
+                              key={set.id}
+                              className="inline-flex h-7 items-center rounded-full border border-emerald-150 bg-emerald-50 px-3 text-[11px] font-black text-emerald-700"
+                              title={`包含：${set.requirementIds.join("、")}`}
+                            >
+                              {getChannelDisplayName(set.channel)} · {set.requirementIds.length} 条
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* 第二部分：关联的所有项 (Requirements List Table) */}
-                  <div className="bg-white rounded-2xl border border-slate-150 shadow-sm flex flex-col overflow-hidden">
-                    <div className="px-6 py-5 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-150 bg-white shadow-sm">
+                    <div className="flex shrink-0 flex-col justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center">
                       <div>
 	                        <h3 className="text-xs font-black text-slate-850 uppercase tracking-wider flex items-center gap-1.5">
 	                          <ListTodo className="w-4 h-4 text-indigo-550" />
@@ -6672,10 +8243,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                       <button
                         disabled={editingScheduleId === s.id}
                         onClick={() => handleAddRequirementForDirection(s.id)}
-                        className={`px-3.5 py-1.8 border rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-black transition-all ${
                           editingScheduleId === s.id
-                            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 shadow-none"
-                            : "cursor-pointer bg-white hover:bg-slate-50 text-indigo-650 border-slate-200 hover:border-indigo-300 shadow-3xs active:scale-95"
+                            ? "cursor-not-allowed bg-slate-100 text-slate-400 shadow-none"
+                            : "cursor-pointer bg-primary text-white shadow-sm shadow-slate-900/15 hover:bg-slate-900 active:scale-95"
                         }`}
                         title={editingScheduleId === s.id ? "保存方向后再新建需求" : "新建需求"}
                       >
@@ -6692,10 +8263,10 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         <button
                           disabled={editingScheduleId === s.id}
                           onClick={() => handleAddRequirementForDirection(s.id)}
-                          className={`px-5 py-2.5 border rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                          className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-4 text-xs font-black transition-all ${
                             editingScheduleId === s.id
-                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                              : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100/85 border-indigo-200"
+                              ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                              : "bg-primary text-white shadow-sm shadow-slate-900/15 hover:bg-slate-900"
                           }`}
                           title={editingScheduleId === s.id ? "保存方向后再新建需求" : "马上新建并关联该方向"}
                         >
@@ -6703,39 +8274,44 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto no-scrollbar">
-                        <table className="w-full min-w-[1480px] text-left border-collapse text-xs">
+                      <div className="min-h-0 flex-1 overflow-auto no-scrollbar">
+                        <table className="w-full min-w-[1360px] text-left border-collapse text-xs">
                           <thead>
-                            <tr className="bg-slate-55 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 select-none">
-	                              <th className="px-5 py-3.5 pl-8 w-[120px] whitespace-nowrap">编号</th>
-	                              <th className="px-5 py-3.5 w-[130px] whitespace-nowrap">预览</th>
-	                              <th className="px-5 py-3.5 min-w-[260px] whitespace-nowrap">需求名称</th>
-	                              <th className="px-5 py-3.5 text-center w-[130px] whitespace-nowrap">
+                            <tr className="sticky top-0 z-10 bg-slate-55 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 select-none shadow-[0_1px_0_rgba(226,232,240,0.9)]">
+                                {isCycleAdjustOpen && (
+                                  <th className="px-3 py-3.5 pl-8 w-[72px] whitespace-nowrap">
+                                    带走
+                                  </th>
+                                )}
+	                              <th className="px-4 py-3.5 pl-8 w-[118px] whitespace-nowrap">编号</th>
+	                              <th className="px-3 py-3.5 w-[112px] whitespace-nowrap">预览</th>
+	                              <th className="px-4 py-3.5 w-[220px] whitespace-nowrap">需求名称</th>
+	                              <th className="px-3 py-3.5 text-center w-[112px] whitespace-nowrap">
 	                                优先级
 	                              </th>
-	                              <th className="px-5 py-3.5 w-[140px] whitespace-nowrap">创意人员</th>
-	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">制作人员</th>
-	                              <th className="px-5 py-3.5 text-center w-[170px] whitespace-nowrap">投放渠道</th>
-	                              <th className="px-5 py-3.5 text-center w-[150px] whitespace-nowrap">需求状态</th>
-	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">制作状态</th>
-	                              <th className="px-5 py-3.5 text-center w-[120px] whitespace-nowrap">
-	                                测试状态
-	                              </th>
-	                              <th className="px-5 py-3.5 text-center w-[140px] whitespace-nowrap">
+	                              <th className="px-3 py-3.5 w-[118px] whitespace-nowrap">创意人员</th>
+	                              <th className="px-3 py-3.5 text-center w-[128px] whitespace-nowrap">制作人员</th>
+	                              <th className="px-3 py-3.5 text-center w-[138px] whitespace-nowrap">投放渠道</th>
+	                              <th className="px-3 py-3.5 text-center w-[148px] whitespace-nowrap">制作提交</th>
+	                              <th className="px-3 py-3.5 text-center w-[136px] whitespace-nowrap">需求状态</th>
+	                              <th className="px-3 py-3.5 text-center w-[112px] whitespace-nowrap">制作状态</th>
+	                              <th className="px-3 py-3.5 text-center w-[120px] whitespace-nowrap">
 	                                投放状态
 	                              </th>
-                              <th className="px-5 py-3.5 text-right pr-8 w-[80px] whitespace-nowrap">
+                              <th className="px-3 py-3.5 text-right pr-6 w-[70px] whitespace-nowrap">
                                 操作
                               </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {associatedReqs.map((req) => {
-                              const requirementRisk = req.isLocalization
-                                ? undefined
-                                : productionInsights.highRiskRequirements.find(
-                                    (item) => item.req.id === req.id,
-                                  );
+                              const submitDate =
+                                req.endDate ||
+                                s.productionEnd ||
+                                s.submissionDeadline ||
+                                s.requirementEnd ||
+                                "";
+                              const submitBadge = getSubmitTimeBadge(submitDate, todayDateString);
 
                               return (
                               <tr
@@ -6743,8 +8319,33 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 className="hover:bg-indigo-50/15 cursor-pointer transition-all group"
                                 onClick={() => setSelectedReq(req)}
                               >
+                                {isCycleAdjustOpen && (
+                                  <td className="px-3 py-3.5 pl-8 whitespace-nowrap">
+                                    {req.prodStatus !== "Completed" ? (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          toggleCycleAdjustRequirement(req.id);
+                                        }}
+                                        className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all ${
+                                          cycleAdjustRequirementIds.includes(req.id)
+                                            ? "border-emerald-500 bg-emerald-500 text-white"
+                                            : "border-slate-200 bg-white text-transparent hover:border-emerald-200 hover:bg-emerald-50"
+                                        }`}
+                                        title="选择带到目标周期"
+                                      >
+                                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                                      </button>
+                                    ) : (
+                                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-[10px] font-black text-slate-300">
+                                        -
+                                      </span>
+                                    )}
+                                  </td>
+                                )}
                                 {/* ID */}
-                                <td className="px-5 py-3.5 font-mono font-bold text-slate-400 relative pl-8 whitespace-nowrap">
+                                <td className="px-4 py-3.5 font-mono font-bold text-slate-400 relative pl-8 whitespace-nowrap">
                                   {req.parentId && (
                                     <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
                                       <div className="w-3.5 h-[1.5px] bg-slate-300"></div>
@@ -6762,7 +8363,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </td>
 
                                 {/* Previews */}
-                                <td className="px-5 py-3.5 whitespace-nowrap">
+                                <td className="px-3 py-3.5 whitespace-nowrap">
                                   <div className="flex gap-1">
                                     {(req.previews || [])
                                       .slice(0, 3)
@@ -6782,58 +8383,15 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </td>
 
                                 {/* Name */}
-                                <td className="px-5 py-3.5 font-bold text-slate-800 max-w-[220px] break-words">
-                                  <div className="flex flex-col gap-0.5">
-                                    <div className="flex min-w-0 items-center gap-1.5">
-                                      {req.parentId && (
-                                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded text-[8px] font-black uppercase tracking-wider">
-                                          Sub
-                                        </span>
-                                      )}
-                                      {req.isLocalization && (
-                                        <span className="shrink-0 rounded-full border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 text-[8px] font-black text-indigo-600">
-                                          本地化
-                                        </span>
-                                      )}
-                                      <span className="truncate">{req.name}</span>
-                                      {requirementRisk && (
-                                        <span
-                                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black ${
-                                            requirementRisk.severity === "danger"
-                                              ? "bg-rose-50 text-rose-600"
-                                              : "bg-amber-50 text-amber-700"
-                                          }`}
-                                          title={`${requirementRisk.reason}：${requirementRisk.action}`}
-                                        >
-                                          {requirementRisk.reason}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 font-medium font-mono">
-                                      {req.projectName} · {req.assetType} (
-                                      {req.dimensions?.[0] || "16:9"})
-                                    </span>
-                                    {req.isLocalization && (
-                                      <span className="flex flex-wrap items-center gap-1.5 text-[9px] font-black text-slate-400">
-                                        <span className="rounded-lg bg-indigo-50 px-1.5 py-0.5 text-indigo-600">
-                                          {req.localizationLanguageLabel || req.language}
-                                        </span>
-                                        <span>
-                                          {getAssetTypeLabel(req.assetType)} · 来源 {req.sourceRequirementIds?.length || req.subVersions?.length || 1} 条
-                                        </span>
-                                      </span>
-                                    )}
-                                    {requirementRisk && (
-                                      <span className="truncate text-[9px] font-black text-rose-400">
-                                        建议：{requirementRisk.action}
-                                      </span>
-                                    )}
-                                  </div>
+                                <td className="px-4 py-3.5 font-bold text-slate-800">
+                                  <span className="block max-w-[200px] truncate" title={req.name}>
+                                    {req.name}
+                                  </span>
                                 </td>
 
                                 {/* Priority Select */}
                                 <td
-                                  className="px-5 py-3.5 text-center"
+                                  className="px-3 py-3.5 text-center"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <div className="flex justify-center">
@@ -6858,7 +8416,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </td>
 
                                 {/* Creative Personnel */}
-                                <td className="px-5 py-3.5 whitespace-nowrap">
+                                <td className="px-3 py-3.5 whitespace-nowrap">
                                   <PersonBadge
                                     name={req.creativePersonnel}
                                     size="sm"
@@ -6866,20 +8424,30 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
                                 </td>
 
                                 {/* Production Personnel */}
-                                <td className="px-5 py-3.5">
-                                  <div className="flex justify-center">
-                                    <PersonAvatarStack people={req.productionPersonnel} />
+                                <td className="px-3 py-3.5">
+                                  <div className="mx-auto flex max-w-[112px] flex-wrap justify-center gap-1.5">
+                                    <PersonAvatarStack people={req.productionPersonnel} maxVisible={2} />
                                   </div>
                                 </td>
 
                                 {/* Delivery Channels */}
-                                <td className="px-5 py-3.5">
+                                <td className="px-3 py-3.5">
                                   <DeliveryChannelsCell channels={req.channels} />
+                                </td>
+
+                                {/* Production submit time */}
+                                <td
+                                  className="px-3 py-3.5 text-center"
+                                >
+                                  <ProductionSubmitDateDisplay
+                                    date={submitDate}
+                                    badge={submitBadge}
+                                  />
                                 </td>
 
                                 {/* reqStatus */}
                                 <td
-                                  className="px-5 py-3.5"
+                                  className="px-3 py-3.5"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <select
@@ -6907,7 +8475,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                                 {/* prodStatus */}
                                 <td
-                                  className="px-5 py-3.5"
+                                  className="px-3 py-3.5"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <select
@@ -6929,44 +8497,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 	                                  </select>
                                 </td>
 
-                                {/* Test status */}
-                                <td
-                                  className="px-5 py-3.5 text-center"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {req.assetType === "Playable" ? (
-                                    <select
-                                      value={req.testStatus || "待测试"}
-                                      onChange={(e) =>
-                                        updateRequirement(req.id, {
-                                          testStatus: e.target.value as any,
-                                        })
-                                      }
-                                      className="min-w-[82px] whitespace-nowrap bg-purple-50 text-purple-700 font-black px-2 py-1 rounded-lg text-[10px] border border-purple-200 focus:outline-none cursor-pointer"
-                                    >
-	                                      <option value="待测试">
-	                                        待测试
-	                                      </option>
-	                                      <option value="测试中">
-	                                        测试中
-	                                      </option>
-	                                      <option value="数据合格">
-	                                        数据合格
-	                                      </option>
-	                                      <option value="不达标">
-	                                        不达标
-	                                      </option>
-                                    </select>
-                                  ) : (
-                                    <span className="text-slate-350 italic text-[10px]">
-                                      -
-                                    </span>
-                                  )}
-                                </td>
-
                                 {/* Delivery Play/Pause */}
                                 <td
-                                  className="px-5 py-3.5 text-center"
+                                  className="px-3 py-3.5 text-center"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <div className="flex justify-center">
@@ -6990,7 +8523,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
 
                                 {/* Deletion */}
                                 <td
-                                  className="px-5 py-3.5 text-right pr-8"
+                                  className="px-3 py-3.5 text-right pr-6"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <button

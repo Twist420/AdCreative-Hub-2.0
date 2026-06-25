@@ -65,6 +65,28 @@ const CREATIVE_ALIASES: Record<string, string> = {
   '顺子': 'sz'
 };
 
+const DropdownSelectedCheck = ({ className = '' }: { className?: string }) => (
+  <Check className={`h-4 w-4 shrink-0 stroke-[3] text-indigo-500 ${className}`} />
+);
+
+const DropdownCheckbox = ({
+  checked,
+  className = '',
+}: {
+  checked: boolean;
+  className?: string;
+}) => (
+  <span
+    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-all ${
+      checked
+        ? 'border-indigo-500 bg-indigo-500 text-white'
+        : 'border-slate-200 bg-white text-transparent'
+    } ${className}`}
+  >
+    <Check className="h-3 w-3 stroke-[3]" />
+  </span>
+);
+
 const CREATIVE_PEOPLE = ['唐欣怡', '吉意煊', '马嘉良'];
 
 const PERSON_AVATAR_URLS: Record<string, string> = {
@@ -977,7 +999,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   const getDeliveryStatusText = (status: string) => {
     if (status === 'Delivering') return '投放中';
     if (status === 'NotLaunched') return '未投放';
-    return '待投放';
+    return '未投放';
   };
 
   const getDeliveryStatusClass = (status: string) => {
@@ -1456,7 +1478,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
             </button>
 
             {isCreativePersonnelMenuOpen && (
-              <div className="absolute right-0 top-full z-[90] mt-2 w-40 overflow-hidden rounded-2xl border border-slate-150 bg-white p-1.5 shadow-2xl shadow-slate-900/10">
+              <div className="absolute right-0 top-full z-[90] mt-2 w-40 overflow-hidden rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
                 {creativePersonnelOptions.map(person => {
                   const isSelected = currentReq.creativePersonnel === person;
                   return (
@@ -1480,7 +1502,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                         referrerPolicy="no-referrer"
                       />
                       <span className="min-w-0 flex-1 truncate text-xs font-black">{person}</span>
-                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      {isSelected && <DropdownSelectedCheck />}
                     </button>
                   );
                 })}
@@ -2229,7 +2251,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                   </button>
 
                   {isAvailabilityProducerMenuOpen && (
-                    <div className="absolute left-0 top-full z-[340] mt-2 max-h-72 w-40 overflow-y-auto rounded-2xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
+                    <div className="absolute left-0 top-full z-[340] mt-2 max-h-72 w-40 overflow-y-auto rounded-3xl border border-slate-150 bg-white p-2 shadow-2xl shadow-slate-900/10">
                       <button
                         type="button"
                         onClick={() => {
@@ -2241,7 +2263,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                         }`}
                       >
                         <span>全部人员</span>
-                        {availabilityProducerFilter.length === 0 && <Check className="h-3.5 w-3.5" />}
+                        {availabilityProducerFilter.length === 0 && <DropdownSelectedCheck />}
                       </button>
                       <div className="my-1 h-px bg-slate-100" />
                       {availabilityRows.map(person => {
@@ -2261,11 +2283,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
                               isSelected ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                             }`}
                           >
-                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[9px] ${
-                              isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-200 bg-white text-transparent'
-                            }`}>
-                              ✓
-                            </span>
+                            <DropdownCheckbox checked={isSelected} />
                             <span className="truncate">{person.name}</span>
                           </button>
                         );
