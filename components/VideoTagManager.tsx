@@ -5,7 +5,8 @@ import {
   Plus, Search, Edit2, Trash2, ChevronRight, 
   X, Check,
   GripVertical, MousePointer2, Settings2,
-  ChevronDown, Layers, FileText, UserCircle2, Tag as TagIcon
+  ChevronDown, Layers, FileText, UserCircle2, Tag as TagIcon,
+  Eye, EyeOff
 } from 'lucide-react';
 
 const initialData: TagNode[] = [
@@ -119,6 +120,33 @@ const countLeafTags = (node: TagNode): number => {
   return node.children.reduce((sum, child) => sum + countLeafTags(child), 0);
 };
 
+const flattenTags = (nodes: TagNode[] = []): TagNode[] => {
+  return nodes.flatMap((node) => {
+    const { children, ...tag } = node;
+    return [
+      { ...tag, level: 4, hidden: false },
+      ...flattenTags(children),
+    ];
+  });
+};
+
+const normalizeTagTree = (nodes: TagNode[]): TagNode[] => {
+  return nodes.map((root) => ({
+    ...root,
+    level: 1,
+    children: (root.children || []).map((group) => ({
+      ...group,
+      level: 2,
+      children: (group.children || []).map((tagGroup) => ({
+        ...tagGroup,
+        level: 3,
+        hidden: Boolean(tagGroup.hidden),
+        children: flattenTags(tagGroup.children),
+      })),
+    })),
+  }));
+};
+
 interface InlineEditorProps {
   node: TagNode;
   editingId: string | null;
@@ -192,8 +220,9 @@ const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({
   node, theme, expandedIds, toggleExpand, handleAddChild, handleDelete,
   draggingTagId, handleTagDragStart, handleTagDragEnd, viewMode, inlineEditorProps
 }) => {
-  const isExpanded = expandedIds.has(node.id);
-  const hasChildren = node.children && node.children.length > 0;
+  void expandedIds;
+  void toggleExpand;
+  void handleAddChild;
   const isLevel5Plus = node.level >= 5;
   const canDragTag = viewMode === 'card' && node.level >= 4;
   const tone = getToneForNode(node.id);
@@ -202,9 +231,7 @@ const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({
     ? `${tone.bg} ${tone.border} ${tone.text} ${tone.hover}`
     : isLevel5Plus
       ? `bg-white border-dashed ${theme.subBorder} hover:border-slate-300 hover:bg-slate-50`
-      : isExpanded
-        ? `${theme.pillActiveBg} ${theme.pillActiveBorder} ring-1 ${theme.ring}`
-        : `${theme.pillBg} ${theme.pillBorder} hover:${theme.pillHoverBg} hover:${theme.pillHoverBorder}`;
+      : `${theme.pillBg} ${theme.pillBorder} hover:${theme.pillHoverBg} hover:${theme.pillHoverBorder}`;
 
   return (
     <div className="flex flex-wrap items-center gap-1 group/hier">
@@ -220,10 +247,7 @@ const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({
         className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 transition-all shadow-3xs cursor-pointer group/pill ${
           draggingTagId === node.id ? 'opacity-45 ring-2 ring-slate-300' : ''
         } ${canDragTag ? 'active:cursor-grabbing' : ''} ${pillClasses}`}
-        onClick={(e) => {
-          if (hasChildren) toggleExpand(node.id);
-          else e.stopPropagation();
-        }}
+        onClick={(e) => e.stopPropagation()}
       >
         {canDragTag && (
           <GripVertical className={`h-3 w-3 shrink-0 opacity-45 ${tone.icon}`} />
@@ -232,44 +256,10 @@ const AdaptiveTagPill: React.FC<AdaptiveTagPillProps> = ({
           <InlineEditor node={node} {...inlineEditorProps} />
         </div>
         
-        {hasChildren && (
-          <ChevronRight className={`w-3 h-3 transition-transform ${viewMode === 'card' ? tone.icon : theme.icon} group-hover/pill:${theme.iconActive} ${isExpanded ? 'rotate-90' : ''}`} />
-        )}
-
         <div className="flex items-center opacity-0 group-hover/pill:opacity-100 transition-opacity gap-0.5" onClick={(e) => e.stopPropagation()}>
-           <button onClick={() => handleAddChild(node.id)} className={`p-0.5 ${viewMode === 'card' ? tone.icon : theme.icon} hover:text-emerald-500`} title="添加子标签"><Plus className="w-3 h-3"/></button>
            <button onClick={() => handleDelete(node.id)} className={`p-0.5 ${viewMode === 'card' ? tone.icon : theme.icon} hover:text-rose-500`} title="删除标签"><X className="w-3 h-3"/></button>
         </div>
       </div>
-      
-      {isExpanded && hasChildren && viewMode === 'card' && (
-        <div className={`flex flex-wrap items-center gap-1 border-l ${theme.guideLine} pl-1.5 animate-in slide-in-from-left-2 duration-300`}>
-           {node.children!.map(child => (
-             <AdaptiveTagPill 
-               key={child.id} 
-               node={child} 
-               theme={theme} 
-               expandedIds={expandedIds}
-               toggleExpand={toggleExpand}
-               handleAddChild={handleAddChild}
-               handleDelete={handleDelete}
-               draggingTagId={draggingTagId}
-               handleTagDragStart={handleTagDragStart}
-               handleTagDragEnd={handleTagDragEnd}
-               viewMode={viewMode}
-               inlineEditorProps={inlineEditorProps}
-             />
-           ))}
-           
-           <button 
-              onClick={() => handleAddChild(node.id)} 
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white text-slate-300 transition-all hover:border-primary/50 hover:text-primary"
-              title="新增子项"
-            >
-              <Plus className="w-3.5 h-3.5" />
-           </button>
-        </div>
-      )}
     </div>
   );
 };
@@ -341,7 +331,7 @@ const MindmapNode: React.FC<MindmapNodeProps> = ({
 };
 
 const VideoTagManager: React.FC = () => {
-  const [tags, setTags] = useState<TagNode[]>(initialData);
+  const [tags, setTags] = useState<TagNode[]>(() => normalizeTagTree(initialData));
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
@@ -430,12 +420,6 @@ const VideoTagManager: React.FC = () => {
     return null;
   };
 
-  const normalizeNodeLevel = (node: TagNode, level: number): TagNode => ({
-    ...node,
-    level,
-    children: node.children?.map(child => normalizeNodeLevel(child, level + 1)),
-  });
-
   const handleTagDragStart = (node: TagNode) => {
     if (node.level < 4) return;
     setDraggingTagId(node.id);
@@ -465,7 +449,8 @@ const VideoTagManager: React.FC = () => {
     }
 
     const [movedNode] = dragged.parentList.splice(dragged.index, 1);
-    const normalizedNode = normalizeNodeLevel(movedNode, target.node.level + 1);
+    const { children: _children, ...movedTag } = movedNode;
+    const normalizedNode: TagNode = { ...movedTag, level: target.node.level + 1, hidden: false };
     target.node.children = [...(target.node.children || []), normalizedNode];
     setTags(newTags);
     setExpandedIds(prev => new Set(prev).add(targetGroupId));
@@ -501,14 +486,31 @@ const VideoTagManager: React.FC = () => {
     const newTags = [...tags];
     const found = findNodeAndParent(newTags, parentId);
     if (found) {
+      if (found.node.level >= 4) return;
+
       const newId = `tag-${Date.now()}`;
+      const nextLevel = found.node.level + 1;
       const newNode: TagNode = {
-        id: newId, name: '新项', level: found.node.level + 1, type: 'none', children: []
+        id: newId,
+        name: nextLevel === 2 ? '新子分组' : nextLevel === 3 ? '新标签组' : '新标签',
+        level: nextLevel,
+        type: 'none',
+        hidden: false,
+        children: nextLevel < 4 ? [] : undefined
       };
       found.node.children = [...(found.node.children || []), newNode];
       setTags(newTags);
       setExpandedIds(prev => new Set(prev).add(parentId));
       handleStartEdit(newNode);
+    }
+  };
+
+  const handleToggleGroupHidden = (groupId: string, hidden: boolean) => {
+    const newTags = [...tags];
+    const found = findNodeAndParent(newTags, groupId);
+    if (found && found.node.level === 3) {
+      found.node.hidden = hidden;
+      setTags(newTags);
     }
   };
 
@@ -617,92 +619,129 @@ const VideoTagManager: React.FC = () => {
                   </div>
 
                   <div className="space-y-3">
-                    {root.children?.map(l2 => (
-                      <div key={l2.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
-                        <div className="mb-2 flex items-center gap-2">
-                          <div className={`h-2 w-2 rounded-full ${style.dot} opacity-80`}></div>
-                          <InlineEditor node={l2} {...inlineEditorProps} />
-                          <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-black text-slate-400 ring-1 ring-slate-100">
-                            {countLeafTags(l2)}
-                          </span>
-                          <button
-                            onClick={() => handleAddChild(l2.id)}
-                            className="ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[9px] font-black text-slate-400 hover:bg-white hover:text-emerald-600"
-                          >
-                            <Plus className="h-3 w-3" /> 内容组
-                          </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
-                          {l2.children?.map(l3 => (
-                            <div
-                              key={l3.id}
-                              onDragOver={(event) => {
-                                if (!draggingTagId) return;
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = 'move';
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                handleDropTagToGroup(l3.id);
-                              }}
-                              className={`group rounded-xl border bg-white p-2.5 shadow-3xs transition-all ${
-                                draggingTagId ? 'border-dashed border-primary/40 bg-indigo-50/40 ring-1 ring-primary/10' : 'border-slate-100'
-                              }`}
+                    {root.children?.map(l2 => {
+                      const visibleTagGroups = (l2.children || []).filter(group => !group.hidden);
+                      const hiddenTagGroups = (l2.children || []).filter(group => group.hidden);
+
+                      return (
+                        <div key={l2.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-2.5">
+                          <div className="mb-2 flex items-center gap-2">
+                            <div className={`h-2 w-2 rounded-full ${style.dot} opacity-80`}></div>
+                            <InlineEditor node={l2} {...inlineEditorProps} />
+                            <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-black text-slate-400 ring-1 ring-slate-100">
+                              {countLeafTags(l2)}
+                            </span>
+                            <button
+                              onClick={() => handleAddChild(l2.id)}
+                              className="ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[9px] font-black text-slate-400 hover:bg-white hover:text-emerald-600"
                             >
-                              <div className="mb-2 flex items-center gap-1.5">
-                                <InlineEditor node={l3} {...inlineEditorProps} />
-                                {l3.type && l3.type !== 'none' && (
-                                  <span className={`rounded px-1 py-0.5 text-[8px] font-black ${l3.type === 'single' ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                                    {l3.type === 'single' ? '单选' : '多选'}
-                                  </span>
-                                )}
-                                <span className="rounded bg-slate-50 px-1.5 py-0.5 text-[8px] font-black text-slate-400">
-                                  {countLeafTags(l3)}
-                                </span>
-                                <button
-                                  onClick={() => handleAddChild(l3.id)}
-                                  className="ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[9px] font-black text-slate-400 opacity-0 transition-all hover:bg-slate-50 hover:text-primary group-hover:opacity-100"
-                                >
-                                  <Plus className="h-3 w-3" /> 标签
-                                </button>
-                              </div>
-                              
-                              <div className="flex flex-wrap items-start gap-1.5">
-                                {l3.children?.map(child => (
-                                  <AdaptiveTagPill 
-                                    key={child.id} 
-                                    node={child} 
-                                    theme={style} 
-                                    expandedIds={expandedIds}
-                                    toggleExpand={toggleExpand}
-                                    handleAddChild={handleAddChild}
-                                    handleDelete={handleDelete}
-                                    draggingTagId={draggingTagId}
-                                    handleTagDragStart={handleTagDragStart}
-                                    handleTagDragEnd={handleTagDragEnd}
-                                    viewMode="card"
-                                    inlineEditorProps={inlineEditorProps}
-                                  />
-                                ))}
-                                <button
-                                  onClick={() => handleAddChild(l3.id)}
-                                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-dashed border-slate-200 bg-white px-2 text-[10px] font-black text-slate-400 transition-all hover:border-primary/50 hover:text-primary"
-                                >
-                                  <Plus className="h-3 w-3" /> 添加
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                          <button
-                            onClick={() => handleAddChild(l2.id)}
-                            className="flex min-h-[76px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 text-[10px] font-black text-slate-400 transition-all hover:border-primary/50 hover:text-primary"
-                          >
-                            <Plus className="mr-1 h-3 w-3" /> 新增内容组
+                              <Plus className="h-3 w-3" /> 标签组
                             </button>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
+                            {visibleTagGroups.map(l3 => (
+                              <div
+                                key={l3.id}
+                                onDragOver={(event) => {
+                                  if (!draggingTagId) return;
+                                  event.preventDefault();
+                                  event.dataTransfer.dropEffect = 'move';
+                                }}
+                                onDrop={(event) => {
+                                  event.preventDefault();
+                                  handleDropTagToGroup(l3.id);
+                                }}
+                                className={`group rounded-xl border bg-white p-2.5 shadow-3xs transition-all ${
+                                  draggingTagId ? 'border-dashed border-primary/40 bg-indigo-50/40 ring-1 ring-primary/10' : 'border-slate-100'
+                                }`}
+                              >
+                                <div className="mb-2 flex items-center gap-1.5">
+                                  <InlineEditor node={l3} {...inlineEditorProps} />
+                                  {l3.type && l3.type !== 'none' && (
+                                    <span className={`rounded px-1 py-0.5 text-[8px] font-black ${l3.type === 'single' ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                                      {l3.type === 'single' ? '单选' : '多选'}
+                                    </span>
+                                  )}
+                                  <span className="rounded bg-slate-50 px-1.5 py-0.5 text-[8px] font-black text-slate-400">
+                                    {countLeafTags(l3)}
+                                  </span>
+                                  <button
+                                    onClick={() => handleToggleGroupHidden(l3.id, true)}
+                                    className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-300 opacity-0 transition-all hover:bg-slate-50 hover:text-slate-600 group-hover:opacity-100"
+                                    title="隐藏标签组"
+                                  >
+                                    <EyeOff className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleAddChild(l3.id)}
+                                    className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[9px] font-black text-slate-400 opacity-0 transition-all hover:bg-slate-50 hover:text-primary group-hover:opacity-100"
+                                  >
+                                    <Plus className="h-3 w-3" /> 标签
+                                  </button>
+                                </div>
+                                
+                                <div className="flex flex-wrap items-start gap-1.5">
+                                  {l3.children?.map(child => (
+                                    <AdaptiveTagPill 
+                                      key={child.id} 
+                                      node={child} 
+                                      theme={style} 
+                                      expandedIds={expandedIds}
+                                      toggleExpand={toggleExpand}
+                                      handleAddChild={handleAddChild}
+                                      handleDelete={handleDelete}
+                                      draggingTagId={draggingTagId}
+                                      handleTagDragStart={handleTagDragStart}
+                                      handleTagDragEnd={handleTagDragEnd}
+                                      viewMode="card"
+                                      inlineEditorProps={inlineEditorProps}
+                                    />
+                                  ))}
+                                  <button
+                                    onClick={() => handleAddChild(l3.id)}
+                                    className="inline-flex h-7 items-center gap-1 rounded-lg border border-dashed border-slate-200 bg-white px-2 text-[10px] font-black text-slate-400 transition-all hover:border-primary/50 hover:text-primary"
+                                  >
+                                    <Plus className="h-3 w-3" /> 添加
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                            <button
+                              onClick={() => handleAddChild(l2.id)}
+                              className="flex min-h-[76px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 text-[10px] font-black text-slate-400 transition-all hover:border-primary/50 hover:text-primary"
+                            >
+                              <Plus className="mr-1 h-3 w-3" /> 新增标签组
+                            </button>
+                          </div>
+
+                          {hiddenTagGroups.length > 0 && (
+                            <details className="mt-2 rounded-xl border border-dashed border-slate-200 bg-white/70 px-2.5 py-2">
+                              <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-black text-slate-400 marker:hidden">
+                                <EyeOff className="h-3.5 w-3.5" />
+                                已隐藏标签组
+                                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9px] text-slate-500">{hiddenTagGroups.length}</span>
+                                <ChevronDown className="ml-auto h-3.5 w-3.5" />
+                              </summary>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {hiddenTagGroups.map(group => (
+                                  <button
+                                    key={group.id}
+                                    onClick={() => handleToggleGroupHidden(group.id, false)}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-150 bg-slate-50 px-2 text-[10px] font-black text-slate-500 transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                                    title="恢复显示"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                    {group.name}
+                                    <span className="rounded bg-white px-1 font-mono text-[8px] text-slate-400">{countLeafTags(group)}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </details>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );

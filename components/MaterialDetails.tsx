@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { generateMaterialDetails } from '../services/mockData';
 import { Filter, Settings, ChevronDown, ChevronUp, Plus, Trash2, X, Check, Search } from 'lucide-react';
 import { MaterialDetailRow } from '../types';
-import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './analytics/AnalyticsFilters';
 
 type SortDirection = 'asc' | 'desc' | null;
 

@@ -6,7 +6,7 @@ import { analyzeMaterials } from '../services/geminiService';
 import { AdMaterial, KeywordAnalysisData } from '../types';
 import { Check, ChevronLeft, ChevronRight, Database, LoaderCircle, Minus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, BarChart, Bar, CartesianGrid } from 'recharts';
-import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './analytics/AnalyticsFilters';
 
 const seriesPalette = [
   '#475569',

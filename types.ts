@@ -34,6 +34,7 @@ export interface TagNode {
   name: string;
   level: number;
   type?: 'single' | 'multi' | 'none';
+  hidden?: boolean;
   children?: TagNode[];
   parentId?: string;
 }

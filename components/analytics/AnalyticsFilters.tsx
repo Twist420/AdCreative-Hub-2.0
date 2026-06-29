@@ -1,15 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { formatUtcDate, getRecentUtcRange, getSingleUtcDayRange, getUtcMonthDays, getUtcMonthRange, getUtcWeekRange, isDateRangeEdge, isWithinDateRange, shiftUtcMonth, toUtcDate } from '../shared/date/dateRange';
 
-export const getRecentUtcRange = (days = 30) => {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(end.getDate() - days + 1);
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-  };
-};
+export { getRecentUtcRange };
 
 interface AnalyticsDateRangeFieldProps {
   end: string;
@@ -20,56 +13,6 @@ interface AnalyticsDateRangeFieldProps {
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const toUtcDate = (value?: string) => {
-  if (!value) return new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day || 1));
-};
-
-const formatDate = (date: Date) => date.toISOString().slice(0, 10);
-
-const shiftMonth = (date: Date, delta: number) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + delta, 1));
-
-const getMonthDays = (monthDate: Date) => {
-  const year = monthDate.getUTCFullYear();
-  const month = monthDate.getUTCMonth();
-  const first = new Date(Date.UTC(year, month, 1));
-  const start = new Date(first);
-  start.setUTCDate(first.getUTCDate() - first.getUTCDay());
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start);
-    date.setUTCDate(start.getUTCDate() + index);
-    return date;
-  });
-};
-
-const getWeekRange = (offsetWeeks = 0) => {
-  const today = new Date();
-  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const start = new Date(end);
-  start.setUTCDate(end.getUTCDate() - end.getUTCDay() + offsetWeeks * 7);
-  const rangeEnd = new Date(start);
-  rangeEnd.setUTCDate(start.getUTCDate() + 6);
-  return { start: formatDate(start), end: formatDate(rangeEnd) };
-};
-
-const getSingleDayRange = (delta = 0) => {
-  const today = new Date();
-  const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + delta));
-  return { start: formatDate(date), end: formatDate(date) };
-};
-
-const getMonthRange = (offsetMonths = 0) => {
-  const today = new Date();
-  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + offsetMonths, 1));
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
-  return { start: formatDate(start), end: formatDate(end) };
-};
-
-const isWithinRange = (date: string, start: string, end: string) => start && end && date >= start && date <= end;
-
-const isRangeEdge = (date: string, start: string, end: string) => date === start || date === end;
 
 interface CustomDropdownProps {
   className?: string;
@@ -296,7 +239,7 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
   const [open, setOpen] = useState(false);
   const [draftStart, setDraftStart] = useState(start);
   const [draftEnd, setDraftEnd] = useState(end);
-  const [viewMonth, setViewMonth] = useState(() => shiftMonth(toUtcDate(start || end || getRecentUtcRange(30).start), 0));
+  const [viewMonth, setViewMonth] = useState(() => shiftUtcMonth(toUtcDate(start || end || getRecentUtcRange(30).start), 0));
   const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 });
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -347,7 +290,7 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
 
   const displayRange = start && end ? `${start} - ${end}` : '选择时间范围';
   const leftMonth = viewMonth;
-  const rightMonth = shiftMonth(viewMonth, 1);
+  const rightMonth = shiftUtcMonth(viewMonth, 1);
 
   const commitRange = (nextStart: string, nextEnd: string) => {
     setDraftStart(nextStart);
@@ -375,12 +318,12 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
 
   const handleMonthChange = (base: Date, month: number, panel: 'left' | 'right') => {
     const next = new Date(Date.UTC(base.getUTCFullYear(), month, 1));
-    setViewMonth(panel === 'left' ? next : shiftMonth(next, -1));
+    setViewMonth(panel === 'left' ? next : shiftUtcMonth(next, -1));
   };
 
   const handleYearChange = (base: Date, year: number, panel: 'left' | 'right') => {
     const next = new Date(Date.UTC(year, base.getUTCMonth(), 1));
-    setViewMonth(panel === 'left' ? next : shiftMonth(next, -1));
+    setViewMonth(panel === 'left' ? next : shiftUtcMonth(next, -1));
   };
 
   const CalendarPanel = ({ monthDate, panel }: { monthDate: Date; panel: 'left' | 'right' }) => (
@@ -405,11 +348,11 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
         {weekDays.map((day) => (
           <div key={day} className="py-1 text-[11px] font-black text-slate-500">{day}</div>
         ))}
-        {getMonthDays(monthDate).map((date) => {
-          const dateString = formatDate(date);
+        {getUtcMonthDays(monthDate).map((date) => {
+          const dateString = formatUtcDate(date);
           const inMonth = date.getUTCMonth() === monthDate.getUTCMonth();
-          const selected = isRangeEdge(dateString, draftStart, draftEnd);
-          const inRange = isWithinRange(dateString, draftStart, draftEnd);
+          const selected = isDateRangeEdge(dateString, draftStart, draftEnd);
+          const inRange = isWithinDateRange(dateString, draftStart, draftEnd);
           return (
             <button
               type="button"
@@ -465,12 +408,12 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
           <div className="flex">
             <aside className="w-40 shrink-0 border-r border-slate-200 bg-slate-50 p-3">
               {[
-                { label: 'Today', range: getSingleDayRange(0) },
-                { label: 'Yesterday', range: getSingleDayRange(-1) },
-                { label: 'This week', range: getWeekRange(0) },
-                { label: 'Last week', range: getWeekRange(-1) },
-                { label: 'This month', range: getMonthRange(0) },
-                { label: 'Last month', range: getMonthRange(-1) },
+                { label: 'Today', range: getSingleUtcDayRange(0) },
+                { label: 'Yesterday', range: getSingleUtcDayRange(-1) },
+                { label: 'This week', range: getUtcWeekRange(0) },
+                { label: 'Last week', range: getUtcWeekRange(-1) },
+                { label: 'This month', range: getUtcMonthRange(0) },
+                { label: 'Last month', range: getUtcMonthRange(-1) },
                 { label: 'Last 7 days', range: getRecentUtcRange(7) },
                 { label: 'Last 30 days', range: getRecentUtcRange(30) },
               ].map((item) => (
@@ -488,8 +431,8 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
             <div className="flex-1">
               <div className="flex h-11 items-center justify-between border-b border-slate-200 px-5">
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setViewMonth(shiftMonth(viewMonth, -12))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronsLeft className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => setViewMonth(shiftMonth(viewMonth, -1))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronLeft className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setViewMonth(shiftUtcMonth(viewMonth, -12))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronsLeft className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setViewMonth(shiftUtcMonth(viewMonth, -1))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronLeft className="h-4 w-4" /></button>
                 </div>
                 <div className={`rounded-md px-2 py-1 text-[11px] font-black uppercase tracking-wide ${
                   draftStart && draftEnd ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'
@@ -497,8 +440,8 @@ export const AnalyticsDateRangeField: React.FC<AnalyticsDateRangeFieldProps> = (
                   {draftStart && draftEnd ? `${draftStart} - ${draftEnd}` : 'Select date range'}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setViewMonth(shiftMonth(viewMonth, 1))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => setViewMonth(shiftMonth(viewMonth, 12))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronsRight className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setViewMonth(shiftUtcMonth(viewMonth, 1))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setViewMonth(shiftUtcMonth(viewMonth, 12))} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><ChevronsRight className="h-4 w-4" /></button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-5 p-5">

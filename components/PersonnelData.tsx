@@ -10,7 +10,7 @@ import {
   TrendingUp, DollarSign, Target, Users, 
   ChevronDown, ChevronUp, Award, Zap 
 } from 'lucide-react';
-import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './AnalyticsFilters';
+import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSelectField, getRecentUtcRange } from './analytics/AnalyticsFilters';
 
 const PersonnelDataPage: React.FC = () => {
   // --- Date & Language Filters ---
