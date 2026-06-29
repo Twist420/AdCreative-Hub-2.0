@@ -19,6 +19,7 @@ import {
   buildRequirementIteration,
   buildStandaloneRequirementDraft,
   formatCalendarDate,
+  formatDateCompact,
   formatRequirementId,
   getRequirementMajorId,
   getNextAssetIndexForType,
@@ -43,7 +44,7 @@ const props = defineProps({
   },
 })
 
-defineEmits(['sub-view-change'])
+const emit = defineEmits(['sub-view-change'])
 
 const initializeRequirements = () => {
   const activeProducerNames = producers.filter((producer) => producer.status === '在职').map((producer) => producer.name)
@@ -83,6 +84,8 @@ const showScheduleSelector = ref(false)
 const selectedCreateType = ref('Video')
 const localizedSchedule = ref(null)
 const localizedSearchQuery = ref('')
+const requirementListSearchSeed = ref('')
+const requirementListResetVersion = ref(0)
 const selectedLanguageCodes = ref(['de'])
 const selectedSourceIds = ref([])
 const pendingIteration = ref(null)
@@ -458,9 +461,13 @@ const createLocalizedRequirements = () => {
   updateSchedule(schedule.id, {
     totalRequiredCount: Math.max(schedule.totalRequiredCount || 1, getScheduleRequirements(schedule.id).length + created.length),
   })
-  selectedRequirement.value = created[0] || null
+  selectedRequirement.value = null
   showScheduleSelector.value = false
   closeLocalizedDialog()
+  resetCoordinatedFilters()
+  requirementListSearchSeed.value = formatDateCompact(todayDateString)
+  requirementListResetVersion.value += 1
+  emit('sub-view-change', 'list')
 }
 
 const createStandardRequirementFromLocalizedDialog = () => {
@@ -471,10 +478,14 @@ const createStandardRequirementFromLocalizedDialog = () => {
   updateSchedule(schedule.id, {
     totalRequiredCount: Math.max(schedule.totalRequiredCount || 1, getScheduleRequirements(schedule.id).length + 1),
   })
-  selectedSchedule.value = schedule
-  selectedRequirement.value = newRequirement
+  selectedSchedule.value = null
+  selectedRequirement.value = null
   showScheduleSelector.value = false
   closeLocalizedDialog()
+  resetCoordinatedFilters()
+  requirementListSearchSeed.value = newRequirement.id
+  requirementListResetVersion.value += 1
+  emit('sub-view-change', 'list')
 }
 
 const addRequirementForDirection = (scheduleId) => {
@@ -639,7 +650,7 @@ const addSubRequirement = (source) => {
       @delete="deleteSchedule"
       @add-requirement="addRequirementForDirection"
       @update-schedule="updateSchedule"
-      @add-schedule="addScheduleRow"
+      @add-schedule="addScheduleRow(selectedWeekRange, false)"
     />
 
     <Teleport to="body">
@@ -681,6 +692,8 @@ const addSubRequirement = (source) => {
     :high-risk-requirements="highRiskRequirements"
     :current-sort="currentSort"
     :sort-order="sortOrder"
+    :search-query-seed="requirementListSearchSeed"
+    :filter-reset-version="requirementListResetVersion"
     @open-requirement="selectedRequirement = $event"
     @delete-requirement="deleteRequirement"
     @open-create="openScheduleSelector"

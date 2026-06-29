@@ -202,7 +202,7 @@ export const CreateLocalizedRequirementDialog = ({
 
       <div className="border-t border-slate-100 bg-slate-50/80 px-7 py-4 flex items-center justify-between gap-4">
         <p className="text-[10px] font-bold text-slate-400">
-          命名规则：创建日期 + 语言本地化 + 原始需求编号；本地化需求编号从 8000 开始。
+          命名规则：yyyymmdd + 语言本地化 + cpxxxx(0x)，例如 20260629德语本地化cp3376(02)。
         </p>
         <div className="flex items-center gap-2">
           <button

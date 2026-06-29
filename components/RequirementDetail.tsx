@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
-  Requirement, RequirementReqStatus, RequirementProdStatus, ScriptSection,
+  AssetVersionItem, Requirement, RequirementReqStatus, RequirementProdStatus, ScriptSection,
   RequirementStageType, ProductionTask, PROJECTS, CHANNELS
 } from '../types';
 import RequirementScriptWorkbench from './RequirementScriptWorkbench';
@@ -64,6 +64,7 @@ interface RequirementDetailProps {
   onDelete?: (requirementId: string) => void;
   productionScheduleContext?: ProductionScheduleContextItem[];
   scheduleDeadline?: string;
+  detailSubVersions?: AssetVersionItem[];
 }
 
 const RequirementDetail: React.FC<RequirementDetailProps> = ({
@@ -73,6 +74,7 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   onDelete,
   productionScheduleContext = [],
   scheduleDeadline = '',
+  detailSubVersions,
 }) => {
   const [activeTab, setActiveTab] = useState<'script' | 'clip'>('script');
   const [rightTab, setRightTab] = useState<'iteration' | 'schedule'>('schedule');
@@ -209,6 +211,9 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
   };
 
   const subVersions = useMemo(() => {
+    if (detailSubVersions && detailSubVersions.length > 0) {
+      return detailSubVersions;
+    }
     if (currentReq.subVersions && currentReq.subVersions.length > 0) {
       return currentReq.subVersions;
     }
@@ -219,7 +224,16 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
       { version: '04', name: '3686口播大字报换无垠星空背景', testDirections: ['前贴'] },
       { version: '05', name: '3687口播大字报换皑皑雪山背景', testDirections: ['中贴'] }
     ];
-  }, [currentReq.subVersions]);
+  }, [currentReq.subVersions, detailSubVersions]);
+
+  const sourceRequirementIdsForDisplay = useMemo(() => {
+    const ids = [
+      ...(currentReq.sourceRequirementIds || []),
+      currentReq.sourceRequirementId,
+      ...subVersions.map((version) => version.sourceRequirementId),
+    ].filter((id): id is string => Boolean(id));
+    return Array.from(new Set(ids));
+  }, [currentReq.sourceRequirementId, currentReq.sourceRequirementIds, subVersions]);
 
   const [scheduleBySubVersion, setScheduleBySubVersion] = useState(() =>
     Boolean(initialReq.tasks?.some(task => task.version)),
@@ -1170,12 +1184,37 @@ const RequirementDetail: React.FC<RequirementDetailProps> = ({
           <div className="flex-1 overflow-y-auto no-scrollbar p-6">
             {rightTab === 'iteration' ? (
               <div className="space-y-6">
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center"><Layers className="w-5 h-5 text-slate-400" /></div>
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-black text-slate-700">迭代自: cp3632-01</span>
-                    <span className="text-[9px] text-slate-400">原始玩法需求</span>
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center"><Layers className="w-5 h-5 text-slate-400" /></div>
+                    <div className="flex min-w-0 flex-col">
+                      <span className="text-[11px] font-black text-slate-700">
+                        {currentReq.isLocalization ? '本地化引用原始需求' : '迭代来源'}
+                      </span>
+                      <span className="text-[9px] text-slate-400">
+                        {sourceRequirementIdsForDisplay.length > 0
+                          ? `共 ${sourceRequirementIdsForDisplay.length} 个原始需求`
+                          : '暂无来源记录'}
+                      </span>
+                    </div>
                   </div>
+
+                  {sourceRequirementIdsForDisplay.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {sourceRequirementIdsForDisplay.map((sourceId) => (
+                        <span
+                          key={sourceId}
+                          className="inline-flex items-center rounded-xl border border-indigo-100 bg-indigo-50 px-2.5 py-1 font-mono text-[10px] font-black text-indigo-700"
+                        >
+                          {sourceId}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-xl border border-dashed border-slate-150 bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-400">
+                      该需求没有关联原始需求编号。
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (

@@ -5,6 +5,7 @@ export interface ColumnConfig {
   id: string;
   name: string;
   visible: boolean;
+  width?: number;
 }
 
 interface ColumnConfigDropdownProps {

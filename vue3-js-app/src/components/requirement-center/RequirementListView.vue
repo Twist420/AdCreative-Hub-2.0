@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check, ChevronDown, Copy, MoreHorizontal, Pause, Play, Plus, PlusCircle, Search, Trash2, X } from 'lucide-vue-next'
 import DeliveryChannelsCell from './DeliveryChannelsCell.vue'
 import PersonParts from './PersonParts.vue'
@@ -41,6 +41,14 @@ const props = defineProps({
     type: String,
     default: 'desc',
   },
+  searchQuerySeed: {
+    type: String,
+    default: '',
+  },
+  filterResetVersion: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits(['open-requirement', 'delete-requirement', 'open-create', 'update-requirement', 'open-iteration', 'add-sub-requirement'])
@@ -81,6 +89,22 @@ const getIterationPreviewText = (requirement) => {
     : '当前大版本只有 1 条需求，将生成 -01 迭代版本'
 }
 const isParentRequirement = (requirement) => (requirement.level || 0) === 0
+
+watch(
+  () => props.searchQuerySeed,
+  (value) => {
+    if (value) searchQuery.value = value
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.filterResetVersion,
+  () => {
+    resetRequirementFilters()
+    if (props.searchQuerySeed) searchQuery.value = props.searchQuerySeed
+  },
+)
 
 const closeOpenMenus = () => {
   openInlineMenuKey.value = null

@@ -3,6 +3,9 @@ import { ArrowUpDown, ChevronLeft, ChevronRight, Play, Settings, X } from 'lucid
 import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsMultiSearchField, AnalyticsSelectField, getRecentUtcRange } from './analytics/AnalyticsFilters';
 import { ColumnConfigDropdown } from './analytics/ColumnConfigDropdown';
 import { INITIAL_COLUMNS, buildMockSets, channels, getActiveBenchmarkRules, getBenchmarkCellClassName, getMetrics, getSortValue, languages, metricHelp, normalizeBenchmarkChannel, normalizeBenchmarkPlatform, platforms, type SetItem, type SortDirection } from './analytics/recoveryDataModel';
+import { getColumnWidth, useResizableColumns } from './analytics/useResizableColumns';
+
+const formatRecoveryText = (value: string) => value.replace(/ROAS/g, 'ROI').replace(/roas/g, 'roi');
 
 export const RecoveryDataPage: React.FC = () => {
   const [launchStart, setLaunchStart] = useState('');
@@ -30,6 +33,7 @@ export const RecoveryDataPage: React.FC = () => {
 
   const allSets = useMemo(() => buildMockSets(), []);
   const visibleColumns = columns.filter((column) => column.visible);
+  const { startResize, tableWidth } = useResizableColumns(visibleColumns, setColumns, 2800);
   const activeBenchmarkRules = useMemo(() => getActiveBenchmarkRules(), []);
   const resolveBenchmarkRule = (channel: string, platform: SetItem['platform']) => {
     const normalizedChannel = normalizeBenchmarkChannel(channel || 'All');
@@ -52,9 +56,9 @@ export const RecoveryDataPage: React.FC = () => {
       if (selectedChannel && item.channel.toLowerCase() !== selectedChannel.toLowerCase()) return false;
       if (selectedLanguage && item.language !== selectedLanguage) return false;
       if (selectedMaterialType && !item.materials.some((material) => material.type === selectedMaterialType)) return false;
-      if (setSearch && !item.setName.toLowerCase().includes(setSearch.toLowerCase())) return false;
+      if (setSearch && !formatRecoveryText(item.setName).toLowerCase().includes(setSearch.toLowerCase())) return false;
       if (selectedSets.length > 0 && !selectedSets.includes(item.setName)) return false;
-      if (campaignSearch && !item.campaign.toLowerCase().includes(campaignSearch.toLowerCase())) return false;
+      if (campaignSearch && !formatRecoveryText(item.campaign).toLowerCase().includes(campaignSearch.toLowerCase())) return false;
       if (selectedCampaigns.length > 0 && !selectedCampaigns.includes(item.campaign)) return false;
       if (materialSearch || selectedMaterials.length > 0) {
         const matchesMaterial = item.materials.some((material) => {
@@ -118,11 +122,11 @@ export const RecoveryDataPage: React.FC = () => {
       case 'platform':
         return <span className={`rounded border px-2 py-0.5 text-[10px] font-black ${row.platform === 'iOS' ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-emerald-100 bg-emerald-50 text-emerald-600'}`}>{row.platform}</span>;
       case 'campaign':
-        return <span className="block truncate" title={row.campaign}>{row.campaign}</span>;
+        return <span className="block truncate" title={formatRecoveryText(row.campaign)}>{formatRecoveryText(row.campaign)}</span>;
       case 'setName':
         return (
-          <button type="button" onClick={() => setSelectedMaterialForModal(row)} className="block max-w-[240px] truncate text-left font-black text-indigo-600 hover:underline" title={row.setName}>
-            {row.setName}
+          <button type="button" onClick={() => setSelectedMaterialForModal(row)} className="block max-w-[240px] truncate text-left font-black text-indigo-600 hover:underline" title={formatRecoveryText(row.setName)}>
+            {formatRecoveryText(row.setName)}
           </button>
         );
       case 'launchTime':
@@ -204,8 +208,8 @@ export const RecoveryDataPage: React.FC = () => {
         <AnalyticsSelectField placeholder="渠道" value={selectedChannel} onChange={setSelectedChannel} options={channels.map((channel) => ({ value: channel, label: channel }))} className="w-[140px]" />
         <AnalyticsSelectField placeholder="Platform" value={selectedPlatform} onChange={setSelectedPlatform} options={platforms.map((platform) => ({ value: platform, label: platform }))} className="w-[130px]" />
         <AnalyticsSelectField placeholder="语言" value={selectedLanguage} onChange={setSelectedLanguage} options={languages.map((language) => ({ value: language, label: language }))} className="w-[120px]" />
-        <AnalyticsMultiSearchField placeholder="Campaign" searchValue={campaignSearch} onSearchChange={setCampaignSearch} selectedValues={selectedCampaigns} onToggle={(value) => toggleMultiSelect(value, selectedCampaigns, setSelectedCampaigns)} options={Array.from(new Set(allSets.map((item) => item.campaign))).map((campaign) => ({ value: campaign, label: campaign }))} className="w-[200px]" />
-        <AnalyticsMultiSearchField placeholder="Set 名称" searchValue={setSearch} onSearchChange={setSetSearch} selectedValues={selectedSets} onToggle={(value) => toggleMultiSelect(value, selectedSets, setSelectedSets)} options={allSets.map((item) => ({ value: item.setName, label: item.setName }))} className="w-[220px]" />
+        <AnalyticsMultiSearchField placeholder="Campaign" searchValue={campaignSearch} onSearchChange={setCampaignSearch} selectedValues={selectedCampaigns} onToggle={(value) => toggleMultiSelect(value, selectedCampaigns, setSelectedCampaigns)} options={Array.from(new Set(allSets.map((item) => item.campaign))).map((campaign) => ({ value: campaign, label: formatRecoveryText(campaign) }))} className="w-[200px]" />
+        <AnalyticsMultiSearchField placeholder="Set 名称" searchValue={setSearch} onSearchChange={setSetSearch} selectedValues={selectedSets} onToggle={(value) => toggleMultiSelect(value, selectedSets, setSelectedSets)} options={allSets.map((item) => ({ value: item.setName, label: formatRecoveryText(item.setName) }))} className="w-[220px]" />
         <AnalyticsSelectField
           placeholder="素材类型"
           value={selectedMaterialType}
@@ -240,11 +244,16 @@ export const RecoveryDataPage: React.FC = () => {
         </div>
 
         <div className="max-h-[calc(100vh-245px)] overflow-auto">
-          <table className="w-full min-w-[2800px] table-fixed border-collapse text-left">
+          <table className="table-fixed border-collapse text-left" style={{ width: tableWidth }}>
+            <colgroup>
+              {visibleColumns.map((column) => (
+                <col key={column.id} style={{ width: getColumnWidth(column) }} />
+              ))}
+            </colgroup>
             <thead className="sticky top-0 z-20 bg-slate-100 text-[11px] font-black text-slate-600">
               <tr>
                 {visibleColumns.map((column) => (
-                  <th key={column.id} className="border-b border-r border-slate-200 px-3 py-2 align-middle last:border-r-0">
+                  <th key={column.id} className="relative border-b border-r border-slate-200 px-3 py-2 pr-5 align-middle last:border-r-0">
                     <button
                       type="button"
                       onClick={() => toggleSort(column.id)}
@@ -258,6 +267,13 @@ export const RecoveryDataPage: React.FC = () => {
                       <span className="whitespace-normal">{column.name}</span>
                       <ArrowUpDown className={`h-3 w-3 shrink-0 ${sortKey === column.id ? 'text-indigo-500' : 'text-slate-300'}`} />
                     </button>
+                    <span
+                      role="separator"
+                      aria-label={`调整${column.name}列宽`}
+                      aria-orientation="vertical"
+                      onPointerDown={(event) => startResize(column.id, event)}
+                      className="absolute bottom-0 right-0 top-0 z-10 w-2 cursor-col-resize touch-none transition-colors hover:bg-indigo-200/70"
+                    />
                   </th>
                 ))}
               </tr>
@@ -301,8 +317,8 @@ export const RecoveryDataPage: React.FC = () => {
           <div className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
               <div>
-                <h3 className="max-w-2xl truncate text-sm font-black text-slate-800">{selectedMaterialForModal.setName}</h3>
-                <p className="mt-1 text-xs font-bold text-slate-400">Campaign: {selectedMaterialForModal.campaign} · 渠道: {selectedMaterialForModal.channel}</p>
+                <h3 className="max-w-2xl truncate text-sm font-black text-slate-800">{formatRecoveryText(selectedMaterialForModal.setName)}</h3>
+                <p className="mt-1 text-xs font-bold text-slate-400">Campaign: {formatRecoveryText(selectedMaterialForModal.campaign)} · 渠道: {selectedMaterialForModal.channel}</p>
               </div>
               <button onClick={() => setSelectedMaterialForModal(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                 <X className="h-5 w-5" />

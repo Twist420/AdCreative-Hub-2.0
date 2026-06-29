@@ -12,6 +12,7 @@ import {
   X
 } from 'lucide-react';
 import { Requirement, AssetVersionItem } from '../types';
+import { parseRequirementVersionId } from './shared/requirements/requirementId';
 
 type ScriptTemplate = 'same_a' | 'same_b' | 'matrix';
 type SegmentKind = 'A段' | '中间段' | 'B段' | '片头' | '玩法段' | '大字报' | 'CTA' | '试玩' | '图片';
@@ -225,11 +226,31 @@ const ASSET_PICKER_DIRECTORY_OPTIONS = [
   ...flattenPickerDirectories(ASSET_PICKER_DIRECTORY_TREE)
 ];
 
-const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string): VersionDraft[] => {
+const formatLocalizationSourceId = (sourceId: string) => {
+  const parsed = parseRequirementVersionId(sourceId);
+  if (!parsed) return sourceId;
+  return `${parsed.majorId}(${String(parsed.version).padStart(2, '0')})`;
+};
+
+const getVersionDraftName = (version: AssetVersionItem, requirement?: Requirement) => {
+  if (!requirement?.isLocalization || !version.sourceRequirementId) {
+    return version.name || `版本 ${version.version}`;
+  }
+
+  const createdDate = requirement.createdAt.slice(0, 10).replaceAll('-', '');
+  const languageLabel = requirement.localizationLanguageLabel || requirement.localizationLanguage || '';
+  if (!createdDate || !languageLabel) {
+    return version.name || `版本 ${version.version}`;
+  }
+
+  return `${createdDate}${languageLabel}本地化${formatLocalizationSourceId(version.sourceRequirementId)}`;
+};
+
+const createVersionDrafts = (subVersions: AssetVersionItem[], goal: string, requirement?: Requirement): VersionDraft[] => {
   const source = subVersions.length ? subVersions : [{ version: '01', name: '新版本', testDirections: [] }];
   return source.map((item, index) => ({
     version: item.version,
-    name: item.name || `版本 ${item.version}`,
+    name: getVersionDraftName(item, requirement),
     goal: goal || `${item.testDirections?.join(' / ') || '核心卖点'} 验证`,
     references: item.finishedReferenceIds?.length
       ? item.finishedReferenceIds
@@ -520,7 +541,7 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
     if (requirement.template?.includes('A段')) return 'same_a';
     return 'matrix';
   });
-  const [versionDrafts, setVersionDrafts] = useState<VersionDraft[]>(() => createVersionDrafts(subVersions, requirement.goal));
+  const [versionDrafts, setVersionDrafts] = useState<VersionDraft[]>(() => createVersionDrafts(subVersions, requirement.goal, requirement));
   const [sharedSegment, setSharedSegment] = useState<SegmentDraft>({
     id: 'shared-new',
     kind: 'A段',
@@ -538,13 +559,13 @@ const RequirementScriptWorkbench: React.FC<RequirementScriptWorkbenchProps> = ({
   const [finishedPickerSort, setFinishedPickerSort] = useState<'spend' | 'time'>('spend');
   const [expandedPickerDirectoryIds, setExpandedPickerDirectoryIds] = useState<string[]>(['fragment', 'pre_hook', 'component']);
   const [landingByVersion, setLandingByVersion] = useState<Record<string, string>>(() => (
-    Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, '9:16']))
+    Object.fromEntries(createVersionDrafts(subVersions, requirement.goal, requirement).map(item => [item.version, '9:16']))
   ));
   const [landingNotesByVersion, setLandingNotesByVersion] = useState<Record<string, string>>({});
   const [simpleReferences, setSimpleReferences] = useState<string[]>([]);
   const [simpleAttachments, setSimpleAttachments] = useState<string[]>([]);
   const [matrixColumnsByVersion, setMatrixColumnsByVersion] = useState<Record<string, string[]>>(() => (
-    Object.fromEntries(createVersionDrafts(subVersions, requirement.goal).map(item => [item.version, createDefaultMatrixColumns()]))
+    Object.fromEntries(createVersionDrafts(subVersions, requirement.goal, requirement).map(item => [item.version, createDefaultMatrixColumns()]))
   ));
   const [matrixCells, setMatrixCells] = useState<Record<string, { references: string[]; inserts: string[]; attachments: string[]; description: string }>>(() =>
     createInitialMatrixCells(subVersions)

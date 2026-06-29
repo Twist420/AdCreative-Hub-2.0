@@ -3,6 +3,7 @@ import { ArrowUpDown, ChevronLeft, ChevronRight, Play, Settings, X } from 'lucid
 import { AnalyticsDateRangeField, AnalyticsFilterBar, AnalyticsSearchField, AnalyticsSelectField, getRecentUtcRange } from './analytics/AnalyticsFilters';
 import { ColumnConfigDropdown } from './analytics/ColumnConfigDropdown';
 import { INITIAL_COLUMNS, buildMockSpends, channels, getSortValue, getTypeLabel, languages, metricHelp, platforms, type MaterialSpend, type MaterialType, type SortDirection } from './analytics/consumptionDataModel';
+import { getColumnWidth, useResizableColumns } from './analytics/useResizableColumns';
 
 export const ConsumptionDataPage: React.FC = () => {
   const [launchStart, setLaunchStart] = useState('');
@@ -30,6 +31,7 @@ export const ConsumptionDataPage: React.FC = () => {
   const showLangCol = columns.find((column) => column.id === 'language')?.visible ?? true;
   const showSizeCol = columns.find((column) => column.id === 'size')?.visible ?? false;
   const visibleColumns = columns.filter((column) => column.visible);
+  const { startResize, tableWidth } = useResizableColumns(visibleColumns, setColumns, 1500);
 
   const filteredMaterials = useMemo(() => {
     let rows = allSpends.filter((item) => {
@@ -240,11 +242,16 @@ export const ConsumptionDataPage: React.FC = () => {
         </div>
 
         <div className="max-h-[calc(100vh-245px)] overflow-auto">
-          <table className="w-full min-w-[1500px] table-fixed border-collapse text-left">
+          <table className="table-fixed border-collapse text-left" style={{ width: tableWidth }}>
+            <colgroup>
+              {visibleColumns.map((column) => (
+                <col key={column.id} style={{ width: getColumnWidth(column) }} />
+              ))}
+            </colgroup>
             <thead className="sticky top-0 z-20 bg-slate-100 text-[11px] font-black text-slate-600">
               <tr>
                 {visibleColumns.map((column) => (
-                  <th key={column.id} className="border-b border-r border-slate-200 px-3 py-2 align-middle last:border-r-0">
+                  <th key={column.id} className="relative border-b border-r border-slate-200 px-3 py-2 pr-5 align-middle last:border-r-0">
                     <button
                       type="button"
                       onClick={() => toggleSort(column.id)}
@@ -258,6 +265,13 @@ export const ConsumptionDataPage: React.FC = () => {
                       <span className="whitespace-normal">{column.name}</span>
                       <ArrowUpDown className={`h-3 w-3 shrink-0 ${sortKey === column.id ? 'text-indigo-500' : 'text-slate-300'}`} />
                     </button>
+                    <span
+                      role="separator"
+                      aria-label={`调整${column.name}列宽`}
+                      aria-orientation="vertical"
+                      onPointerDown={(event) => startResize(column.id, event)}
+                      className="absolute bottom-0 right-0 top-0 z-10 w-2 cursor-col-resize touch-none transition-colors hover:bg-indigo-200/70"
+                    />
                   </th>
                 ))}
               </tr>

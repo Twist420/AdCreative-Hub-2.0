@@ -161,6 +161,18 @@ const INITIAL_REQUIREMENT_FILTERS = {
   scheduleRisk: "全部",
 };
 
+const formatLocalizationSourceId = (sourceId: string) => {
+  const parsed = parseRequirementVersionId(sourceId);
+  if (!parsed) return sourceId;
+  return `${parsed.majorId}(${String(parsed.version).padStart(2, "0")})`;
+};
+
+const formatLocalizationRequirementName = (
+  createdDate: string,
+  languageLabel: string,
+  sourceId: string,
+) => `${formatDateCompact(createdDate)}${languageLabel}本地化${formatLocalizationSourceId(sourceId)}`;
+
 const RequirementCenter: React.FC<RequirementCenterProps> = ({
   subView,
   onSubViewChange,
@@ -549,6 +561,9 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       sources,
       finishedCreativePerformance,
     );
+    const allLocalizationSourceIds = subVersions
+      .map((subVersion) => subVersion.sourceRequirementId)
+      .filter((sourceId): sourceId is string => Boolean(sourceId));
     const createdAt = new Date().toISOString().slice(0, 19).replace("T", " ");
 
     const newRequirements = selectedLocalizationLanguages.flatMap((languageCode, index) => {
@@ -572,12 +587,16 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
           parentId: undefined,
           parentRequirementId: undefined,
           sourceRequirementId: source.id,
-          sourceRequirementIds: [source.id],
+          sourceRequirementIds: allLocalizationSourceIds,
           createMode: "LocalizedFromExisting",
           localizationBatchId: batchId,
           isLocalization: true,
           scheduleId: schedule.id,
-          name: `${formatDateCompact(todayDateString)}${languageMeta.label}本地化-${source.id}`,
+          name: formatLocalizationRequirementName(
+            todayDateString,
+            languageMeta.label,
+            source.id,
+          ),
           assetType,
           assetIndex,
           assetVersion,
@@ -1456,6 +1475,7 @@ const RequirementCenter: React.FC<RequirementCenterProps> = ({
       {selectedReq && (
         <RequirementDetailOverlay
           requirement={selectedReq}
+          requirements={requirements}
           schedules={schedules}
           productionTasks={productionTasks}
           onClose={() => setSelectedReq(null)}
