@@ -1,0 +1,72 @@
+:root {
+  --ad-color-bg: #f8fafc;
+  --ad-color-surface: #ffffff;
+  --ad-color-surface-muted: #f1f5f9;
+  --ad-color-surface-soft: rgba(248, 250, 252, 0.74);
+
+  --ad-color-slate-50: #f8fafc;
+  --ad-color-slate-100: #f1f5f9;
+  --ad-color-slate-150: #e8edf4;
+  --ad-color-slate-200: #e2e8f0;
+  --ad-color-slate-300: #cbd5e1;
+  --ad-color-slate-400: #94a3b8;
+  --ad-color-slate-500: #64748b;
+  --ad-color-slate-600: #475569;
+  --ad-color-slate-700: #334155;
+  --ad-color-slate-800: #1e293b;
+  --ad-color-slate-900: #0f172a;
+
+  --ad-color-primary: #4f46e5;
+  --ad-color-primary-50: #eef2ff;
+  --ad-color-primary-100: #e0e7ff;
+  --ad-color-primary-150: #d8dafe;
+  --ad-color-primary-600: #4f46e5;
+  --ad-color-primary-700: #4338ca;
+
+  --ad-color-emerald-50: #ecfdf5;
+  --ad-color-emerald-100: #d1fae5;
+  --ad-color-emerald-500: #10b981;
+  --ad-color-emerald-600: #059669;
+  --ad-color-emerald-700: #047857;
+
+  --ad-color-amber-50: #fffbeb;
+  --ad-color-amber-100: #fef3c7;
+  --ad-color-amber-500: #f59e0b;
+  --ad-color-amber-600: #d97706;
+  --ad-color-amber-700: #b45309;
+
+  --ad-color-orange-50: #fff7ed;
+  --ad-color-orange-100: #ffedd5;
+  --ad-color-orange-500: #f97316;
+  --ad-color-orange-700: #c2410c;
+
+  --ad-color-rose-50: #fff1f2;
+  --ad-color-rose-100: #ffe4e6;
+  --ad-color-rose-500: #f43f5e;
+  --ad-color-rose-600: #e11d48;
+  --ad-color-rose-700: #be123c;
+
+  --ad-color-blue-50: #eff6ff;
+  --ad-color-blue-100: #dbeafe;
+  --ad-color-blue-600: #2563eb;
+  --ad-color-blue-700: #1d4ed8;
+
+  --ad-color-violet-50: #f5f3ff;
+  --ad-color-violet-100: #ede9fe;
+  --ad-color-violet-700: #6d28d9;
+
+  --ad-radius-sm: 8px;
+  --ad-radius-md: 10px;
+  --ad-radius-lg: 12px;
+  --ad-radius-xl: 16px;
+  --ad-radius-2xl: 20px;
+  --ad-radius-3xl: 24px;
+  --ad-radius-pill: 999px;
+
+  --ad-shadow-3xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --ad-shadow-xs: 0 2px 8px rgba(15, 23, 42, 0.05);
+  --ad-shadow-md: 0 12px 24px rgba(15, 23, 42, 0.08);
+
+  --ad-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ad-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}

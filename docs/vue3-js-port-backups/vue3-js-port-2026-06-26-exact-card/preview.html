@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vue 3 + JS Exact Port Preview</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: '#4f46e5',
+              secondary: '#64748b',
+              background: '#f8fafc',
+              surface: '#ffffff',
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { margin: 0; background: #f8fafc; font-family: Inter, system-ui, sans-serif; }
+      .preview-shell { min-height: 100vh; padding: 24px; }
+      .preview-grid { display: grid; grid-template-columns: minmax(320px, 420px); gap: 16px; }
+      .bg-slate-150 { background-color: #e8edf4; }
+      .border-slate-150 { border-color: #e8edf4; }
+      .border-indigo-150 { border-color: #d8dafe; }
+      .border-emerald-150 { border-color: #bbf7d0; }
+      .border-rose-150 { border-color: #fecdd3; }
+      .border-orange-150 { border-color: #fed7aa; }
+      .border-amber-150 { border-color: #fde68a; }
+      .border-sky-150 { border-color: #bae6fd; }
+      .text-slate-350 { color: #a8b4c4; }
+      .text-slate-450 { color: #8794a8; }
+      .text-slate-550 { color: #58677d; }
+      .text-slate-650 { color: #3f4d63; }
+      .text-slate-705 { color: #334155; }
+      .text-orange-705 { color: #c2410c; }
+      .text-blue-550 { color: #3b82f6; }
+      .bg-indigo-550 { background-color: #5b55e8; }
+      .bg-emerald-505 { background-color: #10b981; }
+      .bg-emerald-55\/75 { background-color: rgba(236, 253, 245, 0.75); }
+      .shadow-3xs { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+      .shadow-xs { box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05); }
+    </style>
+  </head>
+  <body class="text-slate-800 antialiased">
+    <main class="preview-shell">
+      <div class="preview-grid">
+        <div class="h-[470px] bg-white rounded-3xl border transition-all p-5 flex flex-col cursor-pointer group relative overflow-hidden min-w-0 border-slate-150 shadow-xs hover:shadow-md">
+          <div class="flex min-h-0 flex-1 flex-col">
+            <div class="mb-3 flex flex-col pr-9 min-[480px]:flex-row min-[480px]:items-start justify-between gap-2">
+              <div class="flex min-w-0 gap-1.5 flex-wrap">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-extrabold h-[24px] shrink-0 whitespace-nowrap bg-rose-50 border-rose-150 text-rose-700">
+                  <svg class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+                  视频
+                </span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-extrabold h-[24px] shrink-0 whitespace-nowrap bg-slate-50 border-slate-150 text-slate-650">原始玩法</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-extrabold h-[24px] shrink-0 whitespace-nowrap bg-emerald-50 border-emerald-150 text-emerald-700">#新</span>
+              </div>
+
+              <div class="flex shrink-0 items-center justify-end gap-1.5 self-start min-[480px]:self-auto flex-wrap">
+                <span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold h-[24px] flex items-center leading-none shrink-0 whitespace-nowrap bg-rose-50 border-rose-150 text-rose-700">🔴 最高</span>
+                <button class="flex h-[24px] shrink-0 cursor-pointer items-center justify-center gap-1 rounded-full border py-0.5 text-[10px] font-bold whitespace-nowrap transition-all bg-indigo-50 border-indigo-200 px-2.5 hover:bg-indigo-100 text-indigo-700 hover:border-indigo-300 shadow-3xs" title="编辑此创意企划" type="button">
+                  <svg class="w-3 h-3 text-indigo-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  <span>编辑</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <div class="h-[38px] px-3 py-0 rounded-xl border flex items-center justify-between gap-2 shadow-3xs bg-rose-50/70 text-rose-900 border-rose-150/60">
+                <h3 class="min-w-0 text-sm font-black tracking-tight leading-snug truncate" title="方向1: 展示新玩法">方向1: 展示新玩法</h3>
+              </div>
+            </div>
+
+            <div class="mb-3 flex h-[34px] items-center gap-1 rounded-xl border border-slate-100 bg-slate-50 px-2.5 py-0">
+              <svg class="w-3.5 h-3.5 text-rose-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              <p class="text-[11px] text-slate-600 font-bold leading-relaxed truncate block max-w-full" title="验证展示新玩法转化表现与Cvr">验证展示新玩法转化表现与Cvr</p>
+            </div>
+
+            <div class="mb-3 grid grid-cols-1 gap-x-2 gap-y-2 rounded-xl border-t border-b border-slate-100/70 bg-slate-50/30 p-2 py-2 text-[10px] min-[440px]:grid-cols-2">
+              <div class="flex items-center gap-1 text-slate-600">
+                <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+                <span class="font-semibold text-slate-400 shrink-0">负责:</span>
+                <span class="rounded border border-slate-100 bg-white px-1 py-0.5 font-extrabold text-slate-705">唐欣怡</span>
+              </div>
+
+              <div class="flex items-center gap-1 text-slate-600">
+                <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m16 8-4 8-4-4 8-4Z"/></svg>
+                <span class="font-semibold text-slate-400 shrink-0">场景:</span>
+                <span class="font-extrabold bg-white px-1.5 py-0.5 rounded border border-amber-100 font-sans text-amber-600 bg-amber-50/10">ASO</span>
+              </div>
+
+              <div class="flex items-center gap-1 text-slate-600 min-[440px]:col-span-2">
+                <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.9 19.1a10 10 0 0 1 0-14.2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5"/><path d="M19.1 4.9a10 10 0 0 1 0 14.2"/></svg>
+                <span class="font-semibold text-slate-400 shrink-0">渠道:</span>
+                <span class="font-extrabold uppercase px-2 py-0.5 rounded border font-mono flex-1 text-center text-[10px] text-slate-600 border-slate-200 bg-slate-50/70">ALL</span>
+              </div>
+
+              <div class="grid grid-cols-1 min-[520px]:grid-cols-2 gap-2 text-slate-600 min-[440px]:col-span-2">
+                <div class="flex items-center gap-1 min-w-0">
+                  <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  <span class="font-semibold text-slate-400 shrink-0">初版:</span>
+                  <span class="font-mono font-bold text-slate-650 bg-white px-1.5 py-0.5 rounded border border-slate-100 flex-1 text-[10px] text-center">2026-06-24</span>
+                </div>
+                <div class="flex items-center gap-1 min-w-0">
+                  <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+                  <span class="font-semibold text-slate-400 shrink-0">截止:</span>
+                  <span class="font-mono font-bold text-slate-650 bg-white px-1.5 py-0.5 rounded border border-slate-100 flex-1 text-[10px] text-center">2026-07-01</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-auto shrink-0 space-y-3 pt-3 border-t border-slate-100">
+            <div>
+              <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1 text-[10px]">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="font-extrabold text-slate-500 uppercase tracking-tight flex items-center gap-1 shrink-0">
+                    <span class="w-1.5 h-1.5 bg-indigo-550 rounded-full inline-block shrink-0"></span>
+                    1. 需求提交进度
+                  </span>
+                  <span class="text-slate-500 font-bold ml-1 font-sans shrink-0">
+                    <span class="text-[9px] flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100/70">
+                      <span>有效: <strong class="text-slate-700 font-bold">3</strong></span>
+                      <span class="text-slate-300">|</span>
+                      <span>总: <strong class="text-slate-705 font-bold">9</strong></span>
+                    </span>
+                  </span>
+                </div>
+                <span class="font-mono font-black text-emerald-600 shrink-0 font-sans">11%</span>
+              </div>
+              <div class="w-full h-2 bg-slate-150 rounded-full flex overflow-hidden border border-slate-200/60 shadow-3xs hover:opacity-90 transition-opacity" title="审核通过: 1 | 待审核: 0 | 未提交: 8">
+                <div class="h-full bg-emerald-500 transition-all duration-300 shrink-0" style="width: 11.111%"></div>
+              </div>
+              <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[8px] font-bold text-slate-400 mt-1 uppercase select-none">
+                <span class="flex items-center gap-0.5 text-slate-400 shrink-0"><span class="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>未提交:8</span>
+                <span class="flex items-center gap-0.5 text-amber-500 font-sans shrink-0"><span class="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>待审核:0</span>
+                <span class="flex items-center gap-0.5 text-emerald-600 font-sans shrink-0"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>审核通过:1</span>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1 text-[10px]">
+                <span class="font-extrabold text-slate-500 uppercase tracking-tight flex flex-wrap items-center gap-1">
+                  <span class="inline-flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 bg-emerald-505 rounded-full inline-block shrink-0"></span>
+                    2. 制作完成进度
+                  </span>
+                  <span class="inline-flex h-5 items-center rounded-full border px-2 text-[9px] font-black border-indigo-150 bg-indigo-50 text-indigo-700">进行中</span>
+                </span>
+                <span class="font-mono font-black text-emerald-600 font-sans">0%</span>
+              </div>
+              <div class="w-full h-2 bg-slate-150 rounded-full flex overflow-hidden border border-slate-200/60 shadow-3xs" title="未开始: 1 | 进行中: 1 | 已完成: 0">
+                <div class="h-full bg-blue-500 transition-all duration-300 shrink-0" style="width: 50%"></div>
+              </div>
+              <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[8px] font-bold text-slate-400 mt-1 uppercase select-none">
+                <span class="flex items-center gap-0.5 shrink-0"><span class="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>未开始:1</span>
+                <span class="flex items-center gap-0.5 text-blue-550 font-sans shrink-0"><span class="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>进行中:1</span>
+                <span class="flex items-center gap-0.5 text-emerald-600 font-sans shrink-0"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>已完成:0</span>
+              </div>
+            </div>
+
+            <div class="mt-auto flex min-h-10 items-center justify-between gap-3 pt-4">
+              <div class="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden">
+                <span class="shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-black font-mono shadow-3xs transition-all hover:scale-105 bg-sky-50 text-sky-700 border-sky-150">cp3359</span>
+                <span class="shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-black font-mono shadow-3xs transition-all hover:scale-105 bg-slate-50 text-slate-550 border-slate-150">cp3357</span>
+              </div>
+              <button type="button" class="relative z-20 inline-flex h-[34px] shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-[10px] font-black whitespace-nowrap transition-all duration-200 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 ring-1 ring-indigo-500 hover:bg-slate-950 hover:ring-slate-950 hover:-translate-y-0.5" title="新建需求">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                新建需求
+              </button>
+            </div>
+          </div>
+
+          <button class="absolute top-2.5 right-2.5 rounded-lg border border-slate-200 bg-white/95 p-1 text-slate-350 shadow-3xs transition-all hover:bg-rose-50 hover:text-rose-600 opacity-0 group-hover:opacity-100" title="删除此方向" type="button">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
